@@ -1,0 +1,11 @@
+{
+  "name": "@nanomind/secretless-adapter",
+  "version": "0.1.0",
+  "description": "NanoMind adapter for secretless-ai CLI",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "dependencies": {
+    "@nanomind/cli": "0.1.0"
+  },
+  "license": "MIT"
+}
