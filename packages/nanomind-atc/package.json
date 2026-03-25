@@ -1,7 +1,7 @@
 {
   "name": "@nanomind/atc",
-  "version": "0.1.0",
-  "description": "ATC intent handler \u2014 trust queries against the OpenA2A Registry",
+  "version": "0.1.1",
+  "description": "ATC intent handler — trust queries against the OpenA2A Registry",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {

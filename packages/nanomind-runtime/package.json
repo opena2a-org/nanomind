@@ -1,7 +1,7 @@
 {
   "name": "@nanomind/runtime",
-  "version": "0.1.0",
-  "description": "NanoMind Runtime \u2014 behavioral twin for ARP anomaly detection",
+  "version": "0.1.1",
+  "description": "NanoMind Runtime — behavioral twin for ARP anomaly detection",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {

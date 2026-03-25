@@ -12,5 +12,9 @@
     "test": "npm test --workspaces",
     "lint": "eslint packages/ integrations/"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "typescript": "^6.0.2"
+  }
 }
