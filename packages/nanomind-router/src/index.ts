@@ -41,32 +41,33 @@ export interface CommandMapping {
 }
 
 // Pattern-based fast classification (no LLM needed for obvious intents)
+// Order matters: more specific patterns first, general patterns last.
 const INTENT_PATTERNS: Array<{ pattern: RegExp; intent: IntentType }> = [
+  // ATC intents (specific — must be before general EXPLAIN/STATUS)
+  { pattern: /\b(trust\s*level|trust\s*score|trusted)\b/i, intent: 'TRUST_QUERY' },
+  { pattern: /\b(why.*(level|trust|score)|explain.*(trust|level|atc))\b/i, intent: 'ATC_STATUS' },
+  { pattern: /\b(risk\s*score|ars|blast\s*radius)\b/i, intent: 'RISK_SCORE' },
+  { pattern: /\b(revok(ed|e|ation)|why.*blocked)\b/i, intent: 'REVOCATION' },
+  { pattern: /\b(exposure|ceiling|exposure\s*ceiling)\b/i, intent: 'EXPOSURE' },
+  { pattern: /\b(attest|attestation|build.*(trust|atc)|add.*ci.*trust)\b/i, intent: 'ATTEST' },
   // Scan
   { pattern: /\b(scan|check|audit|inspect|analyze|secure)\b/i, intent: 'SCAN' },
   // Fix
   { pattern: /\b(fix|repair|patch|remediate|auto-?fix)\b/i, intent: 'FIX' },
-  // Explain
-  { pattern: /\b(explain|what (does|is|are)|describe|tell me about|meaning)\b/i, intent: 'EXPLAIN' },
   // Generate
   { pattern: /\b(generate|create|make|build|setup|configure)\b.*\b(action|docker|ci|yaml|config)\b/i, intent: 'GENERATE' },
   // Compare
   { pattern: /\b(compare|diff|changed|difference|delta)\b/i, intent: 'COMPARE' },
   // Status
-  { pattern: /\b(status|how (secure|safe)|summary|overview|score)\b/i, intent: 'STATUS' },
+  { pattern: /\b(status|how (secure|safe)|summary|overview)\b/i, intent: 'STATUS' },
   // Config
   { pattern: /\b(set|configure|config|setting|preference)\b/i, intent: 'CONFIG' },
+  // Explain (general — after specific ATC intents)
+  { pattern: /\b(explain|what (does|is|are)|describe|tell me about|meaning)\b/i, intent: 'EXPLAIN' },
   // Help
   { pattern: /\b(help|command|what can|how do|usage)\b/i, intent: 'HELP' },
   // Secrets
   { pattern: /\b(secret|credential|key|token|password|env)\b.*\b(exposed?|leak|find|check)\b/i, intent: 'SECRETS_EXPOSE' },
-  // ATC intents
-  { pattern: /\b(trust level|trusted|trust score)\b/i, intent: 'TRUST_QUERY' },
-  { pattern: /\b(why.*(level|trust|score)|explain.*(trust|level|atc))\b/i, intent: 'ATC_STATUS' },
-  { pattern: /\b(risk score|ars|blast radius)\b/i, intent: 'RISK_SCORE' },
-  { pattern: /\b(revok|revocation|why.*blocked)\b/i, intent: 'REVOCATION' },
-  { pattern: /\b(exposure|ceiling|exposure ceiling)\b/i, intent: 'EXPOSURE' },
-  { pattern: /\b(attest|attestation|build.*(trust|atc)|add.*ci.*trust)\b/i, intent: 'ATTEST' },
 ];
 
 // Entity extraction patterns

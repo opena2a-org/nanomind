@@ -1,0 +1,11 @@
+{
+  "name": "@nanomind/opena2a-adapter",
+  "version": "0.1.0",
+  "description": "NanoMind adapter for OpenA2A CLI — cross-product interactive router",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "dependencies": {
+    "@nanomind/cli": "0.1.0"
+  },
+  "license": "MIT"
+}

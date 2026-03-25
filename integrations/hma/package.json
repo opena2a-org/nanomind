@@ -1,0 +1,14 @@
+{
+  "name": "@nanomind/hma-adapter",
+  "version": "0.1.0",
+  "description": "NanoMind adapter for HackMyAgent — interactive mode when hma runs with no args",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@nanomind/cli": "0.1.0"
+  },
+  "license": "MIT"
+}

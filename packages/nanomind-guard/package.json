@@ -1,0 +1,12 @@
+{
+  "name": "@nanomind/guard",
+  "version": "0.1.0",
+  "description": "Prompt injection detection for CLI input — protects NanoMind from piped attacks",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "node --test src/**/*.test.ts"
+  },
+  "license": "MIT"
+}
