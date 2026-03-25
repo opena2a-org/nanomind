@@ -1,12 +1,31 @@
 {
   "name": "@nanomind/runtime",
   "version": "0.1.0",
-  "description": "NanoMind Runtime — behavioral twin for ARP anomaly detection",
+  "description": "NanoMind Runtime \u2014 behavioral twin for ARP anomaly detection",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc",
     "test": "node --test src/**/*.test.ts"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/opena2a-org/nanomind.git",
+    "directory": "packages/nanomind-runtime"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "nanomind",
+    "ai-security",
+    "agent-trust",
+    "opena2a"
+  ],
+  "author": "OpenA2A <hello@opena2a.org>",
+  "files": [
+    "dist/",
+    "README.md"
+  ]
 }

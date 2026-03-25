@@ -1,12 +1,31 @@
 {
   "name": "@nanomind/atc",
   "version": "0.1.0",
-  "description": "ATC intent handler — trust queries against the OpenA2A Registry",
+  "description": "ATC intent handler \u2014 trust queries against the OpenA2A Registry",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc",
     "test": "node --test src/**/*.test.ts"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/opena2a-org/nanomind.git",
+    "directory": "packages/nanomind-atc"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "nanomind",
+    "ai-security",
+    "agent-trust",
+    "opena2a"
+  ],
+  "author": "OpenA2A <hello@opena2a.org>",
+  "files": [
+    "dist/",
+    "README.md"
+  ]
 }
