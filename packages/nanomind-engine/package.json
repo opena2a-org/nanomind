@@ -1,0 +1,16 @@
+{
+  "name": "@nanomind/engine",
+  "version": "0.1.0",
+  "description": "Core inference backend — llamafile wrapper for local LLM inference",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "node --test src/**/*.test.ts"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  },
+  "license": "MIT"
+}

@@ -1,0 +1,16 @@
+{
+  "name": "nanomind",
+  "private": true,
+  "version": "0.1.0",
+  "description": "NanoMind: Embedded Intelligence Layer for AI Security Tools",
+  "workspaces": [
+    "packages/*",
+    "integrations/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "test": "npm test --workspaces",
+    "lint": "eslint packages/ integrations/"
+  },
+  "license": "MIT"
+}

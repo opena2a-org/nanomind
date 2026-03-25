@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "NanoMind Intent Schema",
+  "version": "2.0",
+  "description": "Complete intent taxonomy for NanoMind CLI and ATC intents",
+  "intents": [
+    { "id": "SCAN", "tier": "local-fast", "description": "Run security scan on current project" },
+    { "id": "FIX", "tier": "local-fast", "description": "Auto-fix security findings" },
+    { "id": "EXPLAIN", "tier": "local-full", "description": "Explain a security finding or concept" },
+    { "id": "GENERATE", "tier": "local-full", "description": "Generate CI/CD artifact or configuration" },
+    { "id": "COMPARE", "tier": "local-fast", "description": "Compare current scan with previous" },
+    { "id": "STATUS", "tier": "local-fast", "description": "Show security status summary" },
+    { "id": "CONFIG", "tier": "local-fast", "description": "Configure tool settings" },
+    { "id": "HELP", "tier": "local-fast", "description": "Show available commands and capabilities" },
+    { "id": "SECRETS_EXPOSE", "tier": "local-fast", "description": "Check for exposed secrets and credentials" },
+    { "id": "NAVIGATE", "tier": "local-fast", "description": "Open dashboard or report" },
+    { "id": "TRUST_QUERY", "tier": "local-fast", "description": "Query trust level of an agent", "atcIntent": true },
+    { "id": "ATC_STATUS", "tier": "local-fast", "description": "Explain why an agent has its current trust level", "atcIntent": true },
+    { "id": "RISK_SCORE", "tier": "local-fast", "description": "Show ARS (Agent Risk Score) breakdown", "atcIntent": true },
+    { "id": "REVOCATION", "tier": "local-fast", "description": "Check ATC revocation status and reason", "atcIntent": true },
+    { "id": "EXPOSURE", "tier": "local-fast", "description": "Show exposure ceiling and blast radius", "atcIntent": true },
+    { "id": "ATTEST", "tier": "local-full", "description": "Generate build attestation for CI pipeline", "atcIntent": true }
+  ]
+}
