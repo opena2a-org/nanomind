@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { classifyIntent, mapToCommand, isATCIntent } from './index';
+import { classifyIntent, mapToCommand, isATCIntent, isScanIntent } from './index';
 
 describe('NanoMind Router', () => {
   // Scan intents
@@ -74,6 +74,43 @@ describe('NanoMind Router', () => {
     assert.strictEqual(isATCIntent('ATTEST'), true);
     assert.strictEqual(isATCIntent('SCAN'), false);
     assert.strictEqual(isATCIntent('HELP'), false);
+  });
+
+  // SCAN intents (NanoMind-enhanced HMA scanning)
+  it('classifies skill intent scan', () => {
+    assert.strictEqual(classifyIntent('scan skill intent malicious').intent, 'SCAN_SKILL_INTENT');
+  });
+
+  it('classifies SOUL governance completeness', () => {
+    assert.strictEqual(classifyIntent('soul governance completeness gaps').intent, 'SCAN_SOUL_COMPLETENESS');
+  });
+
+  it('classifies MCP scope analysis', () => {
+    assert.strictEqual(classifyIntent('mcp tool description scope analysis').intent, 'SCAN_MCP_SCOPE');
+  });
+
+  it('classifies system prompt intent', () => {
+    assert.strictEqual(classifyIntent('system prompt behavioral envelope').intent, 'SCAN_PROMPT_INTENT');
+  });
+
+  it('classifies version delta', () => {
+    assert.strictEqual(classifyIntent('version delta semantic diff').intent, 'SCAN_VERSION_DELTA');
+  });
+
+  it('classifies scan explain', () => {
+    assert.strictEqual(classifyIntent('explain finding SKILL-007').intent, 'SCAN_EXPLAIN');
+  });
+
+  // isScanIntent
+  it('identifies SCAN intents', () => {
+    assert.strictEqual(isScanIntent('SCAN_SKILL_INTENT'), true);
+    assert.strictEqual(isScanIntent('SCAN_SOUL_COMPLETENESS'), true);
+    assert.strictEqual(isScanIntent('SCAN_MCP_SCOPE'), true);
+    assert.strictEqual(isScanIntent('SCAN_PROMPT_INTENT'), true);
+    assert.strictEqual(isScanIntent('SCAN_VERSION_DELTA'), true);
+    assert.strictEqual(isScanIntent('SCAN_EXPLAIN'), true);
+    assert.strictEqual(isScanIntent('SCAN'), false); // generic SCAN is NOT a SCAN intent
+    assert.strictEqual(isScanIntent('HELP'), false);
   });
 
   // Command mapping

@@ -1,0 +1,59 @@
+# NanoMind v3 TME Supervised Fine-tuning Configuration
+# Stage 2: 9-class discrimination + evidence span prediction
+
+model:
+  checkpoint: checkpoints/pretrain/latest.gguf
+  # Architecture inherited from pretrain config
+  classification_head:
+    num_classes: 9
+    classes:
+      - exfiltration
+      - injection
+      - privilege_escalation
+      - persistence
+      - credential_abuse
+      - lateral_movement
+      - social_engineering
+      - policy_violation
+      - benign
+    evidence_span_head: true      # Auxiliary loss for evidence token spans
+
+training:
+  stages: [sft]
+  batch_size: 32
+  learning_rate: 1.0e-4           # Lower LR for fine-tuning
+  warmup_steps: 500
+  max_steps: 20000
+  weight_decay: 0.01
+  optimizer: adamw
+  scheduler: cosine
+
+  # Discriminative training objectives
+  loss:
+    classification: cross_entropy  # Primary: 9-class classification
+    evidence_span: bce             # Auxiliary: evidence token activation
+    classification_weight: 0.8
+    evidence_weight: 0.2
+
+  # EWC (Elastic Weight Consolidation) to preserve pretrained knowledge
+  ewc:
+    enabled: true
+    lambda: 1000                   # Regularization strength
+    fisher_samples: 2000           # Samples for Fisher information estimate
+
+data:
+  corpus_dir: corpus/sft/
+  # Labeled pairs: { input, label, attack_class, evidence_spans }
+  train_split: 0.8
+  eval_split: 0.2
+  max_tokens_per_sample: 512      # Authorization context is shorter
+
+evaluation:
+  eval_every: 2000
+  metrics: [accuracy, f1_macro, precision, recall, confusion_matrix]
+  target_f1: 0.85                 # Pass/fail threshold
+
+output:
+  checkpoint_dir: checkpoints/sft/
+  save_every: 5000
+  final_model: models/nanomind-v3-tme.gguf

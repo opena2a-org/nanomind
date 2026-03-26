@@ -1,0 +1,51 @@
+# NanoMind v3 TME Pre-training Configuration
+# Stage 1: Domain pre-training on security artifact corpus
+
+model:
+  architecture: mamba3_encoder
+  d_model: 128
+  d_state: 64
+  n_mamba_layers: 24
+  n_attn_layers: 3               # GQA at layers 9, 18, 27
+  n_total_layers: 27
+  d_conv: 4
+  expand: 2
+  weight_sharing: true            # MobileLLM-LS: adjacent pairs share weights
+  embedding_sharing: true         # Input/output embeddings shared
+  attn_type: gqa                  # Grouped-query attention
+  attn_query_heads: 8
+  attn_kv_heads: 2
+  weight_precision: ternary       # Native 1.58-bit (BitNet W1.58A8)
+  activation_precision: int8
+  max_seq_length: 2048
+  vocab_size: 32000               # Security-focused tokenizer
+
+training:
+  stages: [pretrain]
+  batch_size: 64
+  learning_rate: 3.0e-4
+  warmup_steps: 1000
+  max_steps: 100000
+  weight_decay: 0.01
+  grad_clip: 1.0
+  optimizer: adamw
+  scheduler: cosine_with_restarts
+  fp16: false                     # Ternary training uses custom quantization
+  ternary_method: absmean         # BitNet absmean quantization
+
+data:
+  corpus_dir: corpus/pretrain/
+  tokenizer: security-bpe-32k    # Custom BPE trained on security artifacts
+  max_tokens_per_sample: 2048
+  shuffle: true
+  num_workers: 4
+
+evaluation:
+  eval_every: 5000
+  eval_samples: 1000
+  metrics: [perplexity, classification_accuracy]
+
+output:
+  checkpoint_dir: checkpoints/pretrain/
+  save_every: 10000
+  model_format: gguf_ternary
