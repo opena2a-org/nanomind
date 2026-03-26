@@ -30,11 +30,31 @@ hma > why is my agent level 2
 | Package | What | Install |
 |---------|------|---------|
 | [@nanomind/engine](https://www.npmjs.com/package/@nanomind/engine) | Core inference backend (llamafile) | `npm i @nanomind/engine` |
-| [@nanomind/router](https://www.npmjs.com/package/@nanomind/router) | Intent classification (16 types) | `npm i @nanomind/router` |
+| [@nanomind/router](https://www.npmjs.com/package/@nanomind/router) | Intent classification (22 types incl. 6 SCAN) | `npm i @nanomind/router` |
 | [@nanomind/guard](https://www.npmjs.com/package/@nanomind/guard) | Prompt injection detection | `npm i @nanomind/guard` |
 | [@nanomind/atc](https://www.npmjs.com/package/@nanomind/atc) | ATC trust queries | `npm i @nanomind/atc` |
 | [@nanomind/cli](https://www.npmjs.com/package/@nanomind/cli) | Interactive security assistant | `npm i @nanomind/cli` |
 | [@nanomind/runtime](https://www.npmjs.com/package/@nanomind/runtime) | Behavioral anomaly detection | `npm i @nanomind/runtime` |
+| **@nanomind/daemon** (NEW) | Persistent inference server (localhost:47200) | In packages/ |
+
+## Daemon Server (NEW)
+
+Persistent inference server. Loads model once, serves all requests via HTTP.
+
+```bash
+nanomind-daemon start    # localhost:47200
+nanomind-daemon status
+nanomind-daemon stop
+```
+
+## SCAN Intents (NEW)
+
+6 security scanning intents: `SCAN_SKILL_INTENT`, `SCAN_SOUL_COMPLETENESS`, `SCAN_MCP_SCOPE`, `SCAN_PROMPT_INTENT`, `SCAN_VERSION_DELTA`, `SCAN_EXPLAIN`
+
+## Trained Model
+
+[NanoMind v0.1 on HuggingFace](https://huggingface.co/ecolibria/nanomind-v0.1-security-classifier) -- 99.51% eval accuracy, F1=1.00 on benign (zero false positives)
+
 
 ---
 
