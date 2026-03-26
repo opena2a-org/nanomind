@@ -5,7 +5,7 @@
  * then maps to the appropriate CLI command or handler.
  */
 
-// Complete intent taxonomy (10 original + 6 ATC intents from v2)
+// Complete intent taxonomy (10 original + 6 ATC + 6 SCAN intents)
 export type IntentType =
   // Original intents
   | 'SCAN'           // "scan this project", "check for vulnerabilities"
@@ -18,14 +18,21 @@ export type IntentType =
   | 'HELP'           // "what can you do", "show commands"
   | 'SECRETS_EXPOSE' // "check for exposed secrets", "find credentials"
   | 'NAVIGATE'       // "open the dashboard", "show the report"
-  // ATC intents (new in v2)
+  // ATC intents (v2)
   | 'TRUST_QUERY'    // "what's the trust level of X", "is this agent trusted"
   | 'ATC_STATUS'     // "why is my agent level 2", "explain my trust score"
   | 'RISK_SCORE'     // "what's the risk score", "show ARS breakdown"
   | 'REVOCATION'     // "why was this agent revoked", "check revocation status"
   | 'EXPOSURE'       // "what's the exposure ceiling", "show blast radius"
   | 'ATTEST'         // "add trust to my CI", "generate build attestation"
-  | 'UNKNOWN';       // Unclassifiable input
+  // SCAN intents (v3 Intelligence Fabric) -- NanoMind-enhanced HMA scanning
+  | 'SCAN_SKILL_INTENT'       // Skill malicious intent classification
+  | 'SCAN_SOUL_COMPLETENESS'  // SOUL.md governance completeness analysis
+  | 'SCAN_MCP_SCOPE'          // MCP tool description scope analysis
+  | 'SCAN_PROMPT_INTENT'      // System prompt behavioral envelope analysis
+  | 'SCAN_VERSION_DELTA'      // Semantic diff between skill versions
+  | 'SCAN_EXPLAIN'            // Human-readable explanation of any finding
+  | 'UNKNOWN';                // Unclassifiable input
 
 export interface IntentClassification {
   intent: IntentType;
@@ -43,6 +50,13 @@ export interface CommandMapping {
 // Pattern-based fast classification (no LLM needed for obvious intents)
 // Order matters: more specific patterns first, general patterns last.
 const INTENT_PATTERNS: Array<{ pattern: RegExp; intent: IntentType }> = [
+  // SCAN intents (programmatic, invoked by HMA --semantic flag)
+  { pattern: /\bscan.*(skill|intent).*malicious\b/i, intent: 'SCAN_SKILL_INTENT' },
+  { pattern: /\b(soul|governance).*(complet|coverage|gap)/i, intent: 'SCAN_SOUL_COMPLETENESS' },
+  { pattern: /\bmcp.*(scope|permission|tool\s*desc)\b/i, intent: 'SCAN_MCP_SCOPE' },
+  { pattern: /\b(system\s*prompt|prompt\s*intent|behavioral\s*envelope)\b/i, intent: 'SCAN_PROMPT_INTENT' },
+  { pattern: /\b(version\s*delta|semantic\s*diff|skill\s*update)\b/i, intent: 'SCAN_VERSION_DELTA' },
+  { pattern: /\bexplain\s*(finding|scan\s*result|detection)\b/i, intent: 'SCAN_EXPLAIN' },
   // ATC intents (specific — must be before general EXPLAIN/STATUS)
   { pattern: /\b(trust\s*level|trust\s*score|trusted)\b/i, intent: 'TRUST_QUERY' },
   { pattern: /\b(why.*(level|trust|score)|explain.*(trust|level|atc))\b/i, intent: 'ATC_STATUS' },
@@ -160,4 +174,65 @@ export function mapToCommand(
  */
 export function isATCIntent(intent: IntentType): boolean {
   return ['TRUST_QUERY', 'ATC_STATUS', 'RISK_SCORE', 'REVOCATION', 'EXPOSURE', 'ATTEST'].includes(intent);
+}
+
+/**
+ * Check if an intent is a SCAN-related intent (NanoMind-enhanced HMA scanning).
+ * These intents are invoked programmatically by HMA during scanning,
+ * not by interactive CLI users.
+ */
+export function isScanIntent(intent: IntentType): boolean {
+  return [
+    'SCAN_SKILL_INTENT',
+    'SCAN_SOUL_COMPLETENESS',
+    'SCAN_MCP_SCOPE',
+    'SCAN_PROMPT_INTENT',
+    'SCAN_VERSION_DELTA',
+    'SCAN_EXPLAIN',
+  ].includes(intent);
+}
+
+/**
+ * SCAN intent response types for structured output.
+ */
+export interface ScanSkillResult {
+  intent: 'malicious' | 'benign' | 'edge_case';
+  confidence: number;
+  attackClass?: string;
+  evidence: string[];
+  remediation?: string;
+}
+
+export interface ScanSoulResult {
+  gaps: Array<{ domain: string; description: string; severity: string }>;
+  contradictions: Array<{ section1: string; section2: string; description: string }>;
+  enforceabilityScores: Record<string, number>;
+  hardeningSuggestions: string[];
+  overallCoverage: number; // 0.0-1.0
+}
+
+export interface ScanMCPResult {
+  scopeMismatch: boolean;
+  impliedPermissions: string[];
+  socialEngineeringRisk: number; // 0.0-1.0
+  toolInteractionFlags: string[];
+}
+
+export interface ScanPromptResult {
+  intentClassification: 'safe' | 'risky' | 'dangerous';
+  jailbreakSeedRisk: number; // 0.0-1.0
+  capabilityCreepPatterns: string[];
+  overrideRisk: number; // 0.0-1.0
+}
+
+export interface ScanVersionDeltaResult {
+  intentChanged: boolean;
+  behavioralDelta: string;
+  rugPullConfidence: number; // 0.0-1.0
+}
+
+export interface ScanExplainResult {
+  explanation: string;
+  attackDescription: string;
+  remediationSteps: string[];
 }

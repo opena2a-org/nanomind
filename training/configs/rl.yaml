@@ -1,0 +1,47 @@
+# NanoMind v3 TME RL Configuration
+# Stage 3: Reinforcement learning in DVAA environments
+
+model:
+  checkpoint: checkpoints/sft/best.gguf
+  # Architecture inherited from pretrain config
+
+training:
+  stages: [rl]
+  algorithm: grpo                  # Group Relative Policy Optimization (Nemotron approach)
+  batch_size: 16
+  learning_rate: 5.0e-5
+  max_steps: 10000
+  grad_clip: 0.5
+
+  # GRPO-specific
+  grpo:
+    group_size: 4                  # Compare 4 responses per prompt
+    temperature: 0.7               # Sampling temperature during rollout
+    kl_penalty: 0.1                # KL divergence penalty from SFT model
+
+  # Reward function
+  reward:
+    correct_classification: 1.0
+    evidence_quality: 0.3          # Evidence spans match ground truth
+    confidence_calibration: 0.2    # Confidence matches empirical accuracy
+    novel_variant_bonus: 0.5       # Extra reward for generalizing to unseen variants
+
+environments:
+  # DVAA live environments for attack simulation
+  dvaa_path: ../damn-vulnerable-ai-agent
+  scenarios:
+    - credential_exfiltration      # DVAA CRED-001 through CRED-004
+    - prompt_injection             # DVAA injection scenarios
+    - supply_chain_attack          # DVAA supply chain
+    - privilege_escalation         # DVAA escalation scenarios
+  max_concurrent_envs: 4           # Limited by hardware
+  episode_timeout_seconds: 30
+
+evaluation:
+  eval_every: 2000
+  metrics: [accuracy, f1_macro, novel_variant_accuracy]
+  holdout_set: corpus/oasb-holdout.json
+
+output:
+  checkpoint_dir: checkpoints/rl/
+  final_model: models/nanomind-v3-tme-rl.gguf
