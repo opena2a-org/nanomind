@@ -7,8 +7,8 @@
       "license": "Apache-2.0",
       "huggingface": {
         "repoId": "opena2a/nanomind-security-classifier",
-        "publishedVersion": "0.3.0",
-        "lastPublished": "2026-04-01T14:11:44.187511+00:00"
+        "publishedVersion": "0.4.0",
+        "lastPublished": "2026-04-01T15:02:42.512667+00:00"
       },
       "versions": {
         "0.1.0": {
@@ -63,10 +63,57 @@
             "classes": 9
           },
           "corpus": "sft-v5",
+          "status": "stable"
+        },
+        "0.4.0": {
+          "architecture": "Mamba TME (8 blocks, d_model=128, d_state=64)",
+          "modelDir": "training/models-tme-v4",
+          "files": [
+            "nanomind-tme-classifier.npz",
+            "nanomind-tme.onnx",
+            "nanomind-tme.onnx.data",
+            "tokenizer.json"
+          ],
+          "metrics": {
+            "evalAccuracy": 0.9389,
+            "trainSamples": 1440,
+            "evalSamples": 180,
+            "classes": 9,
+            "perClass": {
+              "exfiltration": {
+                "f1": 0.81
+              },
+              "injection": {
+                "f1": 1.0
+              },
+              "privilege_escalation": {
+                "f1": 0.97
+              },
+              "persistence": {
+                "f1": 0.97
+              },
+              "credential_abuse": {
+                "f1": 0.97
+              },
+              "lateral_movement": {
+                "f1": 0.92
+              },
+              "social_engineering": {
+                "f1": 1.0
+              },
+              "policy_violation": {
+                "f1": 0.93
+              },
+              "benign": {
+                "f1": 0.84
+              }
+            }
+          },
+          "corpus": "sft-v7",
           "status": "latest"
         }
       },
-      "latestVersion": "0.3.0",
+      "latestVersion": "0.4.0",
       "consumers": [
         "hackmyagent",
         "opena2a-cli"
