@@ -51,9 +51,16 @@ nanomind-daemon stop
 
 6 security scanning intents: `SCAN_SKILL_INTENT`, `SCAN_SOUL_COMPLETENESS`, `SCAN_MCP_SCOPE`, `SCAN_PROMPT_INTENT`, `SCAN_VERSION_DELTA`, `SCAN_EXPLAIN`
 
-## Trained Model
+## Trained Models
 
-[NanoMind v0.1 on HuggingFace](https://huggingface.co/ecolibria/nanomind-v0.1-security-classifier) -- 99.51% eval accuracy, F1=1.00 on benign (zero false positives)
+| Model | Visibility | Architecture | Accuracy | Status |
+|-------|-----------|--------------|----------|--------|
+| [nanomind-security-classifier](https://huggingface.co/opena2a/nanomind-security-classifier) | Public | Mamba TME | 97.01% | Latest (v0.3.0) |
+| nanomind-mcp-analyzer | Internal | Planned | -- | Planned |
+| nanomind-trust-scorer | Internal | Planned | -- | Planned |
+| nanomind-runtime-guard | Internal | Planned | -- | Planned |
+
+Model versions tracked in [`nanomind-models.json`](nanomind-models.json). Publishing automated via GitHub Actions.
 
 
 ---

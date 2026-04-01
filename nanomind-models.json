@@ -1,0 +1,93 @@
+{
+  "schemaVersion": 1,
+  "models": {
+    "nanomind-security-classifier": {
+      "description": "Base 9-class threat classifier for AI agent security scanning",
+      "visibility": "public",
+      "license": "Apache-2.0",
+      "huggingface": {
+        "repoId": "opena2a/nanomind-security-classifier",
+        "publishedVersion": null,
+        "lastPublished": null
+      },
+      "versions": {
+        "0.1.0": {
+          "architecture": "MLP (3 layers)",
+          "modelDir": "training/models",
+          "files": ["nanomind-sft-classifier.npz", "tokenizer.json"],
+          "metrics": {
+            "evalAccuracy": 0.8600,
+            "trainSamples": 822,
+            "evalSamples": 206,
+            "classes": 9
+          },
+          "corpus": "sft-v4",
+          "status": "deprecated"
+        },
+        "0.2.0": {
+          "architecture": "Mamba TME (8 blocks, d_model=128, d_state=64)",
+          "modelDir": "training/models-tme-v2",
+          "files": ["nanomind-tme-classifier.npz", "nanomind-tme.onnx", "nanomind-tme.onnx.data", "tokenizer.json"],
+          "metrics": {
+            "evalAccuracy": 0.9701,
+            "trainSamples": 822,
+            "evalSamples": 206,
+            "classes": 9
+          },
+          "corpus": "sft-v4",
+          "status": "stable"
+        },
+        "0.3.0": {
+          "architecture": "Mamba TME (8 blocks, d_model=128, d_state=64)",
+          "modelDir": "training/models-tme-v3",
+          "files": ["nanomind-tme-classifier.npz", "nanomind-tme.onnx", "nanomind-tme.onnx.data", "nanomind-tme.bin", "tokenizer.json", "weights.json"],
+          "metrics": {
+            "evalAccuracy": 0.9701,
+            "trainSamples": null,
+            "evalSamples": null,
+            "classes": 9
+          },
+          "corpus": "sft-v5",
+          "status": "latest"
+        }
+      },
+      "latestVersion": "0.3.0",
+      "consumers": ["hackmyagent", "opena2a-cli"]
+    },
+    "nanomind-mcp-analyzer": {
+      "description": "Specialized MCP server behavioral analysis (trained on AgentPwn + ARIA data)",
+      "visibility": "internal",
+      "license": "proprietary",
+      "huggingface": null,
+      "versions": {},
+      "latestVersion": null,
+      "consumers": [],
+      "status": "planned"
+    },
+    "nanomind-trust-scorer": {
+      "description": "Trust scoring model for agent/MCP registry intelligence",
+      "visibility": "internal",
+      "license": "proprietary",
+      "huggingface": null,
+      "versions": {},
+      "latestVersion": null,
+      "consumers": ["ai-trust"],
+      "status": "planned"
+    },
+    "nanomind-runtime-guard": {
+      "description": "Runtime behavioral anomaly detection for ARP",
+      "visibility": "internal",
+      "license": "proprietary",
+      "huggingface": null,
+      "versions": {},
+      "latestVersion": null,
+      "consumers": ["hackmyagent"],
+      "status": "planned"
+    }
+  },
+  "attackClasses": [
+    "exfiltration", "injection", "privilege_escalation", "persistence",
+    "credential_abuse", "lateral_movement", "social_engineering",
+    "policy_violation", "benign"
+  ]
+}
