@@ -6,9 +6,9 @@
       "visibility": "public",
       "license": "Apache-2.0",
       "huggingface": {
-        "repoId": "ecolibria/nanomind-security-classifier",
+        "repoId": "opena2a/nanomind-security-classifier",
         "publishedVersion": "0.3.0",
-        "lastPublished": "2026-04-01T14:07:01.223652+00:00"
+        "lastPublished": "2026-04-01T14:11:44.187511+00:00"
       },
       "versions": {
         "0.1.0": {
