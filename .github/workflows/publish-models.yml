@@ -1,0 +1,85 @@
+name: Publish Models to HuggingFace
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'training/models-tme-v*/**'
+      - 'training/models/**'
+      - 'nanomind-models.json'
+  workflow_dispatch:
+    inputs:
+      model:
+        description: 'Model to publish (blank = all public)'
+        required: false
+        type: string
+      version:
+        description: 'Version to publish (blank = latest)'
+        required: false
+        type: string
+      dry_run:
+        description: 'Dry run only'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install huggingface_hub
+
+      - name: Validate manifest
+        run: python -c "import json; json.load(open('nanomind-models.json'))"
+
+      - name: Dry run check
+        run: python training/scripts/push-to-huggingface.py --dry-run
+
+      - name: Publish to HuggingFace
+        if: ${{ !inputs.dry_run }}
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          ARGS=""
+          if [ -n "${{ inputs.model }}" ]; then
+            ARGS="$ARGS --model ${{ inputs.model }}"
+          fi
+          if [ -n "${{ inputs.version }}" ]; then
+            ARGS="$ARGS --version ${{ inputs.version }}"
+          fi
+          python training/scripts/push-to-huggingface.py $ARGS
+
+      - name: Commit manifest updates
+        if: ${{ !inputs.dry_run }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet nanomind-models.json; then
+            echo "No manifest changes"
+          else
+            git add nanomind-models.json
+            git commit -m "Update model manifest after HuggingFace publish"
+            git push
+          fi
+
+  notify-consumers:
+    needs: publish
+    if: ${{ !inputs.dry_run }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notify HackMyAgent
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          repository: opena2a-org/hackmyagent
+          event-type: nanomind-model-updated
+          client-payload: '{"model": "${{ inputs.model || "all" }}", "version": "${{ inputs.version || "latest" }}"}'
