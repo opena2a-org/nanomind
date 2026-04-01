@@ -6,17 +6,20 @@
       "visibility": "public",
       "license": "Apache-2.0",
       "huggingface": {
-        "repoId": "opena2a/nanomind-security-classifier",
-        "publishedVersion": null,
-        "lastPublished": null
+        "repoId": "ecolibria/nanomind-security-classifier",
+        "publishedVersion": "0.3.0",
+        "lastPublished": "2026-04-01T14:07:01.223652+00:00"
       },
       "versions": {
         "0.1.0": {
           "architecture": "MLP (3 layers)",
           "modelDir": "training/models",
-          "files": ["nanomind-sft-classifier.npz", "tokenizer.json"],
+          "files": [
+            "nanomind-sft-classifier.npz",
+            "tokenizer.json"
+          ],
           "metrics": {
-            "evalAccuracy": 0.8600,
+            "evalAccuracy": 0.86,
             "trainSamples": 822,
             "evalSamples": 206,
             "classes": 9
@@ -27,7 +30,12 @@
         "0.2.0": {
           "architecture": "Mamba TME (8 blocks, d_model=128, d_state=64)",
           "modelDir": "training/models-tme-v2",
-          "files": ["nanomind-tme-classifier.npz", "nanomind-tme.onnx", "nanomind-tme.onnx.data", "tokenizer.json"],
+          "files": [
+            "nanomind-tme-classifier.npz",
+            "nanomind-tme.onnx",
+            "nanomind-tme.onnx.data",
+            "tokenizer.json"
+          ],
           "metrics": {
             "evalAccuracy": 0.9701,
             "trainSamples": 822,
@@ -40,7 +48,14 @@
         "0.3.0": {
           "architecture": "Mamba TME (8 blocks, d_model=128, d_state=64)",
           "modelDir": "training/models-tme-v3",
-          "files": ["nanomind-tme-classifier.npz", "nanomind-tme.onnx", "nanomind-tme.onnx.data", "nanomind-tme.bin", "tokenizer.json", "weights.json"],
+          "files": [
+            "nanomind-tme-classifier.npz",
+            "nanomind-tme.onnx",
+            "nanomind-tme.onnx.data",
+            "nanomind-tme.bin",
+            "tokenizer.json",
+            "weights.json"
+          ],
           "metrics": {
             "evalAccuracy": 0.9701,
             "trainSamples": null,
@@ -52,7 +67,10 @@
         }
       },
       "latestVersion": "0.3.0",
-      "consumers": ["hackmyagent", "opena2a-cli"]
+      "consumers": [
+        "hackmyagent",
+        "opena2a-cli"
+      ]
     },
     "nanomind-mcp-analyzer": {
       "description": "Specialized MCP server behavioral analysis (trained on AgentPwn + ARIA data)",
@@ -71,7 +89,9 @@
       "huggingface": null,
       "versions": {},
       "latestVersion": null,
-      "consumers": ["ai-trust"],
+      "consumers": [
+        "ai-trust"
+      ],
       "status": "planned"
     },
     "nanomind-runtime-guard": {
@@ -81,13 +101,21 @@
       "huggingface": null,
       "versions": {},
       "latestVersion": null,
-      "consumers": ["hackmyagent"],
+      "consumers": [
+        "hackmyagent"
+      ],
       "status": "planned"
     }
   },
   "attackClasses": [
-    "exfiltration", "injection", "privilege_escalation", "persistence",
-    "credential_abuse", "lateral_movement", "social_engineering",
-    "policy_violation", "benign"
+    "exfiltration",
+    "injection",
+    "privilege_escalation",
+    "persistence",
+    "credential_abuse",
+    "lateral_movement",
+    "social_engineering",
+    "policy_violation",
+    "benign"
   ]
 }
