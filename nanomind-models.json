@@ -7,8 +7,8 @@
       "license": "Apache-2.0",
       "huggingface": {
         "repoId": "opena2a/nanomind-security-classifier",
-        "publishedVersion": "0.4.0",
-        "lastPublished": "2026-04-01T15:13:43.900360+00:00"
+        "publishedVersion": "0.5.0",
+        "lastPublished": "2026-04-01T22:27:24.204567+00:00"
       },
       "versions": {
         "0.1.0": {
@@ -110,10 +110,72 @@
             }
           },
           "corpus": "sft-v7",
+          "status": "stable"
+        },
+        "0.5.0": {
+          "architecture": "Mamba TME (8 blocks, d_model=128, d_state=64, dropout=0.1)",
+          "modelDir": "training/models-tme-v5",
+          "files": [
+            "nanomind-tme-classifier.npz",
+            "nanomind-tme.onnx",
+            "nanomind-tme.onnx.data",
+            "tokenizer.json"
+          ],
+          "metrics": {
+            "evalAccuracy": 0.9822,
+            "holdoutAccuracy": 0.9822,
+            "macroF1": 0.982,
+            "trainSamples": 3600,
+            "evalSamples": 450,
+            "holdoutSamples": 450,
+            "classes": 9,
+            "perClass": {
+              "exfiltration": {
+                "f1": 0.971
+              },
+              "injection": {
+                "f1": 0.98
+              },
+              "privilege_escalation": {
+                "f1": 0.99
+              },
+              "persistence": {
+                "f1": 0.98
+              },
+              "credential_abuse": {
+                "f1": 0.98
+              },
+              "lateral_movement": {
+                "f1": 1.0
+              },
+              "social_engineering": {
+                "f1": 0.99
+              },
+              "policy_violation": {
+                "f1": 0.961
+              },
+              "benign": {
+                "f1": 0.969
+              }
+            }
+          },
+          "corpus": "sft-v8",
+          "sha256": {
+            "tokenizer.json": "8ab079d9275a34fcd81b8dc9dc66d74bb4d42fd16e9a291709dcb25b093de53d",
+            "nanomind-tme.onnx": "9d9b150292d466832488cec3ad7a8cc4ae8fb5731ab6e93d15ce115cb22b0b73",
+            "nanomind-tme.onnx.data": "f2a7eb40011925ac882b02de41043d43a3dc7dc0c9307b73abb6145705ddcdf5"
+          },
+          "improvements": [
+            "Trained on v8 corpus (4500 samples from 5+ real sources, 58% real data)",
+            "Mini-batch training with cosine LR schedule",
+            "Dropout regularization (0.1)",
+            "Early stopping on eval loss",
+            "All 9 classes F1 >= 0.90 (up from 0.81 min in v4)"
+          ],
           "status": "latest"
         }
       },
-      "latestVersion": "0.4.0",
+      "latestVersion": "0.5.0",
       "consumers": [
         "hackmyagent",
         "opena2a-cli"
