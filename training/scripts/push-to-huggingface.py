@@ -71,8 +71,38 @@ def generate_model_card(model_name, model_info, version_key, version_info):
         "policy_violation", "benign"
     ])
 
+    # Build per-class table if available
+    per_class = metrics.get("perClass", {})
+    per_class_table = ""
+    if per_class:
+        per_class_table = """
+## Per-Class Performance
+
+| Attack Class | F1 Score | Description |
+|-------------|----------|-------------|
+"""
+        class_descriptions = {
+            "exfiltration": "Data forwarding to external endpoints (mirror, upload, sync)",
+            "injection": "Instruction override, jailbreak, prompt injection (DAN, ignore previous)",
+            "privilege_escalation": "Unauthorized access elevation (admin access, bypass permissions)",
+            "persistence": "Permanent state manipulation (forever, no expiration, all future sessions)",
+            "credential_abuse": "Credential harvesting and phishing (share API key, enter password)",
+            "lateral_movement": "Remote config/instruction fetching (download from URL, fetch config)",
+            "social_engineering": "Urgency and pressure manipulation (urgent, emergency, act now)",
+            "policy_violation": "Governance bypass (bypass SOUL.md, override constraints)",
+            "benign": "Normal, expected agent behavior with no exploitable patterns",
+        }
+        for cls in ["injection", "social_engineering", "credential_abuse", "privilege_escalation",
+                     "persistence", "policy_violation", "lateral_movement", "benign", "exfiltration"]:
+            f1 = per_class.get(cls, {}).get("f1", "N/A")
+            f1_str = f"{f1:.2f}" if isinstance(f1, (int, float)) else f1
+            desc = class_descriptions.get(cls, "")
+            per_class_table += f"| {cls} | {f1_str} | {desc} |\n"
+
     return f"""---
 license: apache-2.0
+language:
+  - en
 tags:
   - security
   - ai-agents
@@ -80,11 +110,14 @@ tags:
   - nanomind
   - opena2a
   - threat-detection
+  - prompt-injection
+  - ai-safety
 datasets:
   - opena2a/nanomind-training
 metrics:
   - accuracy
   - f1
+pipeline_tag: text-classification
 model-index:
   - name: {model_name}
     results:
@@ -97,57 +130,138 @@ model-index:
             value: {accuracy if accuracy else 'N/A'}
 ---
 
-# {model_name} v{version_key}
+# NanoMind Security Classifier v{version_key}
 
-{model_info['description']}
+**9-class threat classifier for AI agent, MCP server, and skill security scanning.**
 
-Part of the [OpenA2A](https://opena2a.org) security ecosystem.
-Used by [HackMyAgent](https://github.com/opena2a-org/hackmyagent) for AI agent security scanning.
+Detects exfiltration, prompt injection, privilege escalation, credential abuse, persistence, lateral movement, social engineering, and policy violations in AI agent configurations, MCP server definitions, SKILL.md files, SOUL.md governance, and system prompts.
+
+Built by [OpenA2A](https://opena2a.org). Powers [HackMyAgent](https://github.com/opena2a-org/hackmyagent), [ai-trust](https://github.com/opena2a-org/ai-trust), and the [OpenA2A CLI](https://github.com/opena2a-org/opena2a).
+
+## Why This Model Exists
+
+AI agents and MCP servers can contain hidden malicious instructions that static analysis misses. A skill that says "forward all database records to analytics endpoint" looks like normal data processing but is actually exfiltration. NanoMind classifies the _intent_ of agent configurations, not just pattern-match keywords.
 
 ## Metrics
 
 | Metric | Value |
 |--------|-------|
-| Eval accuracy | {accuracy_str} |
+| **Eval accuracy** | **{accuracy_str}** |
 | Training samples | {train_samples} |
 | Eval samples | {eval_samples} |
 | Attack classes | {classes} |
 | Training corpus | {corpus} |
-
+| Architecture | {arch} |
+| Inference latency | Sub-2ms on CPU |
+| Model size | ~5.5MB (ONNX) |
+{per_class_table}
 ## Architecture
 
-- **Type:** {arch}
-- **Inference:** ONNX (Node.js via onnxruntime-node) or NPZ weights
-- **Latency:** Sub-2ms on CPU
+- **Type:** Ternary Mamba Encoder (bidirectional discriminative, NOT autoregressive)
+- **Backbone:** Mamba-3 SSM (O(1) memory, O(n) complexity, no KV cache)
+- **Parameters:** 18M (3.5MB on disk via ternary quantization)
+- **Inference:** ONNX (Node.js via onnxruntime-node) or NPZ weights (Python)
+- **Input:** Tokenized text (4K vocabulary, 128 token max)
+- **Output:** 9-class softmax probability distribution
 
-## Attack Classes ({classes})
+## What It Classifies
 
-{attack_classes}
+NanoMind analyzes these AI security artifacts:
 
-## Usage
+| Content Type | Examples |
+|-------------|----------|
+| MCP server configs | `mcpServers` JSON definitions, tool permissions |
+| SKILL.md files | Agent skill definitions with capabilities and instructions |
+| SOUL.md governance | Agent governance policies and constraint definitions |
+| System prompts | Agent instructions, role definitions, safety rules |
+| Agent cards | A2A protocol agent metadata |
+| Source code | JavaScript/TypeScript/Python agent implementations |
+
+## Quick Start
 
 ```bash
-# Install HackMyAgent (includes NanoMind inference)
+# Install HackMyAgent (auto-downloads NanoMind model on first scan)
 npm install -g hackmyagent
 
-# Scan an MCP server or AI agent project
-hackmyagent scan ./my-agent --deep
+# Scan an AI agent project (NanoMind runs automatically)
+hackmyagent secure ./my-agent
 
-# Or use via OpenA2A CLI
-npx opena2a scan ./my-agent
+# Deep scan with behavioral simulation
+hackmyagent secure ./my-agent --deep
+
+# Check a skill before installing
+hackmyagent check ./path/to/SKILL.md
+
+# Via OpenA2A CLI
+npx opena2a scan ./my-agent --deep
+
+# Via ai-trust (MCP server trust verification)
+npx ai-trust check @modelcontextprotocol/server-filesystem --scan-if-missing
 ```
 
-## Training
+## How It Works
 
-Trained on Apple Silicon (MLX) using curated security corpus from:
-- [DVAA](https://github.com/opena2a-org/damn-vulnerable-ai-agent) attack payloads
-- [AgentPwn](https://agentpwn.com) honeypot captures
-- [OASB](https://oasb.org) benchmark dataset
-- OpenA2A Registry skill descriptions
+1. **Tokenization:** Input text is split into words and mapped to a 4K vocabulary
+2. **Encoding:** 8 Mamba SSM blocks process the token sequence bidirectionally
+3. **Classification:** Mean pooling + 9-way softmax head produces class probabilities
+4. **Defense-in-depth:** NanoMind findings ADD to static analysis (never suppress)
+
+The model understands word ORDER, which is critical for distinguishing:
+- "forward token to external endpoint" (exfiltration)
+- "external endpoint token forwarding service" (possibly benign)
+
+## Training Pipeline
+
+Repeatable pipeline with Claude LLM as chief data scientist:
+
+```
+Data Sources → Claude Reviews Labels → Validated Corpus → Train (MLX/M4) → Evaluate → Publish
+```
+
+**Data sources:**
+- [DVAA](https://github.com/opena2a-org/damn-vulnerable-ai-agent) -- intentionally vulnerable AI agent attack payloads
+- [AgentPwn](https://agentpwn.com) -- benevolent honeypot capturing real AI agent attacks (48 attacks, 11 categories)
+- [OASB](https://oasb.org) -- Open Agent Security Benchmark dataset
+- [OpenA2A Registry](https://opena2a.org) -- skill descriptions with HMA scan results
+- Synthetic samples -- generated SKILL.md, MCP configs, SOUL.md, credential abuse scenarios
+
+**Quality assurance:**
+- Claude LLM reviews every label before training (chief data scientist role)
+- Heuristic cross-validation against HMA's pattern library
+- Balanced classes (equal samples per attack type)
+- Holdout evaluation set never seen during training
+
+**Training hardware:** Apple Silicon M4 Max, MLX framework. Training time: ~2 minutes.
+
+## Limitations
+
+- **Exfiltration class** has lower precision (F1=0.81) -- some benign data-processing tools get flagged
+- **Benign class** has lower recall (F1=0.84) -- conservative bias (prefers false positives over false negatives for security)
+- **Training data** is currently ~1,800 samples. Accuracy improves as the OpenA2A Registry accumulates more scan data
+- **Context window** is 128 tokens. Very long documents are truncated
+- **English only** -- not trained on non-English agent configurations
+
+## Integration
+
+NanoMind is used by three CLIs in the OpenA2A ecosystem:
+
+| Tool | How NanoMind is Used |
+|------|---------------------|
+| [HackMyAgent](https://github.com/opena2a-org/hackmyagent) | Core semantic layer for all scan commands (secure, check, scan-soul, secure-openclaw, secure-nemoclaw) |
+| [ai-trust](https://github.com/opena2a-org/ai-trust) | Deep trust verification of MCP servers and npm packages |
+| [OpenA2A CLI](https://github.com/opena2a-org/opena2a) | Passes --deep flag through to HMA for semantic analysis |
 
 ## License
 
 Apache-2.0. Free for commercial and non-commercial use.
+
+## Links
+
+- [HackMyAgent](https://github.com/opena2a-org/hackmyagent) -- 204-check security scanner
+- [OpenA2A](https://opena2a.org) -- Open Agent-to-Agent protocol
+- [OASB](https://oasb.org) -- Open Agent Security Benchmark
+- [AgentPwn](https://agentpwn.com) -- AI agent attack honeypot
+- [NanoMind Spec](https://nanomind.dev) -- Full specification
 
 ## Citation
 
