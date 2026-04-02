@@ -62,8 +62,9 @@ Regex can't distinguish these. NanoMind can.
 
 | Metric | Value |
 |--------|-------|
-| Overall accuracy | 98.44% |
+| Overall accuracy | 98.44% [96.8-99.2%, 95% CI] |
 | Macro F1 | 0.984 |
+| Holdout samples | 450 (never seen during training) |
 | Training samples | 3,600 (from 4,500 total) |
 | Real-world data | 58% (OASB, DVAA, AgentPwn, Registry) |
 
