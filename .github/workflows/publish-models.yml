@@ -82,4 +82,4 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           repository: opena2a-org/hackmyagent
           event-type: nanomind-model-updated
-          client-payload: '{"model": "${{ inputs.model || "all" }}", "version": "${{ inputs.version || "latest" }}"}'
+          client-payload: '{"model": "nanomind-security-classifier", "version": "v0.3.0"}'
