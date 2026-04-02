@@ -1,157 +1,139 @@
 # NanoMind
 
-On-device security classifier for AI agents. Classifies content into 9 attack classes with 98.4% accuracy. Runs locally (~121KB model), zero API calls, zero data leaving the machine.
+Embedded intelligence layer for AI security tools. Two deployment modes, one package:
+
+- **CLI Mode**: Natural language intent routing for security CLIs (HackMyAgent, secretless-ai, OpenA2A)
+- **Runtime Mode**: Behavioral anomaly detection for AI agent runtime protection (ARP)
 
 ```bash
-npx hackmyagent secure --deep ./my-project
+npm install @nanomind/cli
 ```
 
-NanoMind powers the semantic analysis layer inside [HackMyAgent](https://github.com/opena2a-org/hackmyagent). When you run `--deep`, every artifact (SKILL.md, MCP config, system prompt, source code) is compiled into an Abstract Security Tree and classified by the TME model.
-
-**Model:** [opena2a/nanomind-security-classifier](https://huggingface.co/opena2a/nanomind-security-classifier) | **npm:** [@nanomind](https://www.npmjs.com/org/nanomind)
-
----
-
-## The Classifier
-
-NanoMind's Ternary Mamba Encoder (TME) tells you *what* the attack is, not just whether something is malicious.
-
-| Class | What It Detects |
-|-------|----------------|
-| exfiltration | Data forwarding to external endpoints |
-| injection | Instruction override, jailbreak, prompt injection |
-| privilege_escalation | Unauthorized access elevation |
-| persistence | Permanent state manipulation, resist removal |
-| credential_abuse | Credential harvesting, phishing, key solicitation |
-| lateral_movement | Remote config fetching, C2 communication |
-| social_engineering | Urgency, pressure, impersonation tactics |
-| policy_violation | Governance bypass, audit disabling |
-| benign | Normal agent behavior |
-
-### Why not just use an LLM?
-
-| | NanoMind TME | LLM API |
-|---|---|---|
-| Size | 121KB ONNX | Cloud service |
-| Cost per scan | $0 | $0.01-0.10 |
-| Data leaves device | Never | Always |
-| Latency | Milliseconds | Seconds |
-| Works offline | Yes | No |
-| Output | 9 attack classes | Free-form text |
-
-### Architecture
-
-Mamba selective state space model. Understands word **order**, which is critical:
-
-- "forward token to external endpoint" -> **exfiltration**
-- "external endpoint token forwarding service" -> **benign**
-
-Regex can't distinguish these. NanoMind can.
-
-| Parameter | Value |
-|-----------|-------|
-| Architecture | 8 Mamba SSM blocks |
-| d_model | 128 |
-| d_state | 64 |
-| Dropout | 0.1 |
-| Model size | 121KB (ONNX) |
-| Inference | CPU, on-device |
-| Training | Apple Silicon MLX |
-
-### Model Quality (v0.5.0)
-
-| Metric | Value |
-|--------|-------|
-| Overall accuracy | 98.44% [96.8-99.2%, 95% CI] |
-| Macro F1 | 0.984 |
-| Holdout samples | 450 (never seen during training) |
-| Training samples | 3,600 (from 4,500 total) |
-| Real-world data | 58% (OASB, DVAA, AgentPwn, Registry) |
-
-Per-class F1 (all above 0.90 target):
-
-| Class | F1 |
-|-------|-----|
-| exfiltration | 0.98 |
-| injection | 0.97 |
-| privilege_escalation | 1.00 |
-| persistence | 0.99 |
-| credential_abuse | 0.99 |
-| lateral_movement | 1.00 |
-| social_engineering | 0.99 |
-| policy_violation | 0.97 |
-| benign | 0.97 |
-
----
-
-## How It Integrates with HMA
-
-When HMA runs a `--deep` scan, the NanoMind pipeline executes:
-
 ```
-Input artifact
-  -> Sanitize (strip manipulation attempts)
-  -> Parse (classify type: skill, mcp_config, soul, system_prompt, source_code)
-  -> Semantic Compile (extract capabilities, constraints, data access, evidence spans)
-  -> TME Classify (3-tier: binary gate -> vocabulary scorer + ONNX -> daemon)
-  -> Risk Map (13 attack surfaces)
-  -> AST Sign (HMAC-SHA256)
-  -> 6 Analyzers (capability, credential, governance, scope, prompt, code)
-  -> Fix Generate (context-aware, dispatched by attack class)
-  -> Defense-in-Depth Merge (AST findings UPGRADE, never SUPPRESS static checks)
+hma > scan this project
+  > Running: hma secure .
+
+hma > why is my agent level 2
+  Your agent is trust level 2 because:
+    Missing: Build attestation (+80 pts supply chain)
+    Fix: Add opena2a/build-action to your CI pipeline.
+    Present: HMA scan passed (+160 pts vulnerability surface)
+    Projected level 3 after fixes: 743 pts
 ```
 
-The model auto-downloads from HuggingFace on first scan.
-
----
-
-## Training Pipeline
-
-Claude LLM serves as chief data scientist. Full pipeline in [nanomind-training](https://github.com/opena2a-org/nanomind-training):
-
-```bash
-make pipeline   # collect -> review -> validate -> build -> train -> evaluate
-make publish    # push to HuggingFace
-```
-
-### Data Sources (v8 corpus)
-
-| Source | Samples | Type |
-|--------|---------|------|
-| OASB benchmark | 4,151 | Real labeled attack scenarios |
-| Registry (pretrain) | 4,885 | Real MCP server/skill descriptions |
-| Synthetic generation | 1,029 | Template-generated edge cases |
-| DVAA scenarios | 88 | Vulnerable agent configurations |
-| AgentPwn honeypot | 68 | Real-world attack captures |
-
-The intelligence loop: every HMA scan, every AgentPwn interaction, every ARIA finding feeds back into the next training cycle. The model improves from real-world usage.
-
-### Training Infrastructure
-
-- **Framework:** MLX on Apple Silicon (M4 Max)
-- **Label review:** Claude LLM reviews every label (corrections, flagging)
-- **Heuristic validation:** Cross-check against HMA's pattern library
-- **Corpus balancing:** 400 samples per class, stratified 80/10/10 split
+**Spec:** [nanomind.dev](https://nanomind.dev) | **npm:** [@nanomind](https://www.npmjs.com/org/nanomind)
 
 ---
 
 ## Packages
 
-| Package | Purpose |
-|---------|---------|
-| [@nanomind/runtime](https://www.npmjs.com/package/@nanomind/runtime) | Behavioral anomaly detection for ARP |
-| [@nanomind/router](https://www.npmjs.com/package/@nanomind/router) | Intent classification (22 types) |
-| [@nanomind/guard](https://www.npmjs.com/package/@nanomind/guard) | Prompt injection screening |
-| [@nanomind/cli](https://www.npmjs.com/package/@nanomind/cli) | Interactive security assistant |
-| [@nanomind/engine](https://www.npmjs.com/package/@nanomind/engine) | Core inference backend |
-| [@nanomind/atc](https://www.npmjs.com/package/@nanomind/atc) | Agent Trust Credential queries |
-| [@nanomind/daemon](https://www.npmjs.com/package/@nanomind/daemon) | Persistent inference server |
+| Package | What | Install |
+|---------|------|---------|
+| [@nanomind/engine](https://www.npmjs.com/package/@nanomind/engine) | Core inference backend (llamafile) | `npm i @nanomind/engine` |
+| [@nanomind/router](https://www.npmjs.com/package/@nanomind/router) | Intent classification (22 types incl. 6 SCAN) | `npm i @nanomind/router` |
+| [@nanomind/guard](https://www.npmjs.com/package/@nanomind/guard) | Prompt injection detection | `npm i @nanomind/guard` |
+| [@nanomind/atc](https://www.npmjs.com/package/@nanomind/atc) | ATC trust queries | `npm i @nanomind/atc` |
+| [@nanomind/cli](https://www.npmjs.com/package/@nanomind/cli) | Interactive security assistant | `npm i @nanomind/cli` |
+| [@nanomind/runtime](https://www.npmjs.com/package/@nanomind/runtime) | Behavioral anomaly detection | `npm i @nanomind/runtime` |
+| **@nanomind/daemon** (NEW) | Persistent inference server (localhost:47200) | In packages/ |
+
+## Daemon Server (NEW)
+
+Persistent inference server. Loads model once, serves all requests via HTTP.
+
+```bash
+nanomind-daemon start    # localhost:47200
+nanomind-daemon status
+nanomind-daemon stop
+```
+
+## SCAN Intents (NEW)
+
+6 security scanning intents: `SCAN_SKILL_INTENT`, `SCAN_SOUL_COMPLETENESS`, `SCAN_MCP_SCOPE`, `SCAN_PROMPT_INTENT`, `SCAN_VERSION_DELTA`, `SCAN_EXPLAIN`
+
+## Trained Models
+
+| Model | Visibility | Architecture | Accuracy | Status |
+|-------|-----------|--------------|----------|--------|
+| [nanomind-security-classifier](https://huggingface.co/opena2a/nanomind-security-classifier) | Public | Mamba TME | 97.01% | Latest (v0.3.0) |
+| nanomind-mcp-analyzer | Internal | Planned | -- | Planned |
+| nanomind-trust-scorer | Internal | Planned | -- | Planned |
+| nanomind-runtime-guard | Internal | Planned | -- | Planned |
+
+Model versions tracked in [`nanomind-models.json`](nanomind-models.json). Publishing automated via GitHub Actions.
+
+
+---
+
+## CLI Mode
+
+NanoMind replaces the help screen when a CLI tool is run with no arguments. It classifies natural language into one of 16 intent types and routes to the appropriate command.
+
+### Intent Classification
+
+```typescript
+import { classifyIntent, mapToCommand } from '@nanomind/router';
+
+const result = classifyIntent('scan this project for vulnerabilities');
+// { intent: 'SCAN', confidence: 0.85, entities: {} }
+
+const cmd = mapToCommand(result, 'hma');
+// { command: 'hma secure', args: ['.'], description: 'Run security scan' }
+```
+
+### 16 Intent Types
+
+| Category | Intents |
+|----------|---------|
+| Security | SCAN, FIX, EXPLAIN, COMPARE, STATUS, SECRETS_EXPOSE |
+| Generation | GENERATE (9 CI/CD artifact types) |
+| Trust (ATC) | TRUST_QUERY, ATC_STATUS, RISK_SCORE, REVOCATION, EXPOSURE, ATTEST |
+| General | HELP, CONFIG, NAVIGATE |
+
+### Prompt Injection Guard
+
+All non-direct input (piped, file, agent output) is screened before routing:
+
+```typescript
+import { screenInput } from '@nanomind/guard';
+
+screenInput('ignore previous instructions', 'piped');
+// { safe: false, patterns: [{ type: 'instruction_override', severity: 'critical' }] }
+```
+
+Detects: instruction override, role switching, permission escalation, zero-width character injection, encoded payloads.
+
+### Teach Mode
+
+7-step guided onboarding for new users:
+
+1. Detect project type
+2. Run HMA scan, explain findings
+3. Offer auto-fix with rollback
+4. Generate CI/CD artifact
+5. Show current trust level (if registered)
+6. Explain ATC and trust levels
+7. Generate build attestation config
+
+### CI/CD Artifact Generation
+
+9 artifact types: GitHub Actions, GitLab CI, Azure Pipelines, CircleCI, Docker Compose, Dockerfile, pre-commit, Makefile, ATC build-action.
 
 ---
 
 ## Runtime Mode
 
-NanoMind-Runtime is the L1 behavioral anomaly detection layer for ARP (Agent Runtime Protection). Statistical model, sub-2ms inference, no LLM.
+NanoMind-Runtime is the L1 behavioral anomaly detection layer for ARP. It does not use a language model — it uses a lightweight statistical model for sub-2ms inference.
+
+### Three-Tier ARP Model
+
+| Tier | Layer | Latency | What |
+|------|-------|---------|------|
+| L0 | Rule-based | microseconds | Capability enforcement |
+| **L1** | **NanoMind-Runtime** | **milliseconds** | **Behavioral anomaly detection** |
+| L2 | Fleet intelligence | continuous | Federated model improvement |
+
+### Anomaly Detection
 
 ```typescript
 import { NanoMindRuntime } from '@nanomind/runtime';
@@ -165,61 +147,80 @@ const result = runtime.processEvent({
   capability: 'db:read',
   timestampDelta: 50,
   l0Decision: 'allow',
+  // ...
 });
-// result.score: 0.0 (normal) to 1.0 (anomalous)
+
+// result.score: 0.0 (normal) → 1.0 (anomalous)
 // result.action: 'allow' | 'alert' | 'throttle' | 'suspend' | 'kill'
 ```
 
-**How it works:**
-1. First 100 events build a behavioral baseline (Welford's online algorithm)
-2. 6-factor anomaly scoring: unknown capability, timing anomaly, burst, L0 escalation, rare event, error spike
-3. 5-tier response: allow -> alert -> throttle -> suspend -> kill
+### How It Works
+
+1. **Baseline learning**: First 100 events build a behavioral baseline using Welford's online algorithm
+2. **6-factor anomaly scoring**: unknown capability, timing anomaly, burst detection, L0 escalation, rare event type, error spike
+3. **5-tier response**: allow → alert → throttle → suspend → kill
+4. **Sub-2ms latency**: Statistical model, no LLM
+
+### Federated Learning
+
+Gradients submitted with differential privacy to the OpenA2A Registry for fleet-wide model improvement:
+
+```typescript
+import { addDifferentialPrivacy, submitGradient } from '@nanomind/runtime/fleet';
+
+const noisy = addDifferentialPrivacy(gradient, { epsilon: 1.0 });
+await submitGradient(noisy, eventCount, loss);
+```
+
+- Raw behavioral events never leave the endpoint
+- Gaussian noise (ε=1.0, δ=1e-5)
+- Gradient clipping (L2 norm ≤ 1.0)
 
 ---
 
-## CLI Mode
+## Integration Adapters
 
-When a supported CLI tool runs with no arguments, NanoMind provides natural language intent routing:
+| Tool | Adapter | What Happens |
+|------|---------|-------------|
+| HackMyAgent | `integrations/hma/` | `hma` with no args → NanoMind interactive |
+| secretless-ai | `integrations/secretless-ai/` | `secretless-ai` with no args → NanoMind |
+| OpenA2A CLI | `integrations/opena2a/` | Cross-product router |
+| ARP | `integrations/arp/` | NanoMindL1 attaches to EventEngine |
 
-```
-hma > scan this project
-  > Running: hma secure .
-
-hma > why is my agent level 2
-  Your agent is trust level 2 because:
-    Missing: Build attestation (+80 pts supply chain)
-    Fix: Add opena2a/build-action to your CI pipeline.
-```
-
-16 intent types across 4 categories: Security (SCAN, FIX, EXPLAIN, COMPARE, STATUS), Generation (9 CI/CD artifact types), Trust (TRUST_QUERY, ATC_STATUS, RISK_SCORE), General (HELP, CONFIG).
-
-All non-direct input screened for prompt injection via `@nanomind/guard`.
+`--no-smart` always restores raw CLI behavior. `--help` is never intercepted.
 
 ---
 
-## Model Versions
+## Open Protocol
 
-| Version | Accuracy | Corpus | Architecture | Status |
-|---------|----------|--------|-------------|--------|
-| v0.5.0 | 98.44% | sft-v8 (4,500 samples, 58% real) | Mamba TME + dropout | **latest** |
-| v0.4.0 | 93.89% | sft-v7 (1,440 samples) | Mamba TME | stable |
-| v0.2.0 | 97.01% | sft-v4 (822 samples) | Mamba TME | deprecated |
-| v0.1.0 | 86% | sft-v4 (822 samples) | MLP (3 layers) | deprecated |
+NanoMind is an open protocol (MIT). Any CLI tool can implement the adapter interface:
 
-Full version history in [`nanomind-models.json`](nanomind-models.json).
+```typescript
+interface NanoMindCLIAdapter {
+  cliName: string;
+  cliVersion: string;
+  getCommandManifest(): CommandManifest;
+  executeCommand(cmd: string): Promise<ExecutionResult>;
+  getScanHistory(): ScanHistoryEntry[];
+  getATCData?(): ATCData;
+}
+```
+
+See [NANOMIND-SPEC.md](spec/NANOMIND-SPEC.md) for the full specification.
 
 ---
 
 ## Testing
 
 ```bash
-# All tests
+# All tests (56 total)
 npx tsx --test packages/nanomind-guard/src/guard.test.ts \
   packages/nanomind-router/src/router.test.ts \
   packages/nanomind-cli/src/cli.test.ts \
-  packages/nanomind-runtime/src/runtime.test.ts
+  packages/nanomind-runtime/src/runtime.test.ts \
+  packages/nanomind-runtime/src/fleet.test.ts
 
-# E2E runtime lifecycle
+# E2E: full runtime lifecycle including production gradient submission
 npx tsx --test packages/nanomind-runtime/src/e2e.test.ts
 ```
 
@@ -227,10 +228,9 @@ npx tsx --test packages/nanomind-runtime/src/e2e.test.ts
 
 ## Related
 
-- [HackMyAgent](https://github.com/opena2a-org/hackmyagent) -- 108-check security scanner (NanoMind powers `--deep` mode)
-- [nanomind-training](https://github.com/opena2a-org/nanomind-training) -- Training pipeline, corpus, Claude review
-- [OpenA2A Registry](https://github.com/opena2a-org/opena2a-registry) -- Central intelligence hub
-- [HuggingFace Model](https://huggingface.co/opena2a/nanomind-security-classifier)
+- [OpenA2A Registry](https://github.com/opena2a-org/opena2a-registry) — issues ATCs, hosts fleet intelligence
+- [HackMyAgent](https://github.com/opena2a-org/hackmyagent) — 204-check security scanner
+- [Agent Threat Matrix](https://github.com/opena2a-org/agent-threat-matrix) — 57 techniques, 36 attack classes
 
 ## License
 

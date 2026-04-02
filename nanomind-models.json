@@ -7,8 +7,8 @@
       "license": "Apache-2.0",
       "huggingface": {
         "repoId": "opena2a/nanomind-security-classifier",
-        "publishedVersion": "0.5.0",
-        "lastPublished": "2026-04-02T01:43:20.557032+00:00"
+        "publishedVersion": "0.3.0",
+        "lastPublished": "2026-04-01T14:11:44.187511+00:00"
       },
       "versions": {
         "0.1.0": {
@@ -63,119 +63,10 @@
             "classes": 9
           },
           "corpus": "sft-v5",
-          "status": "stable"
-        },
-        "0.4.0": {
-          "architecture": "Mamba TME (8 blocks, d_model=128, d_state=64)",
-          "modelDir": "training/models-tme-v4",
-          "files": [
-            "nanomind-tme-classifier.npz",
-            "nanomind-tme.onnx",
-            "nanomind-tme.onnx.data",
-            "tokenizer.json"
-          ],
-          "metrics": {
-            "evalAccuracy": 0.9389,
-            "trainSamples": 1440,
-            "evalSamples": 180,
-            "classes": 9,
-            "perClass": {
-              "exfiltration": {
-                "f1": 0.81
-              },
-              "injection": {
-                "f1": 1.0
-              },
-              "privilege_escalation": {
-                "f1": 0.97
-              },
-              "persistence": {
-                "f1": 0.97
-              },
-              "credential_abuse": {
-                "f1": 0.97
-              },
-              "lateral_movement": {
-                "f1": 0.92
-              },
-              "social_engineering": {
-                "f1": 1.0
-              },
-              "policy_violation": {
-                "f1": 0.93
-              },
-              "benign": {
-                "f1": 0.84
-              }
-            }
-          },
-          "corpus": "sft-v7",
-          "status": "stable"
-        },
-        "0.5.0": {
-          "architecture": "Mamba TME (8 blocks, d_model=128, d_state=64, dropout=0.1)",
-          "modelDir": "training/models-tme-v5",
-          "files": [
-            "nanomind-tme-classifier.npz",
-            "nanomind-tme.onnx",
-            "nanomind-tme.onnx.data",
-            "tokenizer.json"
-          ],
-          "metrics": {
-            "evalAccuracy": 0.9844,
-            "holdoutAccuracy": 0.9844,
-            "macroF1": 0.984,
-            "trainSamples": 3600,
-            "evalSamples": 450,
-            "holdoutSamples": 450,
-            "classes": 9,
-            "perClass": {
-              "exfiltration": {
-                "f1": 0.98
-              },
-              "injection": {
-                "f1": 0.97
-              },
-              "privilege_escalation": {
-                "f1": 1.0
-              },
-              "persistence": {
-                "f1": 0.99
-              },
-              "credential_abuse": {
-                "f1": 0.99
-              },
-              "lateral_movement": {
-                "f1": 1.0
-              },
-              "social_engineering": {
-                "f1": 0.99
-              },
-              "policy_violation": {
-                "f1": 0.971
-              },
-              "benign": {
-                "f1": 0.969
-              }
-            }
-          },
-          "corpus": "sft-v8",
-          "sha256": {
-            "tokenizer.json": "958f798cc9ad53dcd3cc0a91a4304f3c8db905b956c64c66e6e041775e9a4d9d",
-            "nanomind-tme.onnx": "1c44d3600bfd72961588adce0c3bbe2c39a2a13d51e96e3e3b19b74313d8ddb1",
-            "nanomind-tme.onnx.data": "1abf1087c32e1735aae1ca103a9f9b66c8b7630a31bc9eadcb26de0bb98172cc"
-          },
-          "improvements": [
-            "Trained on v8 corpus (4500 samples from 5+ real sources, 58% real data)",
-            "Mini-batch training with cosine LR schedule",
-            "Dropout regularization (0.1)",
-            "Early stopping on eval loss",
-            "All 9 classes F1 >= 0.90 (up from 0.81 min in v4)"
-          ],
           "status": "latest"
         }
       },
-      "latestVersion": "0.5.0",
+      "latestVersion": "0.3.0",
       "consumers": [
         "hackmyagent",
         "opena2a-cli"
