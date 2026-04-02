@@ -55,7 +55,7 @@ nanomind-daemon stop
 
 | Model | Visibility | Architecture | Accuracy | Status |
 |-------|-----------|--------------|----------|--------|
-| [nanomind-security-classifier](https://huggingface.co/opena2a/nanomind-security-classifier) | Public | Mamba TME | 93.89% | Latest (v0.4.0) |
+| [nanomind-security-classifier](https://huggingface.co/opena2a/nanomind-security-classifier) | Public | Mamba TME | 98.44% | Latest (v0.5.0) |
 | nanomind-mcp-analyzer | Internal | Planned | -- | Planned |
 | nanomind-trust-scorer | Internal | Planned | -- | Planned |
 | nanomind-runtime-guard | Internal | Planned | -- | Planned |
