@@ -45,7 +45,7 @@ jobs:
         run: python training/scripts/push-to-huggingface.py --dry-run
 
       - name: Publish to HuggingFace
-        if: ${{ !inputs.dry_run }}
+        if: ${{ inputs.dry_run != true }}
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
@@ -59,7 +59,7 @@ jobs:
           python training/scripts/push-to-huggingface.py $ARGS
 
       - name: Commit manifest updates
-        if: ${{ !inputs.dry_run }}
+        if: ${{ inputs.dry_run != true }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -73,7 +73,7 @@ jobs:
 
   notify-consumers:
     needs: publish
-    if: ${{ !inputs.dry_run }}
+    if: ${{ inputs.dry_run != true }}
     runs-on: ubuntu-latest
     steps:
       - name: Notify HackMyAgent
