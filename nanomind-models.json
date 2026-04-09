@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "models": {
     "nanomind-security-classifier": {
-      "description": "Base 9-class threat classifier for AI agent security scanning",
+      "description": "Base 10-class threat classifier for AI agent security scanning",
       "visibility": "public",
       "license": "Apache-2.0",
       "huggingface": {
@@ -63,10 +63,35 @@
             "classes": 9
           },
           "corpus": "sft-v5",
-          "status": "latest"
+          "status": "stable"
+        },
+        "0.4.0": {
+          "architecture": "Mamba TME (8 blocks, d_model=128, d_state=64)",
+          "modelDir": "training/models-tme-v6",
+          "files": [
+            "nanomind-tme-classifier.npz",
+            "nanomind-tme.onnx",
+            "nanomind-tme.onnx.data",
+            "tokenizer.json"
+          ],
+          "metrics": {
+            "evalAccuracy": 0.9673,
+            "macroF1": 0.9487,
+            "trainSamples": 3337,
+            "evalSamples": 398,
+            "classes": 10
+          },
+          "corpus": "sft-v9",
+          "vocabSize": 6000,
+          "status": "latest",
+          "sha256": {
+            "tokenizer.json": "5ace7e6441505cf24dfb84d10b237c66edccaece075b3c5b0736c007d65355ce",
+            "nanomind-tme.onnx": "cf6c38ba2fcbea34b1ba9bd11ce7d93f8bca9cc583eedcc39ff29b6d415f0613",
+            "nanomind-tme.onnx.data": "2baea7d74a289fe40ba005a9a5129939e69d8e2d3cfcb633ffff802b153f53e3"
+          }
         }
       },
-      "latestVersion": "0.3.0",
+      "latestVersion": "0.4.0",
       "consumers": [
         "hackmyagent",
         "opena2a-cli"
@@ -116,6 +141,7 @@
     "lateral_movement",
     "social_engineering",
     "policy_violation",
-    "benign"
+    "benign",
+    "steganography"
   ]
 }
