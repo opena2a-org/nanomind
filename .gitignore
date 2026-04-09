@@ -2,5 +2,6 @@ node_modules/
 dist/
 *.tgz
 training/
+Makefile
 packages/nanomind-daemon/node_modules/
 packages/nanomind-daemon/dist-test/
