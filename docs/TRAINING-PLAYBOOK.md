@@ -56,7 +56,54 @@ nanomind-training/                 # Training data (separate private repo)
   benchmarks/                     # Benchmark datasets
 ```
 
-## 3. Training Pipeline
+## 3. Data Collection (before training)
+
+### Step 0: Collect Data from Registry Pipeline
+
+For models beyond the initial local corpus, the Registry is the primary data source. This step is optional for small iterations but **mandatory for reaching 99.999%**.
+
+```bash
+# Export labeled training data from Registry (requires INTERNAL_API_KEY)
+# Sources: registry scans, agentpwn confirmed attacks, ARIA findings, HMA evidence
+curl -H "X-Internal-Key: $INTERNAL_API_KEY" \
+  "https://api.oa2a.org/internal/nanomind/training-export?sources=registry,agentpwn,aria,hma&since=2026-01-01&limit=50000" \
+  -o registry-export.json
+
+# Or use the collection script (collects skill packages as training data)
+node scripts/collect-skills-corpus.js \
+  --registry-url=https://api.oa2a.org \
+  --limit=50000
+```
+
+**Quality review of Registry exports:**
+
+| Confidence | Action |
+|-----------|--------|
+| >= 0.90 | Auto-include (Registry scans with critical findings, AgentPwn confirmed) |
+| 0.85 - 0.90 | Auto-include with spot-check (10% sample review) |
+| 0.60 - 0.85 | Manual review required (warnings, edge cases) |
+| < 0.60 | Exclude or escalate to Claude for relabeling |
+
+**Merge with local corpus:**
+
+```python
+# Deduplicate by content hash
+import hashlib
+existing_hashes = set(hashlib.sha256(s['input'].encode()).hexdigest() for s in local_corpus)
+new_samples = [s for s in registry_export if hashlib.sha256(s['input'].encode()).hexdigest() not in existing_hashes]
+combined = local_corpus + new_samples
+```
+
+**Check feedback corrections:**
+
+```bash
+# Get recent corrections that indicate model confusion
+curl -H "X-Internal-Key: $INTERNAL_API_KEY" \
+  "https://api.oa2a.org/api/v1/nanomind/stats"
+# Review: correctionsLast7Days by class -- these are the highest-priority training gaps
+```
+
+## 4. Training Pipeline
 
 ### Step 1: Verify Corpus
 
@@ -221,7 +268,7 @@ hackmyagent/src/nanomind-core/inference/tme-classifier.ts
   - CLASSES array (add new classes)
 ```
 
-## 4. Troubleshooting
+## 5. Troubleshooting
 
 ### Problem: Model overfits (100% train, <90% eval)
 
@@ -273,7 +320,7 @@ hackmyagent/src/nanomind-core/inference/tme-classifier.ts
 3. Verify with onnxruntime: the script includes a verification step
 4. If verification fails, check that `num_classes` in the export script matches training
 
-## 5. Data Augmentation Strategy
+## 6. Data Augmentation Strategy
 
 When the training corpus is too small or imbalanced:
 
@@ -310,7 +357,7 @@ When production inference pipeline is running:
 3. Reviewed samples feed into next training corpus
 4. Prioritize samples near decision boundaries
 
-## 6. Reproducibility Checklist
+## 7. Reproducibility Checklist
 
 Every training run must be reproducible. Before considering a training run complete:
 
@@ -323,7 +370,7 @@ Every training run must be reproducible. Before considering a training run compl
 - [ ] SHA-256 hashes recorded
 - [ ] nanomind-models.json updated
 
-## 7. Quick Reference
+## 8. Quick Reference
 
 ### Train a model
 ```bash
