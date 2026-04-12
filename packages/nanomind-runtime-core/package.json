@@ -1,0 +1,35 @@
+{
+  "name": "@nanomind/runtime-core",
+  "private": true,
+  "version": "0.1.0",
+  "description": "NanoMind RuntimeTwin: behavioral twin (LSTM) for ARP anomaly detection. Canonical home of the LSTM scorer referenced in NANOMIND_V3_AUDIT.md Section 9 item 1.",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "node --test --experimental-strip-types src/runtime-twin.test.ts"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/opena2a-org/nanomind.git",
+    "directory": "packages/nanomind-runtime-core"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "nanomind",
+    "runtime-twin",
+    "behavioral-anomaly",
+    "ai-security",
+    "agent-trust",
+    "opena2a"
+  ],
+  "author": "OpenA2A <hello@opena2a.org>",
+  "files": [
+    "dist/",
+    "src/",
+    "README.md"
+  ]
+}
