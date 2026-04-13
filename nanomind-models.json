@@ -143,8 +143,21 @@
             "config.json",
             "tokenizer.json",
             "tokenizer_config.json",
-            "chat_template.jinja"
+            "chat_template.jinja",
+            "nanomind-security-analyst.Q4_K_M.gguf"
           ],
+          "formats": {
+            "safetensors": {
+              "size": "1.8GB",
+              "backend": "MLX (Apple Silicon)"
+            },
+            "gguf": {
+              "filename": "nanomind-security-analyst.Q4_K_M.gguf",
+              "quantization": "Q4_K_M",
+              "size": "544MB",
+              "backend": "llama.cpp (cross-platform)"
+            }
+          },
           "metrics": {
             "classificationAccuracy": 0.824,
             "structureScore": 0.822,
