@@ -130,8 +130,8 @@
       "license": "Apache-2.0",
       "huggingface": {
         "repoId": "opena2a/nanomind-security-analyst",
-        "publishedVersion": null,
-        "lastPublished": null
+        "publishedVersion": "0.1.0",
+        "lastPublished": "2026-04-13T04:58:27+00:00"
       },
       "versions": {
         "0.1.0": {
