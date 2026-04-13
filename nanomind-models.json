@@ -8,7 +8,7 @@
       "huggingface": {
         "repoId": "opena2a/nanomind-security-classifier",
         "publishedVersion": "0.5.0",
-        "lastPublished": "2026-04-09T20:52:22.235034+00:00"
+        "lastPublished": "2026-04-09T23:54:09.858568+00:00"
       },
       "versions": {
         "0.1.0": {
@@ -122,6 +122,46 @@
       "consumers": [
         "hackmyagent",
         "opena2a-cli"
+      ]
+    },
+    "nanomind-security-analyst": {
+      "description": "Generative structured security analysis model for AI agent configs, MCP servers, and tool definitions",
+      "visibility": "public",
+      "license": "Apache-2.0",
+      "huggingface": {
+        "repoId": "opena2a/nanomind-security-analyst",
+        "publishedVersion": "0.1.0",
+        "lastPublished": "2026-04-13T04:58:27+00:00"
+      },
+      "versions": {
+        "0.1.0": {
+          "architecture": "SmolLM2-1.7B-Instruct 12L, LoRA r64 SFT fused",
+          "modelDir": "training/artifacts/nanomind-v3-12L-sft-r64-v2",
+          "files": [
+            "model.safetensors",
+            "model.safetensors.index.json",
+            "config.json",
+            "tokenizer.json",
+            "tokenizer_config.json",
+            "chat_template.jinja"
+          ],
+          "metrics": {
+            "classificationAccuracy": 0.824,
+            "structureScore": 0.822,
+            "trainSamples": 2668,
+            "evalSamples": 332,
+            "taskTypes": 7
+          },
+          "corpus": "instruct-v3-enriched",
+          "status": "latest",
+          "changelog": "First generative security analyst model. 12L SmolLM2 base, LoRA rank-64. 7 task types: threatAnalysis, credentialContextClassification, falsePositiveDetection, artifactClassification, checkExplanation, governanceReasoning, intelReport."
+        }
+      },
+      "latestVersion": "0.1.0",
+      "consumers": [
+        "hackmyagent",
+        "opena2a-cli",
+        "ai-trust"
       ]
     },
     "nanomind-mcp-analyzer": {
