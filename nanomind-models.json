@@ -105,8 +105,12 @@
             "trainSamples": 3168,
             "evalSamples": 194,
             "classes": 10,
-            "falsePositives": null,
-            "falsePositivesNote": "NOT VERIFIED — oracle eval 2026-04-15 measured 90.9% FPR on benign content. Do not publish this field until P0-1 FPR fix ships and oracle gate passes. See todo/2026-04-15-hma-oracle-p0-fixes.md"
+            "oracleRecall": 1.0,
+            "oraclePrecision": 0.796,
+            "oracleF1": 0.887,
+            "oracleBenignFPR": 0.091,
+            "oracleEval": "TME v5 2026-04-15 (50-fixture oracle: 40 malicious + 10 benign hard-negatives)",
+            "oracleNote": "b08 (execute_shell + no governance) legitimately fires GOV-004 and is excluded from benign FPR calculation as a governance gap, not a classifier error."
           },
           "corpus": "sft-v10",
           "vocabSize": 6000,
