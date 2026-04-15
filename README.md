@@ -55,10 +55,13 @@ nanomind-daemon stop
 
 | Model | Visibility | Architecture | Accuracy | Status |
 |-------|-----------|--------------|----------|--------|
-| [nanomind-security-classifier](https://huggingface.co/opena2a/nanomind-security-classifier) | Public | Mamba TME (10 classes) | 98.45% | Latest (v0.5.0) |
+| [nanomind-security-classifier](https://huggingface.co/opena2a/nanomind-security-classifier) | Public | Mamba TME (10 classes) | 98.45% | Production (v0.5.0) |
+| nanomind-security-analyst | Internal | Qwen3-1.7B SFT (10 classes) | 70.0% oracle 10-way, 97.8% binary | RC1 (v3.0.0-rc1 — internal validation) |
 | nanomind-mcp-analyzer | Internal | Planned | -- | Planned |
 | nanomind-trust-scorer | Internal | Planned | -- | Planned |
 | nanomind-runtime-guard | Internal | Planned | -- | Planned |
+
+> **v0.5.0 remains production.** v3.0.0-rc1 (Qwen3-1.7B SFT) is available for internal HMA integration validation. Two gate failures are documented in the model card: off-topic refusal (34%, not blocking for HMA) and FP-suppression on benign security code (57%, human review recommended for security library scans). Production promotion to v3.0.0 requires FP-suppression gate pass or explicit CPO sign-off.
 
 Model versions tracked in [`nanomind-models.json`](nanomind-models.json). Publishing automated via GitHub Actions.
 
