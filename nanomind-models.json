@@ -174,13 +174,16 @@
           "status": "latest",
           "changelog": "First generative security analyst model. 12L SmolLM2 base, LoRA rank-64. 7 task types: threatAnalysis, credentialContextClassification, falsePositiveDetection, artifactClassification, checkExplanation, governanceReasoning, intelReport."
         },
-        "3.0.0-rc1": {
+        "3.0.0-beta": {
           "architecture": "Qwen3-1.7B LoRA r=64 SFT fused (bfloat16)",
           "modelDir": "models/nanomind-v3-qwen3-1.7B-sft-r64",
-          "modelArtifact": "nanomind-training (private), tag v3.0.0-rc1",
+          "modelArtifact": "nanomind-training (private), tag v3.0.0-beta",
+          "publishedAt": "2026-04-16",
           "sizeGB": 3.44,
           "dtype": "bfloat16",
           "inferenceDevice": "Apple MPS (bfloat16 required)",
+          "servingRuntime": "NanoMind-Guard daemon (PR #14, f98e649) over /tmp/nanomind-guard.sock",
+          "inputGate": "v3.1 input-classifier gate (PR #13, 1e90bf8) — MiniLM-L6 + sklearn LR @ threshold 0.65 + byte-level BIDI/stego pre-filter",
           "metrics": {
             "oracleCanon10Way": 0.7000,
             "oracleBinary": 0.978,
@@ -199,18 +202,19 @@
             "oracleBinary": "PASS",
             "oracleAttackOnly9Way": "PASS",
             "internal332Sample": "PASS",
-            "refusalOffTopic": "FAIL — 34.0% vs ≥90% (specialist model, HMA pre-filters inputs)",
+            "refusalOffTopicNlmStandalone": "FAIL — 34.0% vs ≥90% (specialist model)",
+            "refusalOffTopicE2eWithGate": "PASS — 92.0% with v3.1 input-classifier gate in front (64% pre-gate)",
             "refusalInDomain": "PASS — 100.0%",
             "fpSuppression": "FAIL — 57.0% vs ≥95% (security-adjacent benign over-classified)"
           },
           "corpus": "instruct-v3-enriched",
-          "status": "rc1",
+          "status": "beta",
           "modelCard": "models/nanomind-v3-qwen3-1.7B-sft-r64/MODEL-CARD.md",
-          "changelog": "Base swap from SmolLM2-12L to Qwen3-1.7B. LR 2e-5 SFT, LoRA r=64. Oracle 10-way +34.4 pp, binary +19.6 pp vs v0.1.0 (SmolLM2). Persistence class added to canonical classes. RC1: two gate failures documented (off-topic refusal, FP-suppression on benign security code). For HMA internal validation only until v3.0.0."
+          "changelog": "Beta retag of rc1 per [CDS-022] on 2026-04-16. Base swap from SmolLM2-12L to Qwen3-1.7B. LR 2e-5 SFT, LoRA r=64. Oracle 10-way +34.4 pp, binary +19.6 pp vs v0.1.0 (SmolLM2). Persistence class added to canonical classes. Beta: two gate failures documented (off-topic refusal at NLM layer — addressed e2e by v3.1 gate; FP-suppression on benign security code — requires corpus rebalance). For HMA internal validation only until v3.0.0."
         }
       },
       "latestStable": "0.1.0",
-      "latestVersion": "3.0.0-rc1",
+      "latestVersion": "3.0.0-beta",
       "consumers": [
         "hackmyagent",
         "opena2a-cli",

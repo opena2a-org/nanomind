@@ -1,11 +1,13 @@
 # Model Card: nanomind-v3-qwen3-1.7B-sft-r64
 
-**Released:** 2026-04-15
-**Status:** rc1 (internal validation — NOT production)
+**Released:** 2026-04-16 (beta retag of rc1)
+**Status:** v3.0.0-beta (internal validation — NOT production)
 **Base Model:** Qwen3-1.7B (Qwen3 license)
 **Previous Production:** nanomind-security-classifier v0.5.0 (Mamba TME, remains production until v3.0.0)
-**Training Repo:** nanomind-training (private), tag v3.0.0-rc1
-**[CDS-020] Decision:** rc1, 2026-04-15
+**Training Repo:** nanomind-training (private), tag v3.0.0-beta
+**Serving Runtime:** NanoMind-Guard daemon (PR #14, f98e649) — `/tmp/nanomind-guard.sock` over JSON-Lines
+**Input Gate:** v3.1 input-classifier gate (PR #13, 1e90bf8) — MiniLM-L6 + sklearn LR @ threshold 0.65 + byte-level BIDI/stego pre-filter
+**[CDS-022] Decision:** beta, 2026-04-16 (ship with 2 failing gates documented)
 
 ## Summary
 
@@ -16,9 +18,11 @@ model produces structured analysis (Analysis / Verdict / Evidence / Remediation 
 an explicit `attackClass` and `classification` label.
 
 Oracle 10-way canonicalized accuracy: 70.0% (≥70% ship gate exact). Binary threat detection:
-97.8% (+19.6 pp vs v2). Internal 332-sample accuracy: 94.24%. Shipping as rc1 for internal
-HMA integration validation; two gate failures (off-topic refusal, FP-suppression) are documented
-limitations that do not block the HMA use case but require corpus rebalance before v3.0.0 public release.
+97.8% (+19.6 pp vs v2). Internal 332-sample accuracy: 94.24%. Shipped as v3.0.0-beta per [CDS-022]
+with two documented gate failures: (1) NLM-standalone off-topic refusal 34% — addressed
+end-to-end by the v3.1 input-classifier gate which lifts e2e off-topic refusal to 92%; (2)
+FP-suppression on benign security code 57% — requires corpus rebalance before v3.0.0 public
+release. For HMA internal validation only until FP-suppression gate passes or explicit CPO sign-off.
 
 ## Architecture
 
