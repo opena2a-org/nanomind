@@ -56,12 +56,12 @@ nanomind-daemon stop
 | Model | Visibility | Architecture | Accuracy | Status |
 |-------|-----------|--------------|----------|--------|
 | [nanomind-security-classifier](https://huggingface.co/opena2a/nanomind-security-classifier) | Public | Mamba TME (10 classes) | Recall 100%, Precision 79.6%, F1 88.7%, Benign FPR 9.1% (oracle-verified, TME v5 2026-04-15) | Production (v0.5.0) |
-| nanomind-security-analyst | Internal | Qwen3-1.7B SFT (10 classes) | 70.0% oracle 10-way, 97.8% binary | RC1 (v3.0.0-rc1 — internal validation) |
+| nanomind-security-analyst | Internal | Qwen3-1.7B SFT (10 classes) | 70.0% oracle 10-way, 97.8% binary | Beta (v3.0.0-beta — internal validation, published 2026-04-16) |
 | nanomind-mcp-analyzer | Internal | Planned | -- | Planned |
 | nanomind-trust-scorer | Internal | Planned | -- | Planned |
 | nanomind-runtime-guard | Internal | Planned | -- | Planned |
 
-> **v0.5.0 remains production.** v3.0.0-rc1 (Qwen3-1.7B SFT) is available for internal HMA integration validation. Two gate failures are documented in the model card: off-topic refusal (34%, not blocking for HMA) and FP-suppression on benign security code (57%, human review recommended for security library scans). Production promotion to v3.0.0 requires FP-suppression gate pass or explicit CPO sign-off.
+> **v0.5.0 remains production.** v3.0.0-beta (Qwen3-1.7B SFT, published 2026-04-16 as git tag `v3.0.0-beta`) is available for internal HMA integration validation. Two gate failures are documented in the model card: off-topic refusal at the NLM layer (34%, addressed end-to-end by the v3.1 input-classifier gate which raises it to 92%, PR #13) and FP-suppression on benign security code (57%, human review recommended for security library scans). Production promotion to v3.0.0 requires FP-suppression gate pass or explicit CPO sign-off. Serving runtime: NanoMind-Guard daemon (PR #14, Phase 2b) over `/tmp/nanomind-guard.sock`.
 
 Model versions tracked in [`nanomind-models.json`](nanomind-models.json). Publishing automated via GitHub Actions.
 
