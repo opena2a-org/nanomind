@@ -58,10 +58,13 @@ jobs:
           publish_if_new packages/nanomind-engine @nanomind/engine
           publish_if_new packages/nanomind-guard @nanomind/guard
           publish_if_new packages/nanomind-router @nanomind/router
-          publish_if_new packages/nanomind-runtime-core @nanomind/runtime-core
-          publish_if_new integrations/hma @nanomind/hma-adapter
-          publish_if_new integrations/opena2a @nanomind/opena2a-adapter
-          publish_if_new integrations/secretless-ai @nanomind/secretless-adapter
+          # Trusted Publisher config pending on npmjs.com for the 4 lines below.
+          # Re-enable in a follow-up PR once TPs are configured (see
+          # todo/2026-04-24-nanomind-stage2-first-tag.md step 3).
+          # publish_if_new packages/nanomind-runtime-core @nanomind/runtime-core
+          # publish_if_new integrations/hma @nanomind/hma-adapter
+          # publish_if_new integrations/opena2a @nanomind/opena2a-adapter
+          # publish_if_new integrations/secretless-ai @nanomind/secretless-adapter
           echo "=== Published this run ==="
           cat /tmp/published.txt
           echo "=== Skipped (version already on npm) ==="
