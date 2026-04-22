@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { screenInput } from './index';
+import { screenInput } from './index.ts';
 
 describe('NanoMind Guard', () => {
   it('allows direct input', () => {

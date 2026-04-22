@@ -1,6 +1,6 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
-import { NanoMindDaemon } from './server.js';
+import { NanoMindDaemon } from './server.ts';
 
 describe('NanoMindDaemon', () => {
   let daemon: NanoMindDaemon;
