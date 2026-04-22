@@ -8,7 +8,7 @@ on:
       - 'integrations/**'
       - 'package.json'
       - 'package-lock.json'
-      - '.github/workflows/ci.yml'
+      - '.github/workflows/**'
 
 concurrency:
   group: ci-${{ github.event.pull_request.number }}
