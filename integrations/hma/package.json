@@ -10,5 +10,17 @@
   "dependencies": {
     "@nanomind/cli": "0.1.0"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/opena2a-org/nanomind",
+    "directory": "integrations/hma"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist/",
+    "README.md"
+  ]
 }
