@@ -219,18 +219,18 @@ jobs:
                 messages: [{ role: "user", content: $user }]
               }' > /tmp/request_fallback.json
 
-            cat > /tmp/call_anthropic_fallback.sh <<'CURLSH'
-            #!/bin/bash
-            curl -s -w '%{http_code}' -o /tmp/api_response.json \
-              -X POST "https://api.anthropic.com/v1/messages" \
-              -H "Content-Type: application/json" \
-              -H "x-api-key: $ANTHROPIC_API_KEY" \
-              -H "anthropic-version: 2023-06-01" \
-              -d @/tmp/request_fallback.json
-            CURLSH
-            chmod +x /tmp/call_anthropic_fallback.sh
+          cat > /tmp/call_anthropic_fallback.sh <<'CURLSH'
+          #!/bin/bash
+          curl -s -w '%{http_code}' -o /tmp/api_response.json \
+            -X POST "https://api.anthropic.com/v1/messages" \
+            -H "Content-Type: application/json" \
+            -H "x-api-key: $ANTHROPIC_API_KEY" \
+            -H "anthropic-version: 2023-06-01" \
+            -d @/tmp/request_fallback.json
+          CURLSH
+          chmod +x /tmp/call_anthropic_fallback.sh
 
-            HTTP_CODE=$(secretless-ai run --only ANTHROPIC_API_KEY -- /tmp/call_anthropic_fallback.sh)
+          HTTP_CODE=$(secretless-ai run --only ANTHROPIC_API_KEY -- /tmp/call_anthropic_fallback.sh)
 
             echo "Fallback API response HTTP code: $HTTP_CODE"
 

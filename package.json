@@ -8,7 +8,7 @@
     "integrations/*"
   ],
   "scripts": {
-    "build": "npm run build --workspaces --if-present",
+    "build": "npm run build --workspace=@nanomind/engine --workspace=@nanomind/router && npm run build --workspaces --if-present",
     "test": "npm test --workspaces --if-present",
     "lint": "eslint packages/ integrations/"
   },
