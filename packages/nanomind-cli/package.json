@@ -1,6 +1,6 @@
 {
   "name": "@nanomind/cli",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "NanoMind unified CLI entry point — interactive AI-powered security assistant",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
