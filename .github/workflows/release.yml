@@ -1,0 +1,99 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'atc-v*'
+      - 'cli-v*'
+      - 'daemon-v*'
+      - 'engine-v*'
+      - 'guard-v*'
+      - 'router-v*'
+      - 'runtime-core-v*'
+      - 'hma-adapter-v*'
+      - 'opena2a-adapter-v*'
+      - 'secretless-adapter-v*'
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          registry-url: https://registry.npmjs.org
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+
+      - name: Publish packages (idempotent — skips if version already on npm)
+        id: publish
+        run: |
+          set -e
+          : > /tmp/published.txt
+          : > /tmp/skipped.txt
+          publish_if_new() {
+            local ws="$1"
+            local pkg="$2"
+            local ver
+            ver=$(node -p "require('./$ws/package.json').version")
+            if npm view "$pkg@$ver" version >/dev/null 2>&1; then
+              echo "::notice::$pkg@$ver already on npm — skipping publish"
+              echo "$pkg" >> /tmp/skipped.txt
+            else
+              echo "Publishing $pkg@$ver with provenance..."
+              npm publish --workspace="$ws" --provenance --access public
+              echo "$pkg" >> /tmp/published.txt
+            fi
+          }
+          publish_if_new packages/nanomind-atc @nanomind/atc
+          publish_if_new packages/nanomind-cli @nanomind/cli
+          publish_if_new packages/nanomind-daemon @nanomind/daemon
+          publish_if_new packages/nanomind-engine @nanomind/engine
+          publish_if_new packages/nanomind-guard @nanomind/guard
+          publish_if_new packages/nanomind-router @nanomind/router
+          publish_if_new packages/nanomind-runtime-core @nanomind/runtime-core
+          publish_if_new integrations/hma @nanomind/hma-adapter
+          publish_if_new integrations/opena2a @nanomind/opena2a-adapter
+          publish_if_new integrations/secretless-ai @nanomind/secretless-adapter
+          echo "=== Published this run ==="
+          cat /tmp/published.txt
+          echo "=== Skipped (version already on npm) ==="
+          cat /tmp/skipped.txt
+
+      - name: Verify provenance on newly-published packages
+        run: |
+          verify_attestations() {
+            local pkg="$1"
+            local deadline=$((SECONDS + 300))
+            local attestations=""
+            while [ $SECONDS -lt $deadline ]; do
+              attestations=$(npm view "$pkg" dist.attestations --json 2>&1 || true)
+              if [ -n "$attestations" ] && [ "$attestations" != "null" ] && [ "$attestations" != "{}" ]; then
+                echo "Provenance verified for $pkg"
+                return 0
+              fi
+              echo "Attestations for $pkg not yet visible, retrying in 15s... (elapsed ${SECONDS}s)"
+              sleep 15
+            done
+            echo "::error::Provenance attestations missing from npm for $pkg after 5 minutes"
+            return 1
+          }
+          if [ ! -s /tmp/published.txt ]; then
+            echo "No packages published this run — nothing to verify."
+            exit 0
+          fi
+          while IFS= read -r pkg; do
+            verify_attestations "$pkg" || exit 1
+          done < /tmp/published.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
