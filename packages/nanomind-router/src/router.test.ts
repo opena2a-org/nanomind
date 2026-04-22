@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { classifyIntent, mapToCommand, isATCIntent, isScanIntent } from './index';
+import { classifyIntent, mapToCommand, isATCIntent, isScanIntent } from './index.ts';
 
 describe('NanoMind Router', () => {
   // Scan intents

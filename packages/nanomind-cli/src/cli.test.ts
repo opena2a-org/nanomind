@@ -1,8 +1,8 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { SkillAdapter } from './adapt';
-import { SessionManager } from './session';
-import { generateArtifact, listArtifactTypes, detectArtifactType } from './codegen';
+import { SkillAdapter } from './adapt.ts';
+import { SessionManager } from './session.ts';
+import { generateArtifact, listArtifactTypes, detectArtifactType } from './codegen.ts';
 
 describe('SkillAdapter', () => {
   it('defaults to intermediate', () => {

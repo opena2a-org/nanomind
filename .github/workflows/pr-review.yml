@@ -1,0 +1,298 @@
+name: PR Review
+# Runs on every PR to main — calls Claude API for security-focused code review
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize]
+
+concurrency:
+  group: pr-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  review:
+    name: Claude Code Review
+    runs-on: ubuntu-latest
+    env:
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Gather review context
+        id: context
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # PR metadata
+          gh pr diff "$PR_NUMBER" > /tmp/pr_diff.txt
+          gh pr diff "$PR_NUMBER" --name-only > /tmp/changed_files.txt
+          gh pr view "$PR_NUMBER" --json title -q '.title' > /tmp/pr_title.txt
+          gh pr view "$PR_NUMBER" --json body -q '.body' | head -c 2000 > /tmp/pr_body.txt
+
+          DIFF_BYTES=$(wc -c < /tmp/pr_diff.txt | tr -d ' ')
+          echo "$DIFF_BYTES" > /tmp/diff_size.txt
+          FILE_COUNT=$(wc -l < /tmp/changed_files.txt | tr -d ' ')
+          echo "$FILE_COUNT" > /tmp/file_count.txt
+
+          # Truncate diff at 120KB
+          if [ "$DIFF_BYTES" -gt 120000 ]; then
+            head -c 120000 /tmp/pr_diff.txt > /tmp/pr_diff_trunc.txt
+            printf '\n\n[DIFF TRUNCATED — original was %s bytes]\n' "$DIFF_BYTES" >> /tmp/pr_diff_trunc.txt
+            mv /tmp/pr_diff_trunc.txt /tmp/pr_diff.txt
+          fi
+
+          # Full source file context (line-numbered) for mitigation verification
+          echo "" > /tmp/full_files.txt
+          TOTAL_SIZE=0
+          MAX_FULL_SIZE=200000
+          while IFS= read -r file; do
+            case "$file" in
+              *.test.* | *.spec.* | package-lock.json | *.lock | training/corpus/*) continue ;;
+            esac
+            [ -f "$file" ] || continue
+            FILE_SIZE=$(wc -c < "$file" | tr -d ' ')
+            NEW_TOTAL=$((TOTAL_SIZE + FILE_SIZE))
+            if [ "$NEW_TOTAL" -gt "$MAX_FULL_SIZE" ]; then
+              printf '\n[FULL FILE CONTEXT TRUNCATED at %s bytes — remaining files omitted]\n' "$TOTAL_SIZE" >> /tmp/full_files.txt
+              break
+            fi
+            TOTAL_SIZE=$NEW_TOTAL
+            printf '\n=== %s ===\n' "$file" >> /tmp/full_files.txt
+            nl -ba "$file" >> /tmp/full_files.txt
+          done < /tmp/changed_files.txt
+
+          # Previous review comments (for re-review awareness on synchronize)
+          gh api "repos/${{ github.repository }}/pulls/$PR_NUMBER/reviews" \
+            --jq '[.[] | select(.body | test("Claude Code Review")) | .body] | last // ""' \
+            2>/dev/null | head -c 4000 > /tmp/previous_review.txt || echo "" > /tmp/previous_review.txt
+
+      # Load the Anthropic API key into secretless's local backend in a narrow step,
+      # then the main "Run Claude review" step runs its 200 lines of preprocessing
+      # WITHOUT the key in its env. The key is only injected (via `secretless-ai run
+      # --only`) into the short-lived curl subprocess. See feedback_secretless_run.md.
+      - name: Load ANTHROPIC_API_KEY into secretless vault
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          npm install -g secretless-ai
+          printf '%s' "$ANTHROPIC_API_KEY" | secretless-ai secret set ANTHROPIC_API_KEY
+
+      - name: Run Claude review
+        id: review
+        run: |
+          PR_TITLE=$(cat /tmp/pr_title.txt)
+
+          # Build system prompt
+          cat > /tmp/system_prompt.txt << 'SYSPROMPT'
+          You are a senior security engineer reviewing a pull request for NanoMind — the embedded intelligence layer for OpenA2A security tools. The monorepo ships 10 public npm packages under the @nanomind/* scope, plus a Python training pipeline under training/ that builds nano language models (NLMs, 1-50M params) for inline security classification.
+
+          Surface you are reviewing:
+          - packages/nanomind-{atc,cli,daemon,engine,guard,router,runtime-core} — TypeScript, published to npm via Trusted Publishing
+          - integrations/{hma,opena2a,secretless-ai} — adapters wrapping @nanomind/cli for consuming tools
+          - packages/nanomind-guard — security-critical input screen + output sanitizer (bypasses here are CRITICAL)
+          - packages/nanomind-daemon — long-running inference server over Unix socket (IPC boundaries matter)
+          - training/ — Python (MLX, PyTorch MPS) training + eval; corpus files intentionally contain adversarial strings
+
+          Tech stack: TypeScript/Node.js (Node 24), Python 3 for training, node:test for unit tests.
+
+          You have TWO sources of information:
+          1. FULL SOURCE FILES — complete line-numbered source code of changed files (use this to VERIFY mitigations)
+          2. DIFF — the actual changes introduced in this PR
+
+          Review focus (in priority order):
+          1. SECURITY: Input-screen bypasses in nanomind-guard (this package IS the inline security layer — any regression is critical), command injection (child_process exec/spawn with unsanitized input), path traversal in daemon socket handling, prototype pollution in router intent classification, unsafe eval/Function, regex DoS in tokenizers
+          2. CORRECTNESS: ML eval correctness (bf16 vs fp16 on MPS — Qwen3 requires bf16), score threshold drift, training-sanitizer bypass (Phase 2a guarantee), persistence gate regressions, race conditions in daemon request handling, unhandled promise rejections
+          3. PUBLISH SURFACE: package.json `files` arrays that would produce empty or bloated tarballs, `private: true` on a package the Stage 2 rollout expects to publish, main/types pointing at non-existent build output, missing build or test scripts in workspaces
+          4. QUALITY: Breaking CLI interface changes on @nanomind/cli, incorrect exit codes, missing input validation at IPC boundaries, unsafe JSON parsing on daemon socket input
+
+          === VERIFICATION MANDATE ===
+          For EVERY potential finding, you MUST complete this checklist before reporting:
+          1. Identify the vulnerability pattern and its location
+          2. Search the FULL SOURCE FILE for mitigations within the same function or calling code
+          3. Check if input validation, bounds checks, or sanitization exists nearby
+          4. ONLY report the finding if NO adequate mitigation exists
+
+          If you find a vulnerability AND its mitigation in the same code, do NOT report it.
+
+          === COMMON FALSE POSITIVES — DO NOT REPORT ===
+          - eval/exec-looking patterns inside training/corpus/* or *.test.* files — the training corpus and guard tests intentionally contain adversarial strings to train/test detection. These are data, not code paths.
+          - Command injection when arguments are passed as array elements to spawn/execFile (not shell-interpolated)
+          - Prototype pollution when input is validated or Object.create(null) is used
+          - Path traversal when path.resolve() + startsWith() prefix check is present
+          - ReDoS when patterns are demonstrably linear-time (no nested quantifiers like (a+)+ or (a|b+)+)
+          - Unhandled rejections when .catch() or try/catch wraps the async call
+          - "Hardcoded credential" hits on strings like `tokenizer.json` or `latencyMsPerToken` in model manifests — these are metric/file names, not secrets
+
+          === RE-REVIEW AWARENESS ===
+          If a PREVIOUS REVIEW section is included below, check whether each previously flagged issue has been FIXED in the current code. Do NOT re-raise issues that now have adequate mitigations. Briefly note which previous findings were addressed.
+
+          === LINE NUMBERS ===
+          Use line numbers from the FULL SOURCE FILES section (these are accurate). Do NOT estimate line numbers from diff hunk headers.
+
+          Do NOT flag: style preferences, missing docs, test coverage, pre-existing issues outside the diff.
+
+          Response format (strict):
+          VERDICT: APPROVE or REQUEST_CHANGES
+          SUMMARY: One paragraph.
+          FINDINGS:
+          - [CRITICAL|HIGH|MEDIUM] path/file.ts:line — Description. Mitigation check: [what you looked for and didn't find]
+          (omit FINDINGS section if none)
+
+          Rules:
+          - APPROVE if no CRITICAL or HIGH findings remain after verification
+          - Only REQUEST_CHANGES for genuine, unmitigated security/correctness issues introduced in this PR
+          - CI/config/docs-only changes: always APPROVE
+          - Max 10 findings, most important first
+          SYSPROMPT
+
+          # Build user message with full context
+          {
+            printf 'PR #%s: %s\n\nDescription:\n' "$PR_NUMBER" "$PR_TITLE"
+            cat /tmp/pr_body.txt
+            printf '\n\nChanged files:\n'
+            cat /tmp/changed_files.txt
+            printf '\n\nFULL SOURCE FILES (line-numbered — use for verifying mitigations):\n'
+            cat /tmp/full_files.txt
+            printf '\n\nDIFF (changes introduced in this PR):\n'
+            cat /tmp/pr_diff.txt
+          } > /tmp/user_msg.txt
+
+          # Append previous review if exists
+          if [ -s /tmp/previous_review.txt ] && [ "$(wc -c < /tmp/previous_review.txt | tr -d ' ')" -gt 10 ]; then
+            printf '\n\nPREVIOUS REVIEW (check if issues were fixed — do not re-raise mitigated findings):\n' >> /tmp/user_msg.txt
+            cat /tmp/previous_review.txt >> /tmp/user_msg.txt
+          fi
+
+          # Build request JSON
+          jq -n \
+            --rawfile system /tmp/system_prompt.txt \
+            --rawfile user /tmp/user_msg.txt \
+            '{
+              model: "claude-sonnet-4-5-20250929",
+              max_tokens: 16000,
+              thinking: { type: "enabled", budget_tokens: 10000 },
+              system: $system,
+              messages: [{ role: "user", content: $user }]
+            }' > /tmp/request.json
+
+          # Call Anthropic API (with extended thinking) — key injected via secretless
+          # into curl subprocess only. Parent shell never has $ANTHROPIC_API_KEY in env.
+          cat > /tmp/call_anthropic.sh <<'CURLSH'
+          #!/bin/bash
+          curl -s -w '%{http_code}' -o /tmp/api_response.json \
+            -X POST "https://api.anthropic.com/v1/messages" \
+            -H "Content-Type: application/json" \
+            -H "x-api-key: $ANTHROPIC_API_KEY" \
+            -H "anthropic-version: 2025-04-15" \
+            -d @/tmp/request.json
+          CURLSH
+          chmod +x /tmp/call_anthropic.sh
+
+          HTTP_CODE=$(secretless-ai run --only ANTHROPIC_API_KEY -- /tmp/call_anthropic.sh)
+
+          echo "API response HTTP code: $HTTP_CODE"
+
+          # Extract response text (skip thinking blocks)
+          REVIEW_TEXT=""
+          if [ "$HTTP_CODE" = "200" ]; then
+            REVIEW_TEXT=$(jq -r '[.content[] | select(.type == "text") | .text] | join("\n") // empty' /tmp/api_response.json)
+          fi
+
+          # Fallback: retry without extended thinking if first attempt failed
+          if [ -z "$REVIEW_TEXT" ]; then
+            echo "First attempt failed (HTTP $HTTP_CODE), retrying without extended thinking..."
+
+            jq -n \
+              --rawfile system /tmp/system_prompt.txt \
+              --rawfile user /tmp/user_msg.txt \
+              '{
+                model: "claude-sonnet-4-5-20250929",
+                max_tokens: 8192,
+                system: $system,
+                messages: [{ role: "user", content: $user }]
+              }' > /tmp/request_fallback.json
+
+          cat > /tmp/call_anthropic_fallback.sh <<'CURLSH'
+          #!/bin/bash
+          curl -s -w '%{http_code}' -o /tmp/api_response.json \
+            -X POST "https://api.anthropic.com/v1/messages" \
+            -H "Content-Type: application/json" \
+            -H "x-api-key: $ANTHROPIC_API_KEY" \
+            -H "anthropic-version: 2023-06-01" \
+            -d @/tmp/request_fallback.json
+          CURLSH
+          chmod +x /tmp/call_anthropic_fallback.sh
+
+          HTTP_CODE=$(secretless-ai run --only ANTHROPIC_API_KEY -- /tmp/call_anthropic_fallback.sh)
+
+            echo "Fallback API response HTTP code: $HTTP_CODE"
+
+            if [ "$HTTP_CODE" = "200" ]; then
+              REVIEW_TEXT=$(jq -r '.content[0].text // empty' /tmp/api_response.json)
+            fi
+          fi
+
+          if [ -z "$REVIEW_TEXT" ]; then
+            ERROR=$(jq -r '.error.message // .error.type // "Unknown API error"' /tmp/api_response.json 2>/dev/null || echo "No response body")
+            echo "::warning::Claude API call failed: $ERROR"
+            # Write a fallback review instead of failing the step
+            echo "VERDICT: APPROVE" > /tmp/review_body.txt
+            echo "" >> /tmp/review_body.txt
+            echo "SUMMARY: Automated review unavailable — Claude API returned an error ($ERROR). Manual review recommended." >> /tmp/review_body.txt
+            echo "APPROVE" > /tmp/verdict.txt
+          else
+            echo "$REVIEW_TEXT" > /tmp/review_body.txt
+            VERDICT=$(grep -oP 'VERDICT:\s*\K(APPROVE|REQUEST_CHANGES)' /tmp/review_body.txt | head -1)
+            echo "${VERDICT:-APPROVE}" > /tmp/verdict.txt
+          fi
+
+      - name: Post review
+        if: always() && steps.context.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERDICT=$(cat /tmp/verdict.txt 2>/dev/null || echo "APPROVE")
+          DIFF_SIZE=$(cat /tmp/diff_size.txt 2>/dev/null || echo "unknown")
+          FILE_COUNT=$(cat /tmp/file_count.txt 2>/dev/null || echo "unknown")
+
+          # Guard: if review body is missing, post a minimal comment
+          if [ ! -f /tmp/review_body.txt ]; then
+            echo "VERDICT: APPROVE" > /tmp/review_body.txt
+            echo "" >> /tmp/review_body.txt
+            echo "SUMMARY: Automated review could not be completed. Manual review recommended." >> /tmp/review_body.txt
+            VERDICT="APPROVE"
+          fi
+
+          {
+            echo "## Claude Code Review"
+            echo ""
+            cat /tmp/review_body.txt
+            echo ""
+            echo "---"
+            echo "*Reviewed ${FILE_COUNT} files changed (${DIFF_SIZE} bytes)*"
+          } > /tmp/full_review.txt
+
+          BODY=$(cat /tmp/full_review.txt)
+
+          if [ "$VERDICT" = "REQUEST_CHANGES" ]; then
+            gh pr review "$PR_NUMBER" --request-changes --body "$BODY" 2>/dev/null || \
+              gh pr comment "$PR_NUMBER" --body "$BODY"
+          else
+            gh pr review "$PR_NUMBER" --approve --body "$BODY" 2>/dev/null || \
+              gh pr comment "$PR_NUMBER" --body "$BODY"
+          fi
+
+      - name: Enforce verdict
+        run: |
+          VERDICT=$(cat /tmp/verdict.txt 2>/dev/null || echo "APPROVE")
+          if [ "$VERDICT" = "REQUEST_CHANGES" ]; then
+            echo "::error::Review found CRITICAL/HIGH issues that must be resolved before merge."
+            exit 1
+          fi

@@ -9,7 +9,7 @@
   },
   "scripts": {
     "build": "tsc",
-    "test": "node --test src/**/*.test.ts",
+    "test": "node --test --experimental-strip-types src/**/*.test.ts",
     "start": "node dist/cli.js start"
   },
   "dependencies": {
