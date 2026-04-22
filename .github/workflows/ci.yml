@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'packages/**'
+      - 'integrations/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/ci.yml'
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+        timeout-minutes: 5
+
+  pack-smoke:
+    name: Pack smoke (publish surface non-empty)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: npm pack --dry-run on each publishable workspace
+        run: |
+          set -e
+          fail=0
+          for ws in \
+            packages/nanomind-atc \
+            packages/nanomind-cli \
+            packages/nanomind-daemon \
+            packages/nanomind-engine \
+            packages/nanomind-guard \
+            packages/nanomind-router \
+            packages/nanomind-runtime-core \
+            integrations/hma \
+            integrations/opena2a \
+            integrations/secretless-ai; do
+            if [ ! -d "$ws" ]; then
+              echo "::notice::$ws does not exist — skipping"
+              continue
+            fi
+            name=$(node -p "require('./$ws/package.json').name")
+            private=$(node -p "require('./$ws/package.json').private===true")
+            if [ "$private" = "true" ]; then
+              echo "::notice::$ws ($name) is private — skipping"
+              continue
+            fi
+            files=$(npm --workspace="$ws" pack --dry-run --json 2>/dev/null | node -e "const d=JSON.parse(require('fs').readFileSync(0,'utf8'));console.log(d[0].files.length)")
+            if [ -z "$files" ] || [ "$files" = "0" ]; then
+              echo "::error::$ws ($name) packs to an EMPTY tarball — add files[] or fix build"
+              fail=1
+            else
+              echo "$ws ($name): $files files"
+            fi
+          done
+          exit $fail
+        timeout-minutes: 3
