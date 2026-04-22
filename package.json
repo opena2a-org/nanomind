@@ -8,8 +8,8 @@
     "integrations/*"
   ],
   "scripts": {
-    "build": "npm run build --workspaces",
-    "test": "npm test --workspaces",
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm test --workspaces --if-present",
     "lint": "eslint packages/ integrations/"
   },
   "license": "MIT",

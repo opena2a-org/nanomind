@@ -4,8 +4,23 @@
   "description": "NanoMind adapter for secretless-ai CLI",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc"
+  },
   "dependencies": {
     "@nanomind/cli": "0.1.0"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/opena2a-org/nanomind",
+    "directory": "integrations/secretless-ai"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist/",
+    "README.md"
+  ]
 }

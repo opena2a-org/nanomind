@@ -1,6 +1,5 @@
 {
   "name": "@nanomind/runtime-core",
-  "private": true,
   "version": "0.1.0",
   "description": "NanoMind RuntimeTwin: behavioral twin (LSTM) for ARP anomaly detection. Canonical home of the LSTM scorer referenced in NANOMIND_V3_AUDIT.md Section 9 item 1.",
   "main": "src/index.ts",

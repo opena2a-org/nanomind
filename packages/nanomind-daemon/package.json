@@ -23,6 +23,14 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/opena2a-org/nanomind"
-  }
+    "url": "https://github.com/opena2a-org/nanomind",
+    "directory": "packages/nanomind-daemon"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist/",
+    "README.md"
+  ]
 }
