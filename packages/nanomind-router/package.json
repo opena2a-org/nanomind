@@ -1,6 +1,6 @@
 {
   "name": "@nanomind/router",
-  "version": "0.1.1",
+  "version": "0.1.3",
   "description": "Intent classification and command mapping for CLI tools",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
