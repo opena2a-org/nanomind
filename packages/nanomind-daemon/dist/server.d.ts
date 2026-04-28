@@ -15,11 +15,23 @@ export interface InferRequest {
     };
     priority?: 'high' | 'medium' | 'low';
 }
+/**
+ * Canonical attackClass enum. The empty string is the always-emitted default
+ * when no malicious intent is detected. Non-empty values are produced by the
+ * production NanoMind classifier; until that ships, the daemon always emits "".
+ *
+ * AIM FGA Step 5 (`fga_engine.go::checkIntentSync`) blocks when:
+ *   attackClass != "" && confidence > 0.8
+ *
+ * Empty string therefore means "no block" — preserving fail-open for the
+ * pre-classifier daemon while making the wire contract explicit.
+ */
+export type AttackClass = '' | 'exfiltration_pattern' | 'prompt_injection' | 'tool_misuse' | 'data_extraction';
 export interface InferResponse {
     intent: string;
     result: string;
     confidence: number;
-    attackClass?: string;
+    attackClass: AttackClass;
     evidence?: string;
     remediation?: string;
     latencyMs: number;

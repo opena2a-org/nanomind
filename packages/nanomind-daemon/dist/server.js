@@ -133,6 +133,9 @@ class NanoMindDaemon extends node_events_1.EventEmitter {
                 intent: intent ?? 'UNKNOWN',
                 result: result.text,
                 confidence: 0.85, // Pattern-matched intents have high confidence
+                // Always emitted. Empty until the production classifier ships; FGA
+                // Step 5 blocks only on (attackClass != "" && confidence > 0.8).
+                attackClass: '',
                 latencyMs: Date.now() - startMs,
                 modelVersion: 'SmolLM2-135M-Q4_K_M',
             };

@@ -72,4 +72,34 @@ describe('NanoMindDaemon', () => {
     assert.ok(status.startedAt instanceof Date);
     assert.ok(status.uptime > 0);
   });
+
+  it('should always include attackClass in /v1/infer response (default empty)', async () => {
+    // Stub the engine to avoid loading the real model. The contract under test
+    // is that handleInfer always emits attackClass; what the engine returns
+    // is irrelevant to that contract.
+    (daemon as unknown as { engine: { ensureReady(): Promise<void>; infer(p: string, o: unknown): Promise<{ text: string }> }; modelLoaded: boolean }).engine = {
+      ensureReady: async () => {},
+      infer: async () => ({ text: 'stub-result' }),
+    };
+    (daemon as unknown as { modelLoaded: boolean }).modelLoaded = true;
+
+    const resp = await fetch(`http://127.0.0.1:${TEST_PORT}/v1/infer`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ intent: 'INTENT_CHECK', input: 'list secrets' }),
+    });
+    assert.strictEqual(resp.status, 200);
+    const body = await resp.json() as {
+      intent: string;
+      result: string;
+      confidence: number;
+      attackClass: string;
+      latencyMs: number;
+      modelVersion: string;
+    };
+    assert.ok('attackClass' in body, 'response must always include attackClass field');
+    assert.strictEqual(typeof body.attackClass, 'string', 'attackClass must be a string');
+    assert.strictEqual(body.attackClass, '', 'attackClass defaults to empty until the production classifier ships');
+    assert.strictEqual(typeof body.confidence, 'number');
+  });
 });

@@ -45,13 +45,61 @@ Response:
   "intent": "SCAN_SKILL",
   "result": "malicious",
   "confidence": 0.92,
-  "attackClass": "exfiltration",
+  "attackClass": "exfiltration_pattern",
   "evidence": "forwards tokens to an external endpoint",
   "remediation": "Remove external data forwarding. Use declared API endpoints only.",
   "latencyMs": 3,
   "modelVersion": "nanomind-tme-v1"
 }
 ```
+
+Default response (no malicious intent detected — also today's response for every input until the production classifier ships):
+
+```json
+{
+  "intent": "INTENT_CHECK",
+  "result": "...",
+  "confidence": 0.85,
+  "attackClass": "",
+  "latencyMs": 612,
+  "modelVersion": "SmolLM2-135M-Q4_K_M"
+}
+```
+
+### Response schema
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `intent` | string | yes | Echoes the request intent (or routed intent if not provided). |
+| `result` | string | yes | Raw model output text. |
+| `confidence` | number | yes | Confidence score in [0, 1]. |
+| `attackClass` | string | yes | Canonical attack-class label, or empty string. See enum below. |
+| `evidence` | string | no | Free-form evidence excerpt when the classifier flags a finding. |
+| `remediation` | string | no | Suggested remediation text. |
+| `latencyMs` | number | yes | End-to-end inference latency in milliseconds. |
+| `modelVersion` | string | yes | Loaded model identifier. |
+
+### `attackClass` enum
+
+The field is always emitted. An empty string means "no malicious intent detected" — that is what every response carries today, because the production classifier is not yet wired into this daemon. Non-empty values land when that work ships:
+
+| Value | Meaning |
+|---|---|
+| `""` | No malicious intent detected (also: classifier not yet wired). |
+| `"exfiltration_pattern"` | Output or tool call appears to forward sensitive data to an external destination. |
+| `"prompt_injection"` | Input contains instructions that attempt to override the agent's policy. |
+| `"tool_misuse"` | Capability or tool used outside its declared purpose. |
+| `"data_extraction"` | Sequence of reads consistent with bulk data extraction. |
+
+### FGA contract
+
+AIM's FGA Step 5 (`fga_engine.go::checkIntentSync`) reads this response and blocks when:
+
+```
+attackClass != "" && confidence > 0.8
+```
+
+So an empty `attackClass` is fail-open by design — the wire contract is required (the field is always present), the *value* defaults to empty until the classifier produces real labels.
 
 ### GET /v1/health
 
