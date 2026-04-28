@@ -1,14 +1,25 @@
 #!/usr/bin/env node
 
 import { NanoMindDaemon, DEFAULT_CONFIG } from './server.js';
-import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, rmSync, unlinkSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 
 const STATE_DIR = join(homedir(), '.nanomind');
 const PID_FILE = join(STATE_DIR, 'daemon.pid');
+const PACKAGE_JSON_PATH = join(__dirname, '..', 'package.json');
 
 const command = process.argv[2] ?? 'help';
+
+if (command === '--version' || command === '-v') {
+  const version = JSON.parse(readFileSync(PACKAGE_JSON_PATH, 'utf-8')).version;
+  console.log(version);
+  process.exit(0);
+}
+if (command === '--help' || command === '-h') {
+  printUsage();
+  process.exit(0);
+}
 
 async function main(): Promise<void> {
   switch (command) {
@@ -22,8 +33,12 @@ async function main(): Promise<void> {
       await showStatus();
       break;
     case 'help':
-    default:
       printUsage();
+      break;
+    default:
+      console.error(`Unknown command: ${command}`);
+      printUsage();
+      process.exit(1);
   }
 }
 
@@ -96,7 +111,7 @@ async function stopDaemon(): Promise<void> {
     console.log(`Daemon (PID ${pid}) is not running. Cleaning up PID file.`);
   }
 
-  unlinkSync(PID_FILE);
+  rmSync(PID_FILE, { force: true });
 }
 
 async function showStatus(): Promise<void> {
