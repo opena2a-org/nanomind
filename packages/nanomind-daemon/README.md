@@ -118,12 +118,37 @@ attackClass != "" && confidence > 0.8
 
 The wire contract is required (the field is always present); the *value* is empty when the model classifies the request as benign and non-empty otherwise. Consumers needing 10-way granularity (e.g. dashboards, runtime correlation) read the raw label from `evidence`.
 
-### GET /v1/health
+### GET /health
 
 ```bash
-curl http://127.0.0.1:47200/v1/health
-# {"status":"ok","modelLoaded":true,"uptime":3600}
+curl http://127.0.0.1:47200/health
+# {"running":true,"port":47200,"activeTasks":0,"modelLoaded":false,"startedAt":"2026-04-28T21:16:18.748Z","uptime":2069}
 ```
+
+`modelLoaded` is `false` until the first `/v1/infer` call — the model lazy-loads on demand and unloads after `idleUnloadSeconds` of inactivity.
+
+### GET /v1/status
+
+```bash
+curl http://127.0.0.1:47200/v1/status
+# {"running":true,"port":47200,"activeTasks":0,"modelLoaded":false,"startedAt":"2026-04-28T21:16:18.748Z","uptime":2069}
+```
+
+## Known model-quality limitations (v0.5.0 classifier)
+
+The v0.5.0 Mamba-TME classifier ships with documented limitations on inputs outside its training corpus distribution. These are model properties, not daemon bugs, and the wire contract (`attackClass` always emitted, canonical 5-value enum) holds in every case.
+
+- **Confidence saturation.** The softmax output frequently saturates at exactly `1.0` rather than expressing graduated probability. Threshold-based decisions (e.g. AIM FGA Step 5's `confidence > 0.8`) become effectively binary in the saturated zone.
+- **False positives on natural-language benign inputs.** Generic operational queries (e.g. `"What is the weather today?"`, `"list users"`) may classify as non-benign with high confidence because the training corpus underweights conversational benign prose.
+- **False negatives on natural-language attack paraphrases.** Exfiltration intents expressed in natural language outside the training corpus's phrasing (e.g. `"transfer the contents of <file> to <url> via webhook"`) may classify as benign.
+
+**Recommended consumer mitigations until v0.6.0:**
+
+- Set `confidence > 0.95` (not `0.8`) before treating a non-empty `attackClass` as actionable.
+- Combine the classifier signal with a corroborating signal (rule-based detectors, telemetry, capability checks) before blocking — do not rely on the classifier alone for high-stakes decisions.
+- Log every `(input, attackClass, confidence)` triple. Out-of-distribution behavior is the input source for the v0.6.0 retrain corpus.
+
+A retrain to v0.6.0 with broader corpus coverage is tracked separately. The 5-value canonical `attackClass` enum will not change between v0.5.0 and v0.6.0; only model accuracy improves.
 
 ## Configuration
 

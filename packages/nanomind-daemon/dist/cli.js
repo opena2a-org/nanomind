@@ -7,7 +7,17 @@ const node_path_1 = require("node:path");
 const node_os_1 = require("node:os");
 const STATE_DIR = (0, node_path_1.join)((0, node_os_1.homedir)(), '.nanomind');
 const PID_FILE = (0, node_path_1.join)(STATE_DIR, 'daemon.pid');
+const PACKAGE_JSON_PATH = (0, node_path_1.join)(__dirname, '..', 'package.json');
 const command = process.argv[2] ?? 'help';
+if (command === '--version' || command === '-v') {
+    const version = JSON.parse((0, node_fs_1.readFileSync)(PACKAGE_JSON_PATH, 'utf-8')).version;
+    console.log(version);
+    process.exit(0);
+}
+if (command === '--help' || command === '-h') {
+    printUsage();
+    process.exit(0);
+}
 async function main() {
     switch (command) {
         case 'start':
@@ -20,8 +30,12 @@ async function main() {
             await showStatus();
             break;
         case 'help':
-        default:
             printUsage();
+            break;
+        default:
+            console.error(`Unknown command: ${command}`);
+            printUsage();
+            process.exit(1);
     }
 }
 async function startDaemon() {
@@ -84,7 +98,7 @@ async function stopDaemon() {
     catch {
         console.log(`Daemon (PID ${pid}) is not running. Cleaning up PID file.`);
     }
-    (0, node_fs_1.unlinkSync)(PID_FILE);
+    (0, node_fs_1.rmSync)(PID_FILE, { force: true });
 }
 async function showStatus() {
     const port = parseInt(process.env['NANOMIND_PORT'] ?? String(server_js_1.DEFAULT_CONFIG.httpPort), 10);
