@@ -115,6 +115,19 @@ class NanoMindDaemon extends node_events_1.EventEmitter {
             res.end(JSON.stringify({ error: 'invalid_request', message: 'intent or input is required' }));
             return;
         }
+        // Reject empty / whitespace-only input. A pure-pad token sequence
+        // produces noisy argmax results (the model was not trained on
+        // padding-only inputs), so the classifier must not see it. Without
+        // this guard, requests like `{intent:"X",input:""}` or `"   "`
+        // would emit a non-empty attackClass and poison FGA telemetry.
+        if (typeof body.input !== 'string' || body.input.trim().length === 0) {
+            res.writeHead(400);
+            res.end(JSON.stringify({
+                error: 'invalid_request',
+                message: 'input must be a non-empty, non-whitespace string',
+            }));
+            return;
+        }
         this.activeTasks++;
         this.resetIdleTimer();
         const startMs = Date.now();
@@ -160,9 +173,16 @@ class NanoMindDaemon extends node_events_1.EventEmitter {
         catch (err) {
             const message = err instanceof Error ? err.message : 'Inference failed';
             res.writeHead(500);
+            // Bug 1 wire contract: attackClass is ALWAYS a string. Even on the
+            // engine-error path the response carries `attackClass: ''` so FGA
+            // Step 5 doesn't have to special-case missing fields. The 500
+            // status code is what tells the consumer that classification did
+            // not run; the empty attackClass is a no-block hint.
             res.end(JSON.stringify({
                 error: 'inference_error',
                 message,
+                attackClass: '',
+                confidence: 0,
                 latencyMs: Date.now() - startMs,
             }));
         }

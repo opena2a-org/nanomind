@@ -12,11 +12,19 @@
  * Bug 1 contract (`attackClass` always emitted as a string with `""` default)
  * is preserved for engines that don't produce them.
  *
- * Tokenizer mirrors `training/scripts/train-tme-mlx.py:tokenize_batch`
- * exactly: lowercase, whitespace split, lookup in 6000-entry vocab,
- * unknown → <UNK>, truncate or zero-pad to 128. The vocab lives in
- * `tokenizer.json`. Drift between this code and the trainer breaks the
- * model — keep them in lockstep.
+ * Tokenizer is functionally aligned with
+ * `training/scripts/train-tme-mlx.py:tokenize_batch` (lowercase, split on
+ * whitespace, lookup in 6000-entry vocab, unknown → <UNK>, truncate or
+ * zero-pad to 128) plus one intentional, defense-in-depth divergence:
+ * zero-width characters (U+FEFF BOM, U+200B-200D ZWSP/ZWNJ/ZWJ) are
+ * stripped before splitting. The trainer treats those as part of the
+ * surrounding token (`'﻿ignore'.isspace()` → False in Python), so a
+ * zero-width-cloaked attack would tokenize to `<UNK>` against a faithful
+ * tokenizer and bypass classification. Stripping reveals the underlying
+ * word and lets the classifier see it. Benign training inputs do not
+ * carry zero-width characters, so the divergence cannot regress recall.
+ * If model retraining ever changes the tokenizer rule, update this file
+ * and the trainer in lockstep.
  *
  * Integrity: SHA-256 of all three files (model, model-data, tokenizer) is
  * verified against the v0.5.0 hashes recorded in `nanomind-models.json` on
@@ -26,7 +34,11 @@
 import type { AttackClass } from './server.ts';
 export interface OnnxEngineConfig {
     modelDir?: string;
-    /** Override for tests — skip SHA-256 check. NEVER set in production. */
+    /**
+     * Test-only override that skips the SHA-256 integrity check on load.
+     * Honored only when `process.env.NODE_ENV !== 'production'`. Setting
+     * this in a production build is a no-op — verification still runs.
+     */
     skipIntegrityCheck?: boolean;
 }
 export interface OnnxInferResult {
@@ -59,9 +71,24 @@ export declare class OnnxEngine {
     infer(text: string): Promise<OnnxInferResult>;
 }
 /**
- * Mirrors `training/scripts/train-tme-mlx.py:tokenize_batch` exactly:
- * lowercase, split on ASCII whitespace, vocab lookup with <UNK> fallback,
- * truncate to MAX_SEQ_LEN, zero-pad to MAX_SEQ_LEN. Drift here breaks the
- * model — keep this in lockstep with the trainer.
+ * Tokenize an input string for the Mamba-TME classifier.
+ *
+ * Functional alignment with the trainer (`tokenize_batch` in
+ * `training/scripts/train-tme-mlx.py`): lowercase, split on whitespace,
+ * vocab lookup with <UNK> fallback, truncate to MAX_SEQ_LEN, zero-pad to
+ * MAX_SEQ_LEN.
+ *
+ * Defense-in-depth divergence (intentional): zero-width characters
+ * (U+FEFF BOM, U+200B-U+200D ZWSP/ZWNJ/ZWJ) are stripped before
+ * splitting. Python's `str.isspace()` returns False for these, so a
+ * trainer-faithful tokenizer would treat `"﻿ignore"` as `<UNK>` and
+ * miss zero-width-cloaked prompt injections. Stripping reveals the
+ * underlying word for classification. Benign training data does not
+ * contain zero-width characters, so this cannot regress recall on
+ * legitimate inputs.
+ *
+ * Returns an empty array (length 0) for empty or whitespace-only input;
+ * callers must reject those upstream so the model never sees a pure-pad
+ * input (which produces noisy argmax results).
  */
 export declare function tokenize(text: string, vocab: Map<string, number>): number[];
