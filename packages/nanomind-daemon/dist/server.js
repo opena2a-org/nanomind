@@ -2,9 +2,9 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.NanoMindDaemon = exports.DEFAULT_CONFIG = void 0;
 const node_http_1 = require("node:http");
-const engine_1 = require("@nanomind/engine");
 const router_1 = require("@nanomind/router");
 const node_events_1 = require("node:events");
+const onnx_engine_ts_1 = require("./onnx-engine.js");
 exports.DEFAULT_CONFIG = {
     httpPort: 47200,
     ipcPath: process.platform === 'win32'
@@ -23,8 +23,12 @@ class NanoMindDaemon extends node_events_1.EventEmitter {
     startedAt = null;
     constructor(config = {}) {
         super();
-        this.config = { ...exports.DEFAULT_CONFIG, ...config };
-        this.engine = new engine_1.NanoMindEngine();
+        const { engine, ...daemonConfig } = config;
+        this.config = { ...exports.DEFAULT_CONFIG, ...daemonConfig };
+        // Default to ONNX (production NanoMind v0.5.0). Tests inject stubs;
+        // legacy `NanoMindEngine` (llamafile) still satisfies DaemonEngine
+        // structurally for callers that need it.
+        this.engine = engine ?? new onnx_engine_ts_1.OnnxEngine();
     }
     async start() {
         // Start HTTP server on localhost only (non-routable)
@@ -127,18 +131,29 @@ class NanoMindDaemon extends node_events_1.EventEmitter {
                 const routed = (0, router_1.classifyIntent)(body.input);
                 intent = routed.intent;
             }
-            // Run inference
-            const result = await this.engine.infer(`[INTENT: ${intent}]\n[CONTEXT: ${JSON.stringify(body.context ?? {})}]\n${body.input}`, { maxTokens: 128, temperature: 0.0 });
+            // Run inference. The OnnxEngine consumes the raw input text; the
+            // legacy text-generation path still wraps it with INTENT/CONTEXT
+            // markers for prompting. We pass the unwrapped input to the engine
+            // and let each implementation decide how to use it.
+            const classifierInput = body.input ?? '';
+            const result = await this.engine.infer(classifierInput, {
+                maxTokens: 128,
+                temperature: 0.0,
+            });
+            // Pass through the ONNX classifier fields when present; fall back
+            // to the Bug 1 contract defaults (attackClass:"", confidence:0.85)
+            // so any engine that doesn't classify (legacy llamafile, test stubs)
+            // still emits a valid InferResponse.
             const response = {
                 intent: intent ?? 'UNKNOWN',
                 result: result.text,
-                confidence: 0.85, // Pattern-matched intents have high confidence
-                // Always emitted. Empty until the production classifier ships; FGA
-                // Step 5 blocks only on (attackClass != "" && confidence > 0.8).
-                attackClass: '',
+                confidence: typeof result.confidence === 'number' ? result.confidence : 0.85,
+                attackClass: result.attackClass ?? '',
                 latencyMs: Date.now() - startMs,
-                modelVersion: 'SmolLM2-135M-Q4_K_M',
+                modelVersion: this.engine.modelVersion ?? 'unknown',
             };
+            if (result.rawLabel)
+                response.evidence = result.rawLabel;
             res.writeHead(200);
             res.end(JSON.stringify(response));
         }

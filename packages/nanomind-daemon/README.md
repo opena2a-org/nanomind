@@ -38,31 +38,31 @@ curl -X POST http://127.0.0.1:47200/v1/infer \
   }'
 ```
 
-Response:
+Response (malicious classification):
 
 ```json
 {
   "intent": "SCAN_SKILL",
-  "result": "malicious",
-  "confidence": 0.92,
+  "result": "exfiltration",
+  "confidence": 0.94,
   "attackClass": "exfiltration_pattern",
-  "evidence": "forwards tokens to an external endpoint",
-  "remediation": "Remove external data forwarding. Use declared API endpoints only.",
-  "latencyMs": 3,
-  "modelVersion": "nanomind-tme-v1"
+  "evidence": "exfiltration",
+  "latencyMs": 2,
+  "modelVersion": "nanomind-tme-v0.5.0"
 }
 ```
 
-Default response (no malicious intent detected — also today's response for every input until the production classifier ships):
+Response (benign):
 
 ```json
 {
   "intent": "INTENT_CHECK",
-  "result": "...",
-  "confidence": 0.85,
+  "result": "benign",
+  "confidence": 0.91,
   "attackClass": "",
-  "latencyMs": 612,
-  "modelVersion": "SmolLM2-135M-Q4_K_M"
+  "evidence": "benign",
+  "latencyMs": 1,
+  "modelVersion": "nanomind-tme-v0.5.0"
 }
 ```
 
@@ -71,25 +71,42 @@ Default response (no malicious intent detected — also today's response for eve
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `intent` | string | yes | Echoes the request intent (or routed intent if not provided). |
-| `result` | string | yes | Raw model output text. |
-| `confidence` | number | yes | Confidence score in [0, 1]. |
-| `attackClass` | string | yes | Canonical attack-class label, or empty string. See enum below. |
-| `evidence` | string | no | Free-form evidence excerpt when the classifier flags a finding. |
-| `remediation` | string | no | Suggested remediation text. |
+| `result` | string | yes | Raw model label (e.g. `"injection"`, `"benign"`) — convenience for human-readable logs. |
+| `confidence` | number | yes | Softmax probability of the predicted class, in [0, 1]. |
+| `attackClass` | string | yes | Canonical attack-class label, or empty string. See enum + mapping below. |
+| `evidence` | string | no | Raw 10-way model label. Carries audit-trail granularity beyond the canonical bucket. |
+| `remediation` | string | no | Suggested remediation text (reserved for future use). |
 | `latencyMs` | number | yes | End-to-end inference latency in milliseconds. |
 | `modelVersion` | string | yes | Loaded model identifier. |
 
 ### `attackClass` enum
 
-The field is always emitted. An empty string means "no malicious intent detected" — that is what every response carries today, because the production classifier is not yet wired into this daemon. Non-empty values land when that work ships:
+The field is always emitted. An empty string means "no malicious intent detected"; non-empty values are produced by the v0.5.0 production classifier:
 
 | Value | Meaning |
 |---|---|
-| `""` | No malicious intent detected (also: classifier not yet wired). |
+| `""` | No malicious intent detected (model classified as `benign`). |
 | `"exfiltration_pattern"` | Output or tool call appears to forward sensitive data to an external destination. |
 | `"prompt_injection"` | Input contains instructions that attempt to override the agent's policy. |
 | `"tool_misuse"` | Capability or tool used outside its declared purpose. |
 | `"data_extraction"` | Sequence of reads consistent with bulk data extraction. |
+
+### `attackClass` mapping
+
+The model emits 10 raw labels (matching the 10-class training corpus). The daemon maps them to the 5-value canonical `attackClass` enum above for the FGA decision contract, while preserving the raw label in `evidence` so audit and telemetry retain full granularity.
+
+| Raw model label | `attackClass` |
+|---|---|
+| `benign` | `""` |
+| `injection` | `prompt_injection` |
+| `social_engineering` | `prompt_injection` |
+| `exfiltration` | `exfiltration_pattern` |
+| `steganography` | `exfiltration_pattern` |
+| `credential_abuse` | `data_extraction` |
+| `privilege_escalation` | `tool_misuse` |
+| `persistence` | `tool_misuse` |
+| `lateral_movement` | `tool_misuse` |
+| `policy_violation` | `tool_misuse` |
 
 ### FGA contract
 
@@ -99,7 +116,7 @@ AIM's FGA Step 5 (`fga_engine.go::checkIntentSync`) reads this response and bloc
 attackClass != "" && confidence > 0.8
 ```
 
-So an empty `attackClass` is fail-open by design — the wire contract is required (the field is always present), the *value* defaults to empty until the classifier produces real labels.
+The wire contract is required (the field is always present); the *value* is empty when the model classifies the request as benign and non-empty otherwise. Consumers needing 10-way granularity (e.g. dashboards, runtime correlation) read the raw label from `evidence`.
 
 ### GET /v1/health
 
@@ -133,13 +150,34 @@ const result = await daemon.infer({
 });
 ```
 
+## Model files
+
+The daemon loads the v0.5.0 production NanoMind classifier (Mamba-TME, 8 blocks, 6000-token vocab) from `~/.nanomind/models/`. Three files are required:
+
+| File | Purpose |
+|---|---|
+| `nanomind-tme.onnx` | ONNX graph (architecture only — small). |
+| `nanomind-tme.onnx.data` | External weights data file (~8MB). |
+| `tokenizer.json` | Word-level vocabulary (6000 entries). |
+
+Download from HuggingFace (`opena2a/nanomind-security-classifier`):
+
+```bash
+mkdir -p ~/.nanomind/models
+cd ~/.nanomind/models
+BASE=https://huggingface.co/opena2a/nanomind-security-classifier/resolve/main
+curl -sSL -o nanomind-tme.onnx        "$BASE/nanomind-tme.onnx"
+curl -sSL -o nanomind-tme.onnx.data   "$BASE/nanomind-tme.onnx.data"
+curl -sSL -o tokenizer.json           "$BASE/tokenizer.json"
+```
+
 ## Security
 
-- Binds to `127.0.0.1` only (no external access)
-- Model file integrity verified on load (SHA-256)
-- Request size capped at 1MB
-- Rate limited to 100 requests/second
-- No credentials in memory after model load
+- Binds to `127.0.0.1` only (no external access).
+- Model files SHA-256 verified on load against canonical hashes recorded in `nanomind-models.json` (v0.5.0). Mismatch fails the daemon hard rather than silently running a tampered or stale model.
+- Request size capped at 1MB.
+- Rate limited to 100 requests/second.
+- No credentials in memory after model load.
 
 ## License
 

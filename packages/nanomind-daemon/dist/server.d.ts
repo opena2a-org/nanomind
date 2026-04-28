@@ -1,4 +1,20 @@
 import { EventEmitter } from 'node:events';
+/**
+ * Minimal engine surface the daemon relies on. Both the production
+ * `OnnxEngine` and stubs used in tests satisfy it. Optional fields are
+ * passed through to InferResponse when produced; absent fields fall back
+ * to the empty/0.85 defaults that preserve the Bug 1 wire contract.
+ */
+export interface DaemonEngine {
+    ensureReady(): Promise<void>;
+    infer(prompt: string, opts?: unknown): Promise<{
+        text: string;
+        attackClass?: AttackClass;
+        rawLabel?: string;
+        confidence?: number;
+    }>;
+    readonly modelVersion?: string;
+}
 export interface DaemonConfig {
     httpPort: number;
     ipcPath: string;
@@ -46,7 +62,9 @@ export declare class NanoMindDaemon extends EventEmitter {
     private idleTimer;
     private modelLoaded;
     private startedAt;
-    constructor(config?: Partial<DaemonConfig>);
+    constructor(config?: Partial<DaemonConfig> & {
+        engine?: DaemonEngine;
+    });
     start(): Promise<void>;
     stop(): Promise<void>;
     getStatus(): {

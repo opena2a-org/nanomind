@@ -1,6 +1,6 @@
 {
   "name": "@nanomind/daemon",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Persistent NanoMind inference daemon with HTTP and IPC interfaces",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -14,7 +14,8 @@
   },
   "dependencies": {
     "@nanomind/engine": "*",
-    "@nanomind/router": "*"
+    "@nanomind/router": "*",
+    "onnxruntime-node": "1.24.3"
   },
   "devDependencies": {
     "@types/node": "^25.5.0",

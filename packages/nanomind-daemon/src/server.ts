@@ -1,7 +1,24 @@
 import { createServer, IncomingMessage, ServerResponse } from 'node:http';
-import { NanoMindEngine } from '@nanomind/engine';
 import { classifyIntent } from '@nanomind/router';
 import { EventEmitter } from 'node:events';
+import { OnnxEngine } from './onnx-engine.ts';
+
+/**
+ * Minimal engine surface the daemon relies on. Both the production
+ * `OnnxEngine` and stubs used in tests satisfy it. Optional fields are
+ * passed through to InferResponse when produced; absent fields fall back
+ * to the empty/0.85 defaults that preserve the Bug 1 wire contract.
+ */
+export interface DaemonEngine {
+  ensureReady(): Promise<void>;
+  infer(prompt: string, opts?: unknown): Promise<{
+    text: string;
+    attackClass?: AttackClass;
+    rawLabel?: string;
+    confidence?: number;
+  }>;
+  readonly modelVersion?: string;
+}
 
 export interface DaemonConfig {
   httpPort: number;
@@ -61,17 +78,21 @@ export const DEFAULT_CONFIG: DaemonConfig = {
 
 export class NanoMindDaemon extends EventEmitter {
   private config: DaemonConfig;
-  private engine: NanoMindEngine;
+  private engine: DaemonEngine;
   private httpServer: ReturnType<typeof createServer> | null = null;
   private activeTasks = 0;
   private idleTimer: NodeJS.Timeout | null = null;
   private modelLoaded = false;
   private startedAt: Date | null = null;
 
-  constructor(config: Partial<DaemonConfig> = {}) {
+  constructor(config: Partial<DaemonConfig> & { engine?: DaemonEngine } = {}) {
     super();
-    this.config = { ...DEFAULT_CONFIG, ...config };
-    this.engine = new NanoMindEngine();
+    const { engine, ...daemonConfig } = config;
+    this.config = { ...DEFAULT_CONFIG, ...daemonConfig };
+    // Default to ONNX (production NanoMind v0.5.0). Tests inject stubs;
+    // legacy `NanoMindEngine` (llamafile) still satisfies DaemonEngine
+    // structurally for callers that need it.
+    this.engine = engine ?? new OnnxEngine();
   }
 
   async start(): Promise<void> {
@@ -190,22 +211,29 @@ export class NanoMindDaemon extends EventEmitter {
         intent = routed.intent;
       }
 
-      // Run inference
-      const result = await this.engine.infer(
-        `[INTENT: ${intent}]\n[CONTEXT: ${JSON.stringify(body.context ?? {})}]\n${body.input}`,
-        { maxTokens: 128, temperature: 0.0 }
-      );
+      // Run inference. The OnnxEngine consumes the raw input text; the
+      // legacy text-generation path still wraps it with INTENT/CONTEXT
+      // markers for prompting. We pass the unwrapped input to the engine
+      // and let each implementation decide how to use it.
+      const classifierInput = body.input ?? '';
+      const result = await this.engine.infer(classifierInput, {
+        maxTokens: 128,
+        temperature: 0.0,
+      });
 
+      // Pass through the ONNX classifier fields when present; fall back
+      // to the Bug 1 contract defaults (attackClass:"", confidence:0.85)
+      // so any engine that doesn't classify (legacy llamafile, test stubs)
+      // still emits a valid InferResponse.
       const response: InferResponse = {
         intent: intent ?? 'UNKNOWN',
         result: result.text,
-        confidence: 0.85, // Pattern-matched intents have high confidence
-        // Always emitted. Empty until the production classifier ships; FGA
-        // Step 5 blocks only on (attackClass != "" && confidence > 0.8).
-        attackClass: '',
+        confidence: typeof result.confidence === 'number' ? result.confidence : 0.85,
+        attackClass: result.attackClass ?? '',
         latencyMs: Date.now() - startMs,
-        modelVersion: 'SmolLM2-135M-Q4_K_M',
+        modelVersion: this.engine.modelVersion ?? 'unknown',
       };
+      if (result.rawLabel) response.evidence = result.rawLabel;
 
       res.writeHead(200);
       res.end(JSON.stringify(response));
