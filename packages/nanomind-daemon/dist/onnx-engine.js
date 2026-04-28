@@ -19,7 +19,7 @@
  * zero-pad to 128) plus one intentional, defense-in-depth divergence:
  * zero-width characters (U+FEFF BOM, U+200B-200D ZWSP/ZWNJ/ZWJ) are
  * stripped before splitting. The trainer treats those as part of the
- * surrounding token (`'﻿ignore'.isspace()` → False in Python), so a
+ * surrounding token (`'\uFEFFignore'.isspace()` → False in Python), so a
  * zero-width-cloaked attack would tokenize to `<UNK>` against a faithful
  * tokenizer and bypass classification. Stripping reveals the underlying
  * word and lets the classifier see it. Benign training inputs do not
@@ -226,7 +226,7 @@ exports.OnnxEngine = OnnxEngine;
  * Defense-in-depth divergence (intentional): zero-width characters
  * (U+FEFF BOM, U+200B-U+200D ZWSP/ZWNJ/ZWJ) are stripped before
  * splitting. Python's `str.isspace()` returns False for these, so a
- * trainer-faithful tokenizer would treat `"﻿ignore"` as `<UNK>` and
+ * trainer-faithful tokenizer would treat `"\uFEFFignore"` as `<UNK>` and
  * miss zero-width-cloaked prompt injections. Stripping reveals the
  * underlying word for classification. Benign training data does not
  * contain zero-width characters, so this cannot regress recall on
