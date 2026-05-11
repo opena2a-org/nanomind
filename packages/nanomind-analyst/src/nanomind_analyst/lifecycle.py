@@ -8,7 +8,6 @@ from __future__ import annotations
 import json
 import os
 import socket
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -73,10 +72,12 @@ def run_status() -> int:
         _emit(f"  check `nanomind-analyst logs` (tail {paths.log_path()})")
         return 1
     if health.get("daemonState") == "ready":
+        uptime = health.get("uptimeSec")
+        uptime_str = f"{uptime:.0f}" if isinstance(uptime, (int, float)) else "?"
         _emit(
             f"healthz: ready ("
             f"requestsServed={health.get('requestsServed')}, "
-            f"uptimeSec={health.get('uptimeSec'):.0f})"
+            f"uptimeSec={uptime_str})"
         )
         return 0
     _emit(f"healthz: {health.get('daemonState')!r}")

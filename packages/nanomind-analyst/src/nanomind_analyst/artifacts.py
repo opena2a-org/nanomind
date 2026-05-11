@@ -129,11 +129,17 @@ def fetch_nlm(
         # huggingface_hub import cost.
         from huggingface_hub import snapshot_download as downloader  # type: ignore[no-redef]
 
+    # local_dir_use_symlinks=False makes snapshot_download write real files
+    # into target_dir, not symlinks into ~/.cache/huggingface. We want SHA
+    # verify to read the bytes actually present at the install location, not
+    # follow a symlink the user (or an attacker on the cache dir) could swap
+    # under our feet between verify and the daemon's joblib.load.
     downloader(
         repo_id=HF_REPO_ID,
         revision=HF_REVISION,
         local_dir=str(target_dir),
         allow_patterns=list(NLM_REQUIRED_FILES),
+        local_dir_use_symlinks=False,
     )
 
     if progress is not None:

@@ -37,7 +37,7 @@ class TestFetchNlm:
             artifacts, "EXPECTED_NLM_TOKENIZER_SHA256", expected_tokenizer
         )
 
-        def fake_downloader(*, repo_id, revision, local_dir, allow_patterns):
+        def fake_downloader(*, repo_id, revision, local_dir, allow_patterns, **_):
             target = Path(local_dir)
             target.mkdir(parents=True, exist_ok=True)
             (target / "model.safetensors").write_bytes(safetensors)
@@ -75,7 +75,7 @@ class TestFetchNlm:
             hashlib.sha256(b"tok").hexdigest(),
         )
 
-        def fake_downloader(*, repo_id, revision, local_dir, allow_patterns):
+        def fake_downloader(*, repo_id, revision, local_dir, allow_patterns, **_):
             target = Path(local_dir)
             target.mkdir(parents=True, exist_ok=True)
             (target / "model.safetensors").write_bytes(b"tampered")
@@ -111,7 +111,7 @@ class TestFetchNlm:
             hashlib.sha256(tokenizer).hexdigest(),
         )
 
-        def fake_downloader(*, repo_id, revision, local_dir, allow_patterns):
+        def fake_downloader(*, repo_id, revision, local_dir, allow_patterns, **_):
             target = Path(local_dir)
             target.mkdir(parents=True, exist_ok=True)
             (target / "model.safetensors").write_bytes(safetensors)

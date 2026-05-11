@@ -81,7 +81,7 @@ Not supported in v0.1. The daemon is bf16 on Apple MPS; fp16 yields 0% accuracy 
 
 ## Model card
 
-[opena2a/nanomind-security-analyst](https://huggingface.co/opena2a/nanomind-security-analyst) — v3.0.0 (Qwen3-1.7B SFT LoRA r=64), Apache-2.0.
+[opena2a/nanomind-security-analyst](https://huggingface.co/opena2a/nanomind-security-analyst). v3.0.0 (Qwen3-1.7B SFT LoRA r=64), Apache-2.0.
 
 ## License
 

@@ -40,6 +40,9 @@ jobs:
           # unit-test surface we exercise here and would balloon CI to 10+ min.
           # The test suite stubs out all model loading.
           python -m pip install --no-deps -e .
+          # huggingface_hub WITH transitive deps (httpx, tqdm, etc) so its
+          # snapshot_download submodule is importable. test_artifacts uses an
+          # injected fake downloader, so HF itself does not need to function.
           python -m pip install pytest pytest-mock huggingface_hub joblib
 
       - name: Run pytest

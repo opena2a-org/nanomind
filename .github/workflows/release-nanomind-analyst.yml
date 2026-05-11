@@ -24,6 +24,33 @@ jobs:
         working-directory: packages/nanomind-analyst
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # need full history for the merge-base check below
+
+      # Refuse to publish unless the tag points at a commit that is on main.
+      # Tags are pushable from any branch by anyone with repo write access;
+      # this gate forces every release to come from a reviewed merged commit.
+      - name: Refuse if tag is not on main
+        run: |
+          set -euo pipefail
+          if ! git merge-base --is-ancestor "${{ github.sha }}" origin/main; then
+            echo "::error::tag ${{ github.ref_name }} (sha ${{ github.sha }}) is not an ancestor of origin/main"
+            echo "Releases must come from commits merged into main."
+            exit 1
+          fi
+          echo "tag commit ${{ github.sha }} is on main ✓"
+
+      - name: Refuse if pyproject version does not match tag
+        run: |
+          set -euo pipefail
+          TAG="${{ github.ref_name }}"
+          TAG_VERSION="${TAG#nanomind-analyst-v}"
+          PYPROJECT_VERSION=$(python -c "import tomllib, pathlib; print(tomllib.loads(pathlib.Path('packages/nanomind-analyst/pyproject.toml').read_text())['project']['version'])")
+          if [ "$TAG_VERSION" != "$PYPROJECT_VERSION" ]; then
+            echo "::error::tag version $TAG_VERSION does not match pyproject.toml version $PYPROJECT_VERSION"
+            exit 1
+          fi
+          echo "tag version $TAG_VERSION matches pyproject.toml ✓"
 
       - uses: actions/setup-python@v5
         with:

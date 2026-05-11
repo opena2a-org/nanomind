@@ -41,7 +41,9 @@ Documentation = "https://github.com/opena2a-org/nanomind/tree/main/packages/nano
 
 [project.scripts]
 nanomind-analyst = "nanomind_analyst.cli:main"
-nanomind-analyst-daemon = "nanomind_analyst.daemon.nanomind_guard_daemon:main"
+# Wrapped entrypoint so a `nanomind-analyst-daemon` invocation on Linux/Intel
+# fails fast with a clear platform message instead of crashing inside torch.
+nanomind-analyst-daemon = "nanomind_analyst.daemon:guarded_daemon_main"
 
 [project.optional-dependencies]
 test = ["pytest>=8.0", "pytest-mock>=3.12"]

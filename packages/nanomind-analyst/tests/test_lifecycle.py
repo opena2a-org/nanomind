@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import json
-import os
 import secrets
 import socket
 from pathlib import Path
@@ -85,6 +84,36 @@ class TestStatus:
         out = capsys.readouterr().out
         assert "healthz: ready" in out
         assert "requestsServed=42" in out
+
+    def test_agent_loaded_socket_ready_missing_uptime(
+        self, monkeypatch, capsys, fake_sock
+    ):
+        """A healthz response missing uptimeSec must not crash status. Regression
+        for the TypeError-on-:f-of-None bug."""
+        server, _ = fake_sock
+        monkeypatch.setattr(launchd, "print_state", lambda: (0, "loaded"))
+
+        import threading
+
+        def respond():
+            conn, _ = server.accept()
+            with conn:
+                conn.recv(4096)
+                conn.sendall(
+                    json.dumps(
+                        {"ok": True, "daemonState": "ready", "requestsServed": 7}
+                    ).encode()
+                    + b"\n"
+                )
+
+        t = threading.Thread(target=respond, daemon=True)
+        t.start()
+        rc = lifecycle.run_status()
+        t.join(timeout=3.0)
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "healthz: ready" in out
+        assert "uptimeSec=?" in out  # graceful unknown
 
     def test_agent_loaded_socket_degraded(
         self, monkeypatch, capsys, fake_sock

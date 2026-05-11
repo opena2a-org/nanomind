@@ -7,7 +7,6 @@ network is required. Platform guard is exercised directly.
 from __future__ import annotations
 
 import plistlib
-from pathlib import Path
 
 import pytest
 
@@ -147,50 +146,34 @@ class TestInstallFlow:
     def test_install_writes_plist_and_bootstraps(
         self, tmp_path, monkeypatch
     ):
-        """End-to-end install with a fake HF downloader, redirected paths,
-        and a stubbed launchctl. Verifies the plist lands on disk and the
-        launchctl bootstrap call carries the expected args."""
+        """End-to-end install with the artifact fetcher stubbed, redirected
+        paths, and a stubbed launchctl. Verifies the plist lands on disk
+        and the launchctl bootstrap call carries the expected args.
 
-        # Redirect filesystem layout.
+        We monkeypatch `artifacts.fetch_nlm` at the package level rather
+        than `huggingface_hub.snapshot_download` directly. That keeps this
+        test independent of huggingface_hub's import graph (httpx, tqdm,
+        etc.) which can vary across environments — the HF interaction is
+        already covered in test_artifacts.py with the injected downloader.
+        """
+
         fake_home = tmp_path / "home"
         fake_home.mkdir()
         monkeypatch.setattr(paths, "home", lambda: fake_home)
 
-        # Force Apple Silicon.
         monkeypatch.setattr("platform.system", lambda: "Darwin")
         monkeypatch.setattr("platform.machine", lambda: "arm64")
 
-        # Stub the HF downloader to produce files with the right SHAs.
-        safetensors = b"weights" * 1024
-        tokenizer = b"tok" * 1024
-        import hashlib
+        fetch_calls = []
 
-        monkeypatch.setattr(
-            artifacts,
-            "EXPECTED_NLM_SAFETENSORS_SHA256",
-            hashlib.sha256(safetensors).hexdigest(),
-        )
-        monkeypatch.setattr(
-            artifacts,
-            "EXPECTED_NLM_TOKENIZER_SHA256",
-            hashlib.sha256(tokenizer).hexdigest(),
-        )
+        def stub_fetch_nlm(*, target_dir, progress=None, hf_downloader=None):
+            fetch_calls.append(target_dir)
+            target_dir.mkdir(parents=True, exist_ok=True)
+            for fname in artifacts.NLM_REQUIRED_FILES:
+                (target_dir / fname).write_bytes(b"stub")
 
-        def fake_downloader(*, repo_id, revision, local_dir, allow_patterns):
-            target = Path(local_dir)
-            target.mkdir(parents=True, exist_ok=True)
-            (target / "model.safetensors").write_bytes(safetensors)
-            (target / "tokenizer.json").write_bytes(tokenizer)
-            for f in artifacts.NLM_REQUIRED_FILES:
-                if not (target / f).exists():
-                    (target / f).write_bytes(b"{}")
-            return str(target)
+        monkeypatch.setattr(artifacts, "fetch_nlm", stub_fetch_nlm)
 
-        monkeypatch.setattr(
-            "huggingface_hub.snapshot_download", fake_downloader
-        )
-
-        # Stub launchctl.
         launchctl_calls: list[list[str]] = []
 
         class FakeResult:
@@ -208,19 +191,24 @@ class TestInstallFlow:
         exit_code = install.run_install(skip_healthz_wait=True)
         assert exit_code == 0
 
-        # Plist landed at the expected path.
+        assert len(fetch_calls) == 1
+        assert fetch_calls[0] == paths.nlm_dir()
+
         plist = fake_home / "Library" / "LaunchAgents" / f"{paths.LABEL}.plist"
         assert plist.exists()
 
-        # launchctl bootstrap was called.
-        bootstrap_call = next(
-            c for c in launchctl_calls if "bootstrap" in c
-        )
+        bootstrap_call = next(c for c in launchctl_calls if "bootstrap" in c)
         assert "bootstrap" in bootstrap_call
         assert str(plist) in bootstrap_call
 
-        # Classifier was copied with correct SHAs.
-        clf = fake_home / "Library" / "Application Support" / "nanomind-analyst" / "artifacts" / "input-classifier-v1"
+        clf = (
+            fake_home
+            / "Library"
+            / "Application Support"
+            / "nanomind-analyst"
+            / "artifacts"
+            / "input-classifier-v1"
+        )
         assert (clf / "classifier.joblib").exists()
         assert (clf / "meta.json").exists()
 
@@ -229,3 +217,88 @@ class TestInstallFlow:
         monkeypatch.setattr("platform.machine", lambda: "x86_64")
         with pytest.raises(install.InstallError):
             install.run_install(skip_healthz_wait=True)
+
+    def test_install_calls_bootout_before_bootstrap(
+        self, tmp_path, monkeypatch
+    ):
+        """Reinstalls/upgrades must reload the plist; bootstrap rc=17 must not
+        silently leave the OLD plist in active state. Regression test for the
+        bootout-then-bootstrap fix."""
+        fake_home = tmp_path / "home"
+        fake_home.mkdir()
+        monkeypatch.setattr(paths, "home", lambda: fake_home)
+        monkeypatch.setattr("platform.system", lambda: "Darwin")
+        monkeypatch.setattr("platform.machine", lambda: "arm64")
+        monkeypatch.setattr(
+            artifacts,
+            "fetch_nlm",
+            lambda *, target_dir, progress=None, hf_downloader=None: target_dir.mkdir(
+                parents=True, exist_ok=True
+            )
+            or [
+                (target_dir / f).write_bytes(b"x") for f in artifacts.NLM_REQUIRED_FILES
+            ],
+        )
+
+        call_order: list[str] = []
+
+        def fake_run(args, **kw):
+            class R:
+                returncode = 0
+                stdout = ""
+                stderr = ""
+
+            if "bootout" in args:
+                call_order.append("bootout")
+            elif "bootstrap" in args:
+                call_order.append("bootstrap")
+            return R()
+
+        monkeypatch.setattr("subprocess.run", fake_run)
+        install.run_install(skip_healthz_wait=True)
+
+        # bootout must precede bootstrap; otherwise upgrades silently keep
+        # the previously-loaded plist with stale env vars.
+        bootout_idx = call_order.index("bootout")
+        bootstrap_idx = call_order.index("bootstrap")
+        assert bootout_idx < bootstrap_idx
+
+
+class TestHealthzProbeSocketGuard:
+    """The installer's healthz probe must refuse attacker-bound sockets.
+
+    /tmp on macOS is sticky-bit; a different local user can create
+    /tmp/nanomind-guard.sock before our daemon binds. Connecting and trusting
+    the response would let that attacker impersonate the daemon.
+    """
+
+    def test_refuses_symlink(self, tmp_path, monkeypatch):
+        target = tmp_path / "target"
+        target.write_bytes(b"")
+        link = tmp_path / "link"
+        link.symlink_to(target)
+        with pytest.raises(install.InstallError) as exc:
+            install._assert_socket_owned_by_user(str(link))
+        assert "symlink" in str(exc.value)
+
+    def test_refuses_foreign_uid(self, tmp_path, monkeypatch):
+        sock_path = tmp_path / "foreign.sock"
+        sock_path.write_bytes(b"")
+
+        import os as _os
+        real_getuid = _os.getuid
+
+        class FakeStat:
+            st_mode = 0o140700  # S_IFSOCK | rwx------
+            st_uid = real_getuid() + 1  # someone else
+
+        monkeypatch.setattr(install.os, "lstat", lambda p: FakeStat())
+        with pytest.raises(install.InstallError) as exc:
+            install._assert_socket_owned_by_user(str(sock_path))
+        assert "owned by uid" in str(exc.value)
+
+    def test_accepts_own_socket(self, tmp_path, monkeypatch):
+        sock_path = tmp_path / "mine.sock"
+        sock_path.write_bytes(b"")
+        # Real lstat works since we own tmp_path. Should not raise.
+        install._assert_socket_owned_by_user(str(sock_path))

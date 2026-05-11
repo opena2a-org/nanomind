@@ -34,7 +34,6 @@ from pathlib import Path
 from typing import Any
 
 import joblib
-import numpy as np
 
 # Unicode codepoint ranges where presence is a strong signal of payload-hiding.
 # Sources: AIIS-001 (Unicode tag steganography), CVE-2021-42574 (Trojan Source BIDI),

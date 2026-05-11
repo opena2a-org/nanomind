@@ -3,8 +3,20 @@ __pycache__/
 *.egg-info/
 .pytest_cache/
 .venv/
+.venv-gate/
 build/
 dist/
 *.whl
 .coverage
 .tox/
+
+# Sensitive files — never commit
+.env
+.env.*
+secrets.json
+*.pem
+*.key
+*.p12
+*.pfx
+credentials/
+secrets/

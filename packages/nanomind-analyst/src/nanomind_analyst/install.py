@@ -8,11 +8,12 @@ state on disk so a re-run picks up where it left off.
 """
 from __future__ import annotations
 
+import os
 import platform
 import socket
+import stat
 import sys
 import time
-from pathlib import Path
 
 from . import artifacts, launchd, paths
 
@@ -40,12 +41,43 @@ def assert_supported_platform() -> None:
         )
 
 
+def _assert_socket_owned_by_user(sock_path: str) -> None:
+    """Refuse if /tmp/nanomind-guard.sock is a symlink or owned by another UID.
+
+    The default socket lives at /tmp/ on macOS, which is a sticky-bit dir other
+    users on the same host can write into. A malicious local user could pre-
+    bind the path and answer healthz with attacker-controlled bytes; the
+    installer would then report "ready" against an impostor daemon. lstat
+    refuses symlinks (so an attacker cannot redirect to their socket via a
+    symlink either) and the uid check rejects sockets created by other users.
+
+    The daemon's own _bind_socket (vendored, daemon/nanomind_guard_daemon.py)
+    already refuses non-sockets at the path; this is the installer-side
+    complement.
+    """
+    st = os.lstat(sock_path)
+    if stat.S_ISLNK(st.st_mode):
+        raise InstallError(
+            f"refusing to probe {sock_path}: it is a symlink. Another process "
+            f"may be attempting to redirect the daemon. Remove it and rerun "
+            f"`nanomind-analyst install`."
+        )
+    if st.st_uid != os.getuid():
+        raise InstallError(
+            f"refusing to probe {sock_path}: owned by uid {st.st_uid} (we are "
+            f"uid {os.getuid()}). Another user on this host has bound the "
+            f"socket path. Remove it (or have that user remove it) and rerun "
+            f"`nanomind-analyst install`."
+        )
+
+
 def _healthz_probe(timeout_sec: float = 60.0) -> bool:
     """Connect to the daemon's Unix socket and ask for healthz.
 
     Returns True if the daemon binds the socket and reports `daemonState=ready`
     within the timeout. Cold-boot of the v3 NLM takes ~30s on a warm HF cache;
-    60s gives a safety margin.
+    60s gives a safety margin. Refuses to connect if the socket is a symlink
+    or owned by a different uid — see _assert_socket_owned_by_user.
     """
     import json
 
@@ -55,8 +87,16 @@ def _healthz_probe(timeout_sec: float = 60.0) -> bool:
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         sock.settimeout(2.0)
         try:
+            # Verify ownership BEFORE connect so we never feed bytes to an
+            # attacker-bound socket.
+            _assert_socket_owned_by_user(paths.SOCK_PATH)
             sock.connect(paths.SOCK_PATH)
-        except (FileNotFoundError, ConnectionRefusedError) as exc:
+        except FileNotFoundError as exc:
+            last_err = f"{type(exc).__name__}: {exc}"
+            sock.close()
+            time.sleep(1.0)
+            continue
+        except ConnectionRefusedError as exc:
             last_err = f"{type(exc).__name__}: {exc}"
             sock.close()
             time.sleep(1.0)
@@ -130,6 +170,13 @@ def run_install(*, skip_healthz_wait: bool = False) -> int:
     plist = launchd.write_plist(launchd.build_plist_spec())
     _emit(f"wrote launchd plist to {plist}")
 
+    # bootout-then-bootstrap so reinstalls/upgrades actually pick up the new
+    # plist. launchctl bootstrap returns rc=17 ("already loaded") if the LABEL
+    # is in launchd's in-memory state — without a prior bootout, the daemon
+    # would keep running with the OLD plist (old SHA constants, old model
+    # dir) even though we just rewrote the file on disk. bootout is idempotent
+    # on a not-loaded service.
+    launchd.bootout()
     launchd.bootstrap(plist)
     _emit(f"bootstrapped {paths.LABEL} into gui/{paths.uid()}")
 
