@@ -153,6 +153,19 @@ class TestInstallClassifier:
         assert (tmp_path / "classifier" / "classifier.joblib").exists()
         assert (tmp_path / "classifier" / "meta.json").exists()
 
+    def test_verify_refuses_symlink_at_artifact_path(self, tmp_path):
+        """Defense in depth: _verify rejects symlinks even if SHA would match."""
+        from nanomind_analyst.artifacts import _verify, ArtifactError
+
+        real = tmp_path / "real.bin"
+        real.write_bytes(b"some content")
+        link = tmp_path / "link.bin"
+        link.symlink_to(real)
+        sha = hashlib.sha256(b"some content").hexdigest()
+        with pytest.raises(ArtifactError) as exc:
+            _verify(link, sha, name="test-artifact")
+        assert "symlink" in str(exc.value)
+
     def test_refuses_tampered_source(self, tmp_path):
         """install_classifier verifies source SHAs BEFORE copying; a tampered
         wheel cannot ship a poisoned pickle through this path."""

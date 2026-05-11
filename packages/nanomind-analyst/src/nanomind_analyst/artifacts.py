@@ -18,7 +18,9 @@ Bumping it requires recomputing EXPECTED_NLM_*_SHA256 from the live HF tree.
 from __future__ import annotations
 
 import hashlib
+import os
 import shutil
+import stat
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -92,6 +94,18 @@ def _sha256_file(path: Path) -> str:
 def _verify(path: Path, expected: str, *, name: str) -> None:
     if not path.exists():
         raise ArtifactError(f"{name} missing after fetch: {path}")
+    # Defense in depth: reject symlinks at the artifact path. snapshot_download
+    # with local_dir_use_symlinks=False should never produce one, but if some
+    # future HF library version regresses, or if a hostile process slipped a
+    # symlink under target_dir between fetch and verify, we want SHA verify to
+    # read the file at this path, not whatever the symlink resolves to.
+    st = os.lstat(path)
+    if stat.S_ISLNK(st.st_mode):
+        raise ArtifactError(
+            f"{name} is a symlink ({path}); refusing to verify or load. The "
+            f"snapshot_download call requested local_dir_use_symlinks=False; "
+            f"the presence of a symlink here may indicate a tampered fetch."
+        )
     actual = _sha256_file(path)
     if actual != expected:
         raise ArtifactError(
