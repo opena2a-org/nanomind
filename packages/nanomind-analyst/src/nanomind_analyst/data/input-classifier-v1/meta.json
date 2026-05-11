@@ -1,0 +1,36 @@
+{
+  "embedder": "sentence-transformers/all-MiniLM-L6-v2",
+  "labels": [
+    "security-artifact",
+    "off-topic"
+  ],
+  "threshold": 0.65,
+  "seed": 42,
+  "testSize": 0.3,
+  "embeddingDim": 384,
+  "trainCounts": {
+    "security-artifact": 105,
+    "off-topic": 35
+  },
+  "fixtures": [
+    {
+      "file": "refusal-in-domain.jsonl",
+      "label": "security-artifact",
+      "count": 50,
+      "sha256": "09cee538bdcf781f1a94e220a999027ea8a8c8f39349d33a08c8cbce2f3cc32d"
+    },
+    {
+      "file": "fp-suppression.jsonl",
+      "label": "security-artifact",
+      "count": 100,
+      "sha256": "cf7c172edc05ade2c1940b168ca31a2a6db4ae3562070746b3feb5c79233a2e5"
+    },
+    {
+      "file": "refusal-off-topic.jsonl",
+      "label": "off-topic",
+      "count": 50,
+      "sha256": "bdf134157ca9e6be00e00eff9cf2a295f15a5ae9d4d65c9aef47096199befde5"
+    }
+  ],
+  "createdAt": "2026-04-17T12:23:05Z"
+}

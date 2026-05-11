@@ -1,0 +1,76 @@
+name: CI nanomind-analyst
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'packages/nanomind-analyst/**'
+      - '.github/workflows/ci-nanomind-analyst.yml'
+
+concurrency:
+  group: ci-nanomind-analyst-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test (py${{ matrix.python }})
+    runs-on: macos-14  # Apple Silicon runner; matches the install platform.
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.12', '3.13']
+    defaults:
+      run:
+        working-directory: packages/nanomind-analyst
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install build deps
+        run: |
+          python -m pip install --upgrade pip
+          # Install in editable mode WITHOUT the heavy ML deps (torch,
+          # transformers, sentence-transformers) — they aren't needed for the
+          # unit-test surface we exercise here and would balloon CI to 10+ min.
+          # The test suite stubs out all model loading.
+          python -m pip install --no-deps -e .
+          python -m pip install pytest pytest-mock huggingface_hub joblib
+
+      - name: Run pytest
+        run: python -m pytest -v
+
+  build-wheel:
+    name: Build wheel (smoke)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/nanomind-analyst
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - run: python -m pip install --upgrade pip build
+
+      - run: python -m build --wheel
+
+      - name: Verify wheel contents include classifier artifacts
+        run: |
+          set -euo pipefail
+          WHL=$(ls dist/*.whl | head -1)
+          python -m zipfile -l "$WHL" | tee /tmp/wheel.txt
+          grep "input-classifier-v1/classifier.joblib" /tmp/wheel.txt
+          grep "input-classifier-v1/meta.json" /tmp/wheel.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel
+          path: packages/nanomind-analyst/dist/*.whl

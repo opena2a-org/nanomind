@@ -1,0 +1,79 @@
+name: Release nanomind-analyst
+
+# Triggered by pushing a `nanomind-analyst-v<version>` tag. The npm packages in
+# this monorepo use prefixed tags too (cli-v*, daemon-v*, router-v*) so this
+# pattern composes cleanly without colliding.
+on:
+  push:
+    tags:
+      - 'nanomind-analyst-v*'
+
+permissions:
+  # Required for PyPI Trusted Publishing (OIDC).
+  id-token: write
+  # gh release create on the same job.
+  contents: write
+
+jobs:
+  build-and-publish:
+    name: Build wheel + publish to PyPI via OIDC
+    runs-on: ubuntu-latest
+    environment: pypi
+    defaults:
+      run:
+        working-directory: packages/nanomind-analyst
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install build tooling
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install build
+
+      - name: Build sdist + wheel
+        run: python -m build
+
+      - name: Sanity-check wheel contents
+        run: |
+          set -euo pipefail
+          WHL=$(ls dist/*.whl | head -1)
+          echo "Built: $WHL"
+          python -m zipfile -l "$WHL" | tee /tmp/wheel.txt
+          grep "input-classifier-v1/classifier.joblib" /tmp/wheel.txt
+          grep "input-classifier-v1/meta.json" /tmp/wheel.txt
+
+      # Idempotent guard: if the target version is already on PyPI (e.g. tag
+      # re-push), skip publish rather than failing the job.
+      - name: Skip if version already on PyPI
+        id: check-version
+        run: |
+          set -euo pipefail
+          VERSION=$(python -c "import tomllib, pathlib; print(tomllib.loads(pathlib.Path('pyproject.toml').read_text())['project']['version'])")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if curl -sI "https://pypi.org/simple/nanomind-analyst/$VERSION/" | head -1 | grep -q '200'; then
+            echo "already_published=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "already_published=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish to PyPI via Trusted Publishing (OIDC)
+        if: steps.check-version.outputs.already_published == 'false'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: packages/nanomind-analyst/dist
+          attestations: true
+
+      - name: Create GitHub release
+        if: steps.check-version.outputs.already_published == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "${{ github.ref_name }}" \
+            --title "nanomind-analyst ${{ steps.check-version.outputs.version }}" \
+            --notes "Published to PyPI via Trusted Publishing (OIDC). Verify provenance: \`python -m pip download nanomind-analyst==${{ steps.check-version.outputs.version }} --no-deps\` and inspect attestations at https://pypi.org/project/nanomind-analyst/${{ steps.check-version.outputs.version }}/#files." \
+            packages/nanomind-analyst/dist/*
