@@ -1,0 +1,70 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "nanomind-analyst"
+version = "0.1.0"
+description = "Installer for the NanoMind Analyst daemon: serves the Qwen3-1.7B security analyst NLM behind an input-classifier gate over a Unix socket."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "OpenA2A", email = "hello@opena2a.org" }]
+keywords = ["nanomind", "ai-security", "agent-trust", "opena2a", "daemon"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: MacOS X",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS :: MacOS X",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security",
+]
+dependencies = [
+    "huggingface_hub>=0.24,<2.0",
+    "joblib>=1.3",
+    "scikit-learn>=1.3",
+    "sentence-transformers>=2.7",
+    "torch>=2.2",
+    "transformers>=4.43",
+]
+
+[project.urls]
+Homepage = "https://github.com/opena2a-org/nanomind/tree/main/packages/nanomind-analyst"
+Repository = "https://github.com/opena2a-org/nanomind"
+Documentation = "https://github.com/opena2a-org/nanomind/tree/main/packages/nanomind-analyst#readme"
+"Model Card" = "https://huggingface.co/opena2a/nanomind-security-analyst"
+"Bug Tracker" = "https://github.com/opena2a-org/nanomind/issues"
+
+[project.scripts]
+nanomind-analyst = "nanomind_analyst.cli:main"
+# Wrapped entrypoint so a `nanomind-analyst-daemon` invocation on Linux/Intel
+# fails fast with a clear platform message instead of crashing inside torch.
+nanomind-analyst-daemon = "nanomind_analyst.daemon:guarded_daemon_main"
+
+[project.optional-dependencies]
+test = ["pytest>=8.0", "pytest-mock>=3.12"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/nanomind_analyst"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/nanomind_analyst/data/input-classifier-v1/classifier.joblib" = "nanomind_analyst/data/input-classifier-v1/classifier.joblib"
+"src/nanomind_analyst/data/input-classifier-v1/meta.json" = "nanomind_analyst/data/input-classifier-v1/meta.json"
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src",
+    "/tests",
+    "/README.md",
+    "/CHANGELOG.md",
+    "/LICENSE",
+    "/pyproject.toml",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
