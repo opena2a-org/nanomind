@@ -1,13 +1,68 @@
+---
+license: apache-2.0
+base_model: Qwen/Qwen3-1.7B
+language:
+- en
+library_name: transformers
+pipeline_tag: text-generation
+tags:
+- security
+- threat-analysis
+- ai-agent-security
+- nanomind
+- opena2a
+- qwen3
+- lora
+- sft
+- structured-output
+model-index:
+- name: nanomind-security-analyst
+  results:
+  - task:
+      type: text-classification
+      name: AI Agent Threat Classification (10-way)
+    metrics:
+    - type: accuracy
+      value: 0.7000
+      name: Oracle 10-way canonicalized accuracy
+    - type: accuracy
+      value: 0.978
+      name: Oracle binary (threat vs benign)
+    - type: accuracy
+      value: 0.6733
+      name: Oracle attack-only 9-way
+    - type: accuracy
+      value: 0.9424
+      name: Internal 332-sample accuracy
+    - type: f1
+      value: 0.7146
+      name: Macro F1 (10-class)
+---
+
 # Model Card: nanomind-v3-qwen3-1.7B-sft-r64
 
-**Released:** 2026-04-16 (beta retag of rc1)
-**Status:** v3.0.0-beta (internal validation — NOT production)
-**Base Model:** Qwen3-1.7B (Qwen3 license)
-**Previous Production:** nanomind-security-classifier v0.5.0 (Mamba TME, remains production until v3.0.0)
-**Training Repo:** nanomind-training (private), tag v3.0.0-beta
-**Serving Runtime:** NanoMind-Guard daemon (PR #14, f98e649) — `/tmp/nanomind-guard.sock` over JSON-Lines
-**Input Gate:** v3.1 input-classifier gate (PR #13, 1e90bf8) — MiniLM-L6 + sklearn LR @ threshold 0.65 + byte-level BIDI/stego pre-filter
-**[CDS-022] Decision:** beta, 2026-04-16 (ship with 2 failing gates documented)
+## At a glance
+
+| | |
+|---|---|
+| **Version** | v3.0.0 stable (PRODUCTION) |
+| **Released** | 2026-05-11 |
+| **Promoted from** | v3.0.0-beta (2026-04-16) — same artifact, [CDS-020] CPO sign-off |
+| **Base model** | Qwen3-1.7B (Qwen3 license inherited) |
+| **License** | Apache-2.0 (fine-tune) + Qwen3 license (base) |
+| **Architecture** | Qwen3-1.7B + LoRA r=64 SFT fused (bfloat16) |
+| **Model size** | 3.44 GB (safetensors), 1.05 GB (Q4_K_M GGUF) |
+| **Inference** | Apple MPS bf16 required; ~18 ms/token, ~55 tok/s |
+| **Companion model** | nanomind-security-classifier v0.5.0 (Mamba TME, NLM tier — runs in parallel for fast inline classification) |
+| **Serving runtime** | NanoMind-Guard daemon (PR #14, `f98e649`) — `/tmp/nanomind-guard.sock` over JSON-Lines |
+| **Input gate (REQUIRED)** | v3.1 input-classifier gate (PR #13, `1e90bf8`) — MiniLM-L6 + sklearn LR @ threshold 0.65 + byte-level BIDI/stego pre-filter. Without this gate, off-topic refusal drops from 92% to 34%. |
+| **Training repo** | nanomind-training (private), tag `v3.0.0` |
+
+## Decision history
+
+- **[CDS-020]** 2026-05-11 — v3.0.0 stable promotion. Same artifact as 3.0.0-beta, promoted with explicit CPO sign-off on the documented FP-suppression limitation (see §Known Limitations §2). HMA users must human-review findings on packages whose primary purpose is security functionality.
+- **[CDS-022]** 2026-04-16 — Beta retag of rc1 (ship with 2 failing gates documented).
+- **[CDS-003]** Classifier line ended at v0.5.0 (Mamba TME). Future analyst work is the SLM-tier line (this model and successors).
 
 ## Summary
 
@@ -18,11 +73,13 @@ model produces structured analysis (Analysis / Verdict / Evidence / Remediation 
 an explicit `attackClass` and `classification` label.
 
 Oracle 10-way canonicalized accuracy: 70.0% (≥70% ship gate exact). Binary threat detection:
-97.8% (+19.6 pp vs v2). Internal 332-sample accuracy: 94.24%. Shipped as v3.0.0-beta per [CDS-022]
-with two documented gate failures: (1) NLM-standalone off-topic refusal 34% — addressed
-end-to-end by the v3.1 input-classifier gate which lifts e2e off-topic refusal to 92%; (2)
-FP-suppression on benign security code 57% — requires corpus rebalance before v3.0.0 public
-release. For HMA internal validation only until FP-suppression gate passes or explicit CPO sign-off.
+97.8% (+19.6 pp vs v2). Internal 332-sample accuracy: 94.24%. **Promoted to v3.0.0 stable on
+2026-05-11 per [CDS-020] CPO sign-off** with two documented and explicitly accepted limitations:
+(1) NLM-standalone off-topic refusal 34% — addressed end-to-end by the REQUIRED v3.1
+input-classifier gate which lifts e2e off-topic refusal to 92%; (2) FP-suppression on benign
+security code 57% — HMA users must human-review findings on packages whose primary purpose is
+security functionality (JWT validators, RBAC, parameterized queries, rate limiters, OAuth).
+v3.1 fix planned via +100 benign-security-code training samples.
 
 ## Architecture
 
@@ -165,9 +222,9 @@ This model inherits the **Qwen3 license** from the Qwen3-1.7B base model. Fine-t
 
 | Consumer | Update Required | Changes |
 |----------|----------------|---------|
-| HMA | rc1 internal only — coordinate before integrating | New output format (generative vs classifier); attackClass field replaces label |
-| OpenA2A CLI | No | Delegates to HMA |
-| ai-trust | No | Uses different model |
+| HMA (hackmyagent) | Yes — bump nanomind-security-analyst pin to 3.0.0 | New output format (generative Analysis/Verdict/Evidence/Remediation vs classifier label); attackClass field replaces label; REQUIRES v3.1 input-classifier gate in front for off-topic refusal; human review recommended on security-library findings (FP caveat) |
+| OpenA2A CLI (opena2a-cli) | Yes — bump nanomind-security-analyst pin to 3.0.0 | Delegates to HMA for analyst calls; needs version bump on the manifest pin to surface 3.0.0 to users |
+| ai-trust | Yes — bump nanomind-security-analyst pin to 3.0.0 | Uses analyst for trust-context reasoning; same FP caveat applies |
 
 ## Regression vs v2 (nanomind-security-classifier v0.5.0)
 

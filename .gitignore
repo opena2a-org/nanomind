@@ -5,3 +5,13 @@ training/
 Makefile
 packages/nanomind-daemon/node_modules/
 packages/nanomind-daemon/dist-test/
+
+# Sensitive files — never commit
+.env
+.env.*
+secrets.json
+credentials.json
+*.pem
+*.key
+*.p12
+*.pfx

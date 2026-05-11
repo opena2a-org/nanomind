@@ -55,13 +55,17 @@ nanomind-daemon stop
 
 | Model | Visibility | Architecture | Accuracy | Status |
 |-------|-----------|--------------|----------|--------|
-| [nanomind-security-classifier](https://huggingface.co/opena2a/nanomind-security-classifier) | Public | Mamba TME (10 classes) | Recall 100%, Precision 79.6%, F1 88.7%, Benign FPR 9.1% (oracle-verified, TME v5 2026-04-15) | Production (v0.5.0) |
-| nanomind-security-analyst | Internal | Qwen3-1.7B SFT (10 classes) | 70.0% oracle 10-way, 97.8% binary | Beta (v3.0.0-beta — internal validation, published 2026-04-16) |
+| [nanomind-security-classifier](https://huggingface.co/opena2a/nanomind-security-classifier) | Public | Mamba TME (10 classes) | Recall 100%, Precision 79.6%, F1 88.7%, Benign FPR 9.1% (oracle-verified, TME v5 2026-04-15) | Production (v0.5.0 — terminal classifier release per CDS-003) |
+| [nanomind-security-analyst](https://huggingface.co/opena2a/nanomind-security-analyst) | Public | Qwen3-1.7B SFT LoRA r=64 (10 classes) | Oracle 10-way 70.0%, binary 97.8%, attack-only 9-way 67.3%, internal 332-sample 94.24%, refusal off-topic e2e-with-gate 92.0% | Production (v3.0.0, published 2026-05-11) |
 | nanomind-mcp-analyzer | Internal | Planned | -- | Planned |
 | nanomind-trust-scorer | Internal | Planned | -- | Planned |
 | nanomind-runtime-guard | Internal | Planned | -- | Planned |
 
-> **v0.5.0 remains production.** v3.0.0-beta (Qwen3-1.7B SFT, published 2026-04-16 as git tag `v3.0.0-beta`) is available for internal HMA integration validation. Two gate failures are documented in the model card: off-topic refusal at the NLM layer (34%, addressed end-to-end by the v3.1 input-classifier gate which raises it to 92%, PR #13) and FP-suppression on benign security code (57%, human review recommended for security library scans). Production promotion to v3.0.0 requires FP-suppression gate pass or explicit CPO sign-off. Serving runtime: NanoMind-Guard daemon (PR #14, Phase 2b) over `/tmp/nanomind-guard.sock`.
+> **Two production model lines.** The Mamba TME **classifier** (v0.5.0) handles fast inline classification at the NLM tier (~2M params, ONNX, <1ms inference). The Qwen3-1.7B **analyst** (v3.0.0) handles generative threat reasoning at the SLM tier (~1.7B params, MPS bf16, ~18ms/token, structured Analysis/Verdict/Evidence/Remediation output). Both are public on HuggingFace under Apache-2.0 (analyst inherits Qwen3 license on base weights).
+>
+> **v3.0.0 documented limitation — FP-suppression on benign security code.** The analyst over-classifies legitimate JWT validators, RBAC middleware, parameterized queries, rate limiters, and OAuth implementations as threats at a 43% rate (57% benign recall vs ≥95% gate). HMA users running scans on packages whose primary purpose is security functionality should human-review findings. See model card §Known Limitations §2. v3.1 fix planned via +100 benign-security-code training samples. Promotion to v3.0.0 stable per [CDS-020] CPO sign-off on this caveat, 2026-05-11.
+>
+> **Off-topic refusal requires the v3.1 input-classifier gate.** The analyst alone refuses only 34% of off-topic inputs (specialist model trained exclusively on security artifacts). End-to-end refusal reaches 92% only when the v3.1 input-classifier gate (PR #13, 1e90bf8 — sentence-transformers/all-MiniLM-L6-v2 + sklearn LogisticRegression @ threshold 0.65 + byte-level BIDI/stego pre-filter) is deployed in front of the NLM. The gate ships with the NanoMind-Guard daemon (PR #14, f98e649) and is REQUIRED for any consumer surface that may receive non-security inputs. Serving runtime: `/tmp/nanomind-guard.sock`.
 
 Model versions tracked in [`nanomind-models.json`](nanomind-models.json). Publishing automated via GitHub Actions.
 

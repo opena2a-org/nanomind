@@ -135,8 +135,8 @@
       "license": "Apache-2.0",
       "huggingface": {
         "repoId": "opena2a/nanomind-security-analyst",
-        "publishedVersion": "0.1.0",
-        "lastPublished": "2026-04-13T04:58:27+00:00"
+        "publishedVersion": "3.0.0",
+        "lastPublished": "2026-05-11T00:00:00+00:00"
       },
       "versions": {
         "0.1.0": {
@@ -171,8 +171,8 @@
             "taskTypes": 7
           },
           "corpus": "instruct-v3-enriched",
-          "status": "latest",
-          "changelog": "First generative security analyst model. 12L SmolLM2 base, LoRA rank-64. 7 task types: threatAnalysis, credentialContextClassification, falsePositiveDetection, artifactClassification, checkExplanation, governanceReasoning, intelReport."
+          "status": "deprecated",
+          "changelog": "First generative security analyst model. 12L SmolLM2 base, LoRA rank-64. 7 task types: threatAnalysis, credentialContextClassification, falsePositiveDetection, artifactClassification, checkExplanation, governanceReasoning, intelReport. Deprecated 2026-05-11 in favor of 3.0.0 (Qwen3-1.7B base, +34.4pp oracle 10-way, +19.6pp binary)."
         },
         "3.0.0-beta": {
           "architecture": "Qwen3-1.7B LoRA r=64 SFT fused (bfloat16)",
@@ -183,9 +183,9 @@
           "dtype": "bfloat16",
           "inferenceDevice": "Apple MPS (bfloat16 required)",
           "servingRuntime": "NanoMind-Guard daemon (PR #14, f98e649) over /tmp/nanomind-guard.sock",
-          "inputGate": "v3.1 input-classifier gate (PR #13, 1e90bf8) — MiniLM-L6 + sklearn LR @ threshold 0.65 + byte-level BIDI/stego pre-filter",
+          "inputGate": "v3.1 input-classifier gate (PR #13, 1e90bf8) \u2014 MiniLM-L6 + sklearn LR @ threshold 0.65 + byte-level BIDI/stego pre-filter",
           "metrics": {
-            "oracleCanon10Way": 0.7000,
+            "oracleCanon10Way": 0.7,
             "oracleBinary": 0.978,
             "oracleAttackOnly9Way": 0.6733,
             "internal332Sample": 0.9424,
@@ -202,19 +202,85 @@
             "oracleBinary": "PASS",
             "oracleAttackOnly9Way": "PASS",
             "internal332Sample": "PASS",
-            "refusalOffTopicNlmStandalone": "FAIL — 34.0% vs ≥90% (specialist model)",
-            "refusalOffTopicE2eWithGate": "PASS — 92.0% with v3.1 input-classifier gate in front (64% pre-gate)",
-            "refusalInDomain": "PASS — 100.0%",
-            "fpSuppression": "FAIL — 57.0% vs ≥95% (security-adjacent benign over-classified)"
+            "refusalOffTopicNlmStandalone": "FAIL \u2014 34.0% vs \u226590% (specialist model)",
+            "refusalOffTopicE2eWithGate": "PASS \u2014 92.0% with v3.1 input-classifier gate in front (64% pre-gate)",
+            "refusalInDomain": "PASS \u2014 100.0%",
+            "fpSuppression": "FAIL \u2014 57.0% vs \u226595% (security-adjacent benign over-classified)"
           },
           "corpus": "instruct-v3-enriched",
-          "status": "beta",
+          "status": "superseded-by-3.0.0",
           "modelCard": "models/nanomind-v3-qwen3-1.7B-sft-r64/MODEL-CARD.md",
-          "changelog": "Beta retag of rc1 per [CDS-022] on 2026-04-16. Base swap from SmolLM2-12L to Qwen3-1.7B. LR 2e-5 SFT, LoRA r=64. Oracle 10-way +34.4 pp, binary +19.6 pp vs v0.1.0 (SmolLM2). Persistence class added to canonical classes. Beta: two gate failures documented (off-topic refusal at NLM layer — addressed e2e by v3.1 gate; FP-suppression on benign security code — requires corpus rebalance). For HMA internal validation only until v3.0.0."
+          "changelog": "Beta retag of rc1 per [CDS-022] on 2026-04-16. Base swap from SmolLM2-12L to Qwen3-1.7B. LR 2e-5 SFT, LoRA r=64. Oracle 10-way +34.4 pp, binary +19.6 pp vs v0.1.0 (SmolLM2). Persistence class added to canonical classes. Beta: two gate failures documented (off-topic refusal at NLM layer \u2014 addressed e2e by v3.1 gate; FP-suppression on benign security code \u2014 requires corpus rebalance). For HMA internal validation only until v3.0.0. Superseded by 3.0.0 stable on 2026-05-11 (same artifact, promoted with documented FP caveat per [CDS-020] CPO sign-off)."
+        },
+        "3.0.0": {
+          "architecture": "Qwen3-1.7B LoRA r=64 SFT fused (bfloat16)",
+          "modelDir": "models/nanomind-v3-qwen3-1.7B-sft-r64",
+          "modelArtifact": "nanomind-training (private), tag v3.0.0",
+          "publishedAt": "2026-05-11",
+          "sizeGB": 3.44,
+          "dtype": "bfloat16",
+          "inferenceDevice": "Apple MPS (bfloat16 required)",
+          "servingRuntime": "NanoMind-Guard daemon (PR #14, f98e649) over /tmp/nanomind-guard.sock",
+          "inputGate": "v3.1 input-classifier gate (PR #13, 1e90bf8) \u2014 MiniLM-L6 + sklearn LR @ threshold 0.65 + byte-level BIDI/stego pre-filter \u2014 REQUIRED for production deployment to achieve e2e off-topic refusal \u226590%",
+          "metrics": {
+            "oracleCanon10Way": 0.7,
+            "oracleBinary": 0.978,
+            "oracleAttackOnly9Way": 0.6733,
+            "internal332Sample": 0.9424,
+            "structureAdherence": 0.989,
+            "macroF1": 0.7146,
+            "latencyMsPerToken": 18.0,
+            "tokensPerSec": 55.7,
+            "trainSamples": 1821,
+            "evalSamples": 500,
+            "classes": 10
+          },
+          "gates": {
+            "oracleCanon10Way": "PASS \u2014 70.0% vs \u226570%",
+            "oracleBinary": "PASS \u2014 97.8% vs \u226597%",
+            "oracleAttackOnly9Way": "PASS \u2014 67.3% vs \u226565%",
+            "internal332Sample": "PASS \u2014 94.24% vs \u226590%",
+            "refusalOffTopicNlmStandalone": "FAIL \u2014 34.0% vs \u226590% (specialist NLM; addressed e2e by v3.1 input-classifier gate)",
+            "refusalOffTopicE2eWithGate": "PASS \u2014 92.0% with v3.1 input-classifier gate in front",
+            "refusalInDomain": "PASS \u2014 100.0%",
+            "fpSuppression": "DOCUMENTED LIMITATION \u2014 57.0% vs \u226595% gate (security-adjacent benign over-classified at 43% rate). Per [CDS-020] CPO sign-off 2026-05-11: shipped with explicit caveat in model card; human review recommended for HMA scans of security libraries (JWT, RBAC, parameterized queries, rate limiters, OAuth). Fix planned for v3.1 via +100 benign-security-code training samples."
+          },
+          "corpus": "instruct-v3-enriched",
+          "status": "latest",
+          "modelCard": "models/nanomind-v3-qwen3-1.7B-sft-r64/MODEL-CARD.md",
+          "files": [
+            "model.safetensors",
+            "model.safetensors.index.json",
+            "config.json",
+            "tokenizer.json",
+            "tokenizer_config.json",
+            "chat_template.jinja",
+            "generation_config.json",
+            "nanomind-security-analyst.Q4_K_M.gguf",
+            "README.md"
+          ],
+          "sha256": {
+            "model.safetensors": "53cb9441e370b097f556a200efb483dc8fb977a4a57ed79aaae1b99c71426da0",
+            "nanomind-security-analyst.Q4_K_M.gguf": "e4a823315e1c8d274b424183b5987d32f8aec8c6db9fbf3a2b4b1214785f873b"
+          },
+          "formats": {
+            "safetensors": {
+              "size": "3.44GB",
+              "backend": "MLX (Apple Silicon) / PyTorch MPS (bfloat16 REQUIRED)"
+            },
+            "gguf": {
+              "filename": "nanomind-security-analyst.Q4_K_M.gguf",
+              "quantization": "Q4_K_M",
+              "size": "1.05GB",
+              "backend": "llama.cpp (cross-platform)",
+              "consumer": "hackmyagent (hardcoded GGUF download path in nanomind-core/inference/security-analyst.ts)"
+            }
+          },
+          "changelog": "v3.0.0 stable. Promoted from 3.0.0-beta same-artifact per [CDS-020] CPO sign-off on documented FP-suppression caveat 2026-05-11. Base: Qwen3-1.7B. Method: LoRA r=64, alpha=128, LR 2e-5 SFT, 1821 iters. Oracle: 10-way 70.0%, binary 97.8%, attack-only 9-way 67.3% \u2014 all ship gates pass. Internal 332-sample 94.24%. Off-topic refusal 92% e2e with v3.1 input-classifier gate (PR #13). FP-suppression 57% on security-adjacent benign \u2014 DOCUMENTED LIMITATION; HMA users must human-review findings on legitimate security libraries (JWT, RBAC, parameterized queries, rate limiters, OAuth implementations). v3.1 fix planned: +100 benign-security-code training samples."
         }
       },
-      "latestStable": "0.1.0",
-      "latestVersion": "3.0.0-beta",
+      "latestStable": "3.0.0",
+      "latestVersion": "3.0.0",
       "consumers": [
         "hackmyagent",
         "opena2a-cli",
