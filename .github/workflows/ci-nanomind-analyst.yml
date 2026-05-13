@@ -77,3 +77,44 @@ jobs:
         with:
           name: wheel
           path: packages/nanomind-analyst/dist/*.whl
+
+  wheel-install-smoke:
+    # Regression gate for the v0.1.0 dep-omission incident (missing
+    # `accelerate`). Installs the built wheel into a FRESH venv with all
+    # declared deps resolved (NO --no-deps shortcut) and exercises the exact
+    # `from_pretrained(..., device_map=...)` call shape the daemon uses, via a
+    # 5 MB stand-in model. If a future change drops a runtime dep that the
+    # inference path needs, this job fails before the wheel reaches PyPI.
+    name: Wheel install + boot smoke (clean venv)
+    needs: build-wheel
+    runs-on: macos-14
+    defaults:
+      run:
+        working-directory: packages/nanomind-analyst
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: wheel
+          path: packages/nanomind-analyst/dist
+
+      - name: Install wheel into fresh venv WITH all declared deps
+        run: |
+          set -euo pipefail
+          python -m venv /tmp/smoke-venv
+          # Resolve ALL declared deps from pyproject.toml. No --no-deps. This
+          # is the path a brand-new user takes via `pip install nanomind-analyst`.
+          /tmp/smoke-venv/bin/pip install --upgrade pip
+          /tmp/smoke-venv/bin/pip install dist/*.whl pytest pytest-mock
+
+      - name: Run smoke tests against installed wheel
+        run: |
+          set -euo pipefail
+          # Run smoke markers ONLY; the rest of the suite runs in the matrix
+          # test job above and is already covered there.
+          /tmp/smoke-venv/bin/python -m pytest tests/test_install_smoke.py -v -m smoke

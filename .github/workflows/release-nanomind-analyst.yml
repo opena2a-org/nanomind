@@ -15,8 +15,48 @@ permissions:
   contents: write
 
 jobs:
+  pre-publish-smoke:
+    # Hard gate for PyPI publish. Builds the wheel, installs it into a fresh
+    # macOS-arm64 venv with all declared deps resolved (NO --no-deps), and
+    # runs the daemon-boot smoke that exercises the exact
+    # `from_pretrained(..., device_map=...)` call the daemon makes. Catches
+    # any missing-runtime-dep regression on the inference path before it can
+    # reach end users. Added 2026-05-13 after v0.1.0 shipped without
+    # `accelerate` declared and `nanomind-analyst install` crashed at boot on
+    # every clean env.
+    name: Pre-publish boot smoke (clean macos-arm64 venv)
+    runs-on: macos-14
+    defaults:
+      run:
+        working-directory: packages/nanomind-analyst
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - run: python -m pip install --upgrade pip build
+
+      - run: python -m build --wheel
+
+      - name: Install wheel into fresh venv WITH all declared deps
+        run: |
+          set -euo pipefail
+          python -m venv /tmp/smoke-venv
+          /tmp/smoke-venv/bin/pip install --upgrade pip
+          /tmp/smoke-venv/bin/pip install dist/*.whl pytest pytest-mock
+
+      - name: Run boot smoke against installed wheel
+        run: |
+          set -euo pipefail
+          /tmp/smoke-venv/bin/python -m pytest tests/test_install_smoke.py -v -m smoke
+
   build-and-publish:
     name: Build wheel + publish to PyPI via OIDC
+    needs: pre-publish-smoke
     runs-on: ubuntu-latest
     environment: pypi
     defaults:

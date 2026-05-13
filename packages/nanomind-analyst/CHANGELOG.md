@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.1
+
+- Fix: declare `accelerate>=0.26` as a runtime dependency. `transformers` raises a `ValueError` in `check_and_set_device_map` when `device_map=` is passed to `from_pretrained` without `accelerate` installed, and the NLM loader at `src/nanomind_analyst/daemon/_nlm.py` passes `device_map=device`. On clean envs without `accelerate` already present transitively, the daemon crashed at boot with `requires accelerate. You can install it with pip install accelerate`, so `healthz` never bound and the installer reported `LaunchctlError`.
+- CI hardening: new `wheel-install-smoke` job in `ci-nanomind-analyst.yml` builds the wheel, installs it into a fresh venv with **no `--no-deps` shortcut**, and exercises `AutoModelForCausalLM.from_pretrained(..., device_map="cpu")` against a 5 MB stand-in model (`sshleifer/tiny-gpt2`). This is the regression gate for any future missing-runtime-dep regression on the inference path. The release workflow blocks on the same smoke before PyPI publish.
+
 ## 0.1.0
 
 Initial release.
