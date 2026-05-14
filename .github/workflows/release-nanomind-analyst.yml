@@ -145,7 +145,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          # working-directory is packages/nanomind-analyst (job defaults), so
+          # the dist/* glob is relative to that. Previous `packages/nanomind-analyst/dist/*`
+          # double-nested and emitted "no matches found" after the PyPI publish
+          # had already succeeded (v0.1.2 release, 2026-05-14).
           gh release create "${{ github.ref_name }}" \
             --title "nanomind-analyst ${{ steps.check-version.outputs.version }}" \
             --notes "Published to PyPI via Trusted Publishing (OIDC). Verify provenance: \`python -m pip download nanomind-analyst==${{ steps.check-version.outputs.version }} --no-deps\` and inspect attestations at https://pypi.org/project/nanomind-analyst/${{ steps.check-version.outputs.version }}/#files." \
-            packages/nanomind-analyst/dist/*
+            dist/*
