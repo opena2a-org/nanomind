@@ -152,6 +152,169 @@ class TestStatus:
         assert "gate probe" in out
 
 
+class TestStatusJson:
+    """JSON-output mode for `nanomind-analyst status --json`.
+
+    Contract: emit a single JSON line with camelCase keys; exit codes match
+    the human-formatted mode (0 ready, 1 anything else). Downstream tools
+    (HMA, opena2a-cli, ai-trust) parse this instead of regexing human text.
+    """
+
+    def test_agent_not_loaded_json(self, monkeypatch, capsys):
+        monkeypatch.setattr(launchd, "print_state", lambda: (1, "not found"))
+        rc = lifecycle.run_status(json_output=True)
+        assert rc == 1
+        payload = json.loads(capsys.readouterr().out.strip())
+        assert payload == {"agent": {"loaded": False}}
+
+    def test_socket_missing_json(self, monkeypatch, capsys, tmp_path):
+        monkeypatch.setattr(launchd, "print_state", lambda: (0, "loaded"))
+        sock_path = str(tmp_path / "missing.sock")
+        monkeypatch.setattr(paths, "SOCK_PATH", sock_path)
+        rc = lifecycle.run_status(json_output=True)
+        assert rc == 1
+        payload = json.loads(capsys.readouterr().out.strip())
+        assert payload == {
+            "agent": {"loaded": True},
+            "socket": {"path": sock_path, "present": False},
+        }
+
+    def test_ready_json(self, monkeypatch, capsys, fake_sock):
+        server, sock_path = fake_sock
+        monkeypatch.setattr(launchd, "print_state", lambda: (0, "loaded"))
+
+        import threading
+
+        def respond():
+            conn, _ = server.accept()
+            with conn:
+                conn.recv(4096)
+                conn.sendall(
+                    json.dumps(
+                        {
+                            "ok": True,
+                            "daemonState": "ready",
+                            "requestsServed": 42,
+                            "uptimeSec": 100.5,
+                        }
+                    ).encode()
+                    + b"\n"
+                )
+
+        t = threading.Thread(target=respond, daemon=True)
+        t.start()
+        rc = lifecycle.run_status(json_output=True)
+        t.join(timeout=3.0)
+        assert rc == 0
+        payload = json.loads(capsys.readouterr().out.strip())
+        assert payload == {
+            "agent": {"loaded": True},
+            "socket": {"path": str(sock_path), "present": True},
+            "healthz": {
+                "state": "ready",
+                "requestsServed": 42,
+                "uptimeSec": 100.5,
+            },
+        }
+
+    def test_ready_json_omits_uptime_when_missing(
+        self, monkeypatch, capsys, fake_sock
+    ):
+        """If the daemon's healthz payload lacks uptimeSec, the JSON form
+        omits the key rather than emitting null or a sentinel."""
+        server, sock_path = fake_sock
+        monkeypatch.setattr(launchd, "print_state", lambda: (0, "loaded"))
+
+        import threading
+
+        def respond():
+            conn, _ = server.accept()
+            with conn:
+                conn.recv(4096)
+                conn.sendall(
+                    json.dumps(
+                        {"ok": True, "daemonState": "ready", "requestsServed": 7}
+                    ).encode()
+                    + b"\n"
+                )
+
+        t = threading.Thread(target=respond, daemon=True)
+        t.start()
+        rc = lifecycle.run_status(json_output=True)
+        t.join(timeout=3.0)
+        assert rc == 0
+        payload = json.loads(capsys.readouterr().out.strip())
+        assert "uptimeSec" not in payload["healthz"]
+        assert payload["healthz"]["requestsServed"] == 7
+
+    def test_no_response_json(self, monkeypatch, capsys, fake_sock):
+        """Socket exists but the daemon does not answer healthz."""
+        server, sock_path = fake_sock
+        monkeypatch.setattr(launchd, "print_state", lambda: (0, "loaded"))
+
+        # Accept the connection but send nothing, so _healthz_once times out
+        # and returns None.
+        import threading
+
+        def respond():
+            conn, _ = server.accept()
+            with conn:
+                conn.recv(4096)
+                # send nothing
+
+        t = threading.Thread(target=respond, daemon=True)
+        t.start()
+        rc = lifecycle.run_status(json_output=True)
+        t.join(timeout=3.0)
+        assert rc == 1
+        payload = json.loads(capsys.readouterr().out.strip())
+        assert payload == {
+            "agent": {"loaded": True},
+            "socket": {"path": str(sock_path), "present": True},
+            "healthz": {"state": "no-response"},
+        }
+
+    def test_degraded_json_includes_gate_probe(
+        self, monkeypatch, capsys, fake_sock
+    ):
+        server, sock_path = fake_sock
+        monkeypatch.setattr(launchd, "print_state", lambda: (0, "loaded"))
+
+        import threading
+
+        def respond():
+            conn, _ = server.accept()
+            with conn:
+                conn.recv(4096)
+                conn.sendall(
+                    json.dumps(
+                        {
+                            "ok": False,
+                            "daemonState": "degraded",
+                            "gateProbe": {
+                                "label": None,
+                                "expected": "off-topic",
+                                "passed": False,
+                            },
+                        }
+                    ).encode()
+                    + b"\n"
+                )
+
+        t = threading.Thread(target=respond, daemon=True)
+        t.start()
+        rc = lifecycle.run_status(json_output=True)
+        t.join(timeout=3.0)
+        assert rc == 1
+        payload = json.loads(capsys.readouterr().out.strip())
+        assert payload["healthz"]["state"] == "degraded"
+        assert payload["healthz"]["gateProbe"] == {
+            "label": None,
+            "expected": "off-topic",
+            "passed": False,
+        }
+
+
 class TestStartStopRestart:
     def test_start_calls_kickstart(self, monkeypatch, capsys):
         called = {}

@@ -7,6 +7,12 @@ verifies the model artifacts, and manages the daemon lifecycle.
 Apple Silicon (Darwin arm64) only in v0.1. The daemon is bf16 on MPS; fp16
 yields 0% accuracy on Qwen3-1.7B.
 """
-__version__ = "0.1.0"
+from importlib.metadata import PackageNotFoundError, version as _pkg_version
+
+try:
+    __version__ = _pkg_version("nanomind-analyst")
+except PackageNotFoundError:
+    # Source checkout before any install / dist-info exists.
+    __version__ = "0+unknown"
 
 __all__ = ["__version__"]

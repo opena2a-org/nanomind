@@ -18,6 +18,17 @@ import sys
 from . import __version__, install, lifecycle
 
 
+def _add_version_flag(parser: argparse.ArgumentParser) -> None:
+    # `-V` follows the Python ecosystem convention (python -V, pip -V).
+    # `-v` is intentionally NOT bound: it's reserved for a future --verbose.
+    parser.add_argument(
+        "--version",
+        "-V",
+        action="version",
+        version=f"nanomind-analyst {__version__}",
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="nanomind-analyst",
@@ -27,11 +38,7 @@ def build_parser() -> argparse.ArgumentParser:
             "in v0.1."
         ),
     )
-    parser.add_argument(
-        "--version",
-        action="version",
-        version=f"nanomind-analyst {__version__}",
-    )
+    _add_version_flag(parser)
 
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -44,6 +51,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Skip the post-bootstrap healthz probe (CI / scripting use).",
     )
+    _add_version_flag(p_install)
 
     p_uninstall = subparsers.add_parser(
         "uninstall",
@@ -54,19 +62,33 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Also delete the ~3.4 GB NLM weights from Application Support.",
     )
+    _add_version_flag(p_uninstall)
 
-    subparsers.add_parser(
+    p_start = subparsers.add_parser(
         "start", help="Kickstart the loaded LaunchAgent."
     )
-    subparsers.add_parser(
+    _add_version_flag(p_start)
+
+    p_stop = subparsers.add_parser(
         "stop",
         help="Send the daemon SIGTERM. The agent stays loaded.",
     )
-    subparsers.add_parser("restart", help="Stop then start.")
-    subparsers.add_parser(
+    _add_version_flag(p_stop)
+
+    p_restart = subparsers.add_parser("restart", help="Stop then start.")
+    _add_version_flag(p_restart)
+
+    p_status = subparsers.add_parser(
         "status",
         help="Report whether the agent is loaded and healthz returns ready.",
     )
+    p_status.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit a single JSON line with camelCase keys (for scripting).",
+    )
+    _add_version_flag(p_status)
+
     p_logs = subparsers.add_parser(
         "logs", help="Tail the launchd-managed log file."
     )
@@ -75,7 +97,10 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print the last 200 lines and exit instead of tailing.",
     )
-    subparsers.add_parser("version", help="Print the package version.")
+    _add_version_flag(p_logs)
+
+    p_version = subparsers.add_parser("version", help="Print the package version.")
+    _add_version_flag(p_version)
 
     return parser
 
@@ -100,7 +125,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "restart":
             return lifecycle.run_restart()
         if args.command == "status":
-            return lifecycle.run_status()
+            return lifecycle.run_status(json_output=args.json)
         if args.command == "logs":
             return lifecycle.run_logs(follow=not args.no_follow)
         if args.command == "version":
@@ -109,7 +134,7 @@ def main(argv: list[str] | None = None) -> int:
     except install.InstallError as exc:
         sys.stderr.write(f"install error: {exc}\n")
         return 2
-    except Exception as exc:  # noqa: BLE001 — top-level handler
+    except Exception as exc:  # noqa: BLE001 - top-level handler
         sys.stderr.write(f"{type(exc).__name__}: {exc}\n")
         return 1
 
