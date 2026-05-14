@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.1.2
+
+Bug-fix release for 3 P1 / 3 P2 issues surfaced by a fresh-user release test on the 0.1.1 wheel. 0.1.1 was never published to PyPI; users on 0.1.0 should skip directly to 0.1.2.
+
+P1 fixes:
+
+- `nanomind-analyst --version` and `nanomind-analyst version` now read the installed package version via `importlib.metadata`, so they always match the actual wheel. Previously `__init__.py` carried a hard-coded `__version__` string that was missed by the 0.1.1 bump and would have reported `0.1.0` from a 0.1.1 install. Any downstream tool doing string-match version detection (HMA, opena2a-cli, ai-trust) is unblocked.
+- `nanomind-analyst-daemon`, when invoked directly by a user (rather than by launchd), now emits a clear, user-facing refusal pointing at the public CLI (`nanomind-analyst install / start / status / logs`) and exits non-zero. Previously the binary's internal pre-flight could emit a `FATAL` about missing classifier env vars while exiting 0; a `set -e` orchestrator could not detect the failure.
+- The same direct-invocation path no longer leaks internal hardening notes ("second RCE path", "mode 0444 root-owned") to the user terminal. Those phrases stay inside the deployment runbook where they belong.
+- `nanomind-analyst-daemon --help` / `-h` / `--version` / `-V` are now honored before any platform / env-var check, matching universal CLI expectations.
+
+P2 fixes:
+
+- `nanomind-analyst status --json` emits a single-line JSON object with camelCase keys (`agent.loaded`, `socket.path`, `socket.present`, `healthz.state`, `healthz.requestsServed`, `healthz.uptimeSec`, `healthz.gateProbe`). Exit codes unchanged from the human-formatted mode (0 ready, 1 anything else). Lets HMA / opena2a-cli / ai-trust probe daemon readiness without regexing the human output.
+- `--version` (and the new `-V` short flag) is now registered on every subparser. `nanomind-analyst status --version`, `nanomind-analyst logs --version`, etc. all work. `-v` is intentionally NOT bound; it is reserved for a future `--verbose`.
+
 ## 0.1.1
 
 - Fix: declare `accelerate>=0.26` as a runtime dependency. `transformers` raises a `ValueError` in `check_and_set_device_map` when `device_map=` is passed to `from_pretrained` without `accelerate` installed, and the NLM loader at `src/nanomind_analyst/daemon/_nlm.py` passes `device_map=device`. On clean envs without `accelerate` already present transitively, the daemon crashed at boot with `requires accelerate. You can install it with pip install accelerate`, so `healthz` never bound and the installer reported `LaunchctlError`.
