@@ -219,7 +219,12 @@ export class ATCIntentHandler {
     }
 
     try {
-      const url = `${this.registryUrl}/api/v1/atc/${encodeURIComponent(agentId)}`;
+      // Phase 2 of the ATC to ATX rename: the registry publishes the
+      // verifier surface under /api/v1/atx/* as the primary path with
+      // /api/v1/atc/* as a deprecated alias that returns RFC 8594
+      // Sunset headers. Switching here drops this client off the
+      // legacy-path metric well before Phase 3 removal.
+      const url = `${this.registryUrl}/api/v1/atx/${encodeURIComponent(agentId)}`;
       const headers: Record<string, string> = { 'Accept': 'application/json' };
       if (this.apiKey) {
         headers['Authorization'] = `Bearer ${this.apiKey}`;
