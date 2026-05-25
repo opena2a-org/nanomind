@@ -1,5 +1,7 @@
 # NanoMind
 
+[![Status: beta](https://img.shields.io/badge/status-beta-yellow)](./STATUS.md)
+
 Embedded intelligence layer for AI security tools. Two deployment modes, one package:
 
 - **CLI Mode**: Natural language intent routing for security CLIs (HackMyAgent, secretless-ai, OpenA2A)
