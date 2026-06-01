@@ -31,7 +31,19 @@ class NanoMindDaemon extends node_events_1.EventEmitter {
         this.engine = engine ?? new onnx_engine_ts_1.OnnxEngine();
     }
     async start() {
-        // Start HTTP server on localhost only (non-routable)
+        // Eagerly resolve model artifacts BEFORE binding the HTTP listener.
+        // This means `/health` never returns 200 when classification will
+        // fail at first /v1/infer call. Previously the daemon would happily
+        // accept connections while the engine had no model loaded, return
+        // HTTP 500 with `attackClass: ''` on every infer call, and consumers
+        // saw a "Guard isn't firing" symptom with no diagnostic signal.
+        //
+        // OnnxEngine.ensureReady() auto-downloads missing artifacts from
+        // HuggingFace unless `noAutoDownload` is set on the engine.
+        await this.engine.ensureReady();
+        this.modelLoaded = true;
+        this.emit('model_loaded');
+        // Now safe to start the HTTP server on localhost only (non-routable).
         this.httpServer = (0, node_http_1.createServer)((req, res) => this.handleHTTP(req, res));
         this.httpServer.listen(this.config.httpPort, '127.0.0.1', () => {
             this.startedAt = new Date();
