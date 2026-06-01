@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { NanoMindDaemon, DEFAULT_CONFIG } from './server.js';
+import { OnnxEngine } from './onnx-engine.js';
 import { existsSync, readFileSync, writeFileSync, rmSync, unlinkSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
@@ -59,9 +60,19 @@ async function startDaemon(): Promise<void> {
   const port = parseInt(process.env['NANOMIND_PORT'] ?? String(DEFAULT_CONFIG.httpPort), 10);
   const idleSeconds = parseInt(process.env['MODEL_IDLE_UNLOAD_SECONDS'] ?? String(DEFAULT_CONFIG.idleUnloadSeconds), 10);
 
+  // Auto-download is enabled by default. Operators in air-gapped or
+  // network-restricted environments can disable it via the
+  // `--no-download` flag or the `NANOMIND_NO_AUTO_DOWNLOAD=1` env var;
+  // the daemon then expects the model artifacts pre-staged at
+  // ~/.nanomind/models/ and exits non-zero if any are missing.
+  const noAutoDownload =
+    process.argv.includes('--no-download') ||
+    process.env['NANOMIND_NO_AUTO_DOWNLOAD'] === '1';
+
   const daemon = new NanoMindDaemon({
     httpPort: port,
     idleUnloadSeconds: idleSeconds,
+    engine: new OnnxEngine({ noAutoDownload }),
   });
 
   daemon.on('started', ({ port }: { port: number }) => {
@@ -146,14 +157,27 @@ function printUsage(): void {
 NanoMind Daemon - Persistent inference server
 
 Usage:
-  nanomind-daemon start     Start the daemon
-  nanomind-daemon stop      Stop the daemon
-  nanomind-daemon status    Show daemon status
-  nanomind-daemon help      Show this message
+  nanomind-daemon start [--no-download]   Start the daemon
+  nanomind-daemon stop                    Stop the daemon
+  nanomind-daemon status                  Show daemon status
+  nanomind-daemon help                    Show this message
+
+Options:
+  --no-download                Do not fetch missing model artifacts from
+                               HuggingFace; fail if any are absent. For
+                               air-gapped environments.
 
 Environment:
-  NANOMIND_PORT               HTTP port (default: 47200)
-  MODEL_IDLE_UNLOAD_SECONDS   Unload model after N seconds idle (default: 300)
+  NANOMIND_PORT                HTTP port (default: 47200)
+  MODEL_IDLE_UNLOAD_SECONDS    Unload model after N seconds idle (default: 300)
+  NANOMIND_NO_AUTO_DOWNLOAD    Set to "1" to disable auto-download
+                               (equivalent to --no-download)
+
+Model:
+  Pre-staged at ~/.nanomind/models/ (or NANOMIND_MODEL_DIR if set).
+  Missing files are streamed from huggingface.co/opena2a/nanomind-security-classifier
+  and verified against SHA-256 on first start. Subsequent starts use
+  the cached files.
 
 API:
   POST http://127.0.0.1:47200/v1/infer

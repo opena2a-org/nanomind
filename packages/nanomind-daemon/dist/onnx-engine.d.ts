@@ -40,7 +40,55 @@ export interface OnnxEngineConfig {
      * this in a production build is a no-op — verification still runs.
      */
     skipIntegrityCheck?: boolean;
+    /**
+     * When true, `ensureReady()` will NOT attempt to fetch missing files
+     * from HuggingFace; instead it throws the original "not found" error
+     * so the operator can stage the artifacts manually. Useful in
+     * air-gapped or otherwise network-restricted environments. Defaults
+     * to false (auto-download enabled).
+     */
+    noAutoDownload?: boolean;
+    /**
+     * Override the base URL the model files are fetched from. Defaults
+     * to `https://huggingface.co/opena2a/nanomind-security-classifier/resolve/main`.
+     * Primarily a test seam — point at a local fixture server to
+     * exercise the download path without hitting HuggingFace.
+     */
+    downloadBaseUrl?: string;
+    /**
+     * Optional callback for download progress / status. Defaults to
+     * writing one line per file to stderr ("downloading <name> ..."
+     * and "verified <name>"). Set to `() => {}` to silence the daemon.
+     */
+    onDownloadProgress?: (event: DownloadProgressEvent) => void;
 }
+/**
+ * Event surfaced by the download flow so callers can render progress.
+ * `phase` is the only field guaranteed across all events; `bytesDone`
+ * and `bytesTotal` are present when the upstream advertises a
+ * Content-Length header.
+ */
+export type DownloadProgressEvent = {
+    phase: 'start';
+    file: string;
+    url: string;
+} | {
+    phase: 'bytes';
+    file: string;
+    bytesDone: number;
+    bytesTotal: number | null;
+} | {
+    phase: 'verifying';
+    file: string;
+} | {
+    phase: 'done';
+    file: string;
+    bytes: number;
+} | {
+    phase: 'error';
+    file: string;
+    message: string;
+};
 export interface OnnxInferResult {
     /** Raw human-readable label (e.g. "exfiltration"). Convenience for logs. */
     text: string;
@@ -59,6 +107,9 @@ export declare class OnnxEngine {
     readonly modelVersion = "nanomind-tme-v0.5.0";
     private readonly modelDir;
     private readonly skipIntegrityCheck;
+    private readonly noAutoDownload;
+    private readonly downloadBaseUrl;
+    private readonly onDownloadProgress;
     private session;
     private vocab;
     constructor(config?: OnnxEngineConfig);
@@ -69,6 +120,13 @@ export declare class OnnxEngine {
      * llamafile engine plus `attackClass` / `rawLabel` / `confidence`.
      */
     infer(text: string): Promise<OnnxInferResult>;
+    /**
+     * Stream-download a single file from the configured base URL,
+     * verify its SHA-256, and atomically rename into place. Writes to a
+     * `.part` sibling first so a crash or signal mid-download never
+     * leaves a partial file at the canonical path.
+     */
+    private downloadAndVerify;
 }
 /**
  * Tokenize an input string for the Mamba-TME classifier.

@@ -32,14 +32,19 @@
  * a tampered or stale model.
  */
 
-import { existsSync } from 'node:fs';
-import { readFile, stat } from 'node:fs/promises';
-import { createReadStream } from 'node:fs';
+import { existsSync, createReadStream, createWriteStream } from 'node:fs';
+import { readFile, stat, mkdir, rename, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { createHash } from 'node:crypto';
+import { get as httpsGet } from 'node:https';
+import { get as httpGet } from 'node:http';
 import * as ort from 'onnxruntime-node';
 import type { AttackClass } from './server.ts';
+
+const HUGGINGFACE_REPO = 'opena2a/nanomind-security-classifier';
+const HUGGINGFACE_RESOLVE_BASE = `https://huggingface.co/${HUGGINGFACE_REPO}/resolve/main`;
+const DOWNLOAD_MAX_REDIRECTS = 5;
 
 const MODEL_DIR_DEFAULT = join(homedir(), '.nanomind', 'models');
 const ONNX_FILE = 'nanomind-tme.onnx';
@@ -100,7 +105,41 @@ export interface OnnxEngineConfig {
    * this in a production build is a no-op — verification still runs.
    */
   skipIntegrityCheck?: boolean;
+  /**
+   * When true, `ensureReady()` will NOT attempt to fetch missing files
+   * from HuggingFace; instead it throws the original "not found" error
+   * so the operator can stage the artifacts manually. Useful in
+   * air-gapped or otherwise network-restricted environments. Defaults
+   * to false (auto-download enabled).
+   */
+  noAutoDownload?: boolean;
+  /**
+   * Override the base URL the model files are fetched from. Defaults
+   * to `https://huggingface.co/opena2a/nanomind-security-classifier/resolve/main`.
+   * Primarily a test seam — point at a local fixture server to
+   * exercise the download path without hitting HuggingFace.
+   */
+  downloadBaseUrl?: string;
+  /**
+   * Optional callback for download progress / status. Defaults to
+   * writing one line per file to stderr ("downloading <name> ..."
+   * and "verified <name>"). Set to `() => {}` to silence the daemon.
+   */
+  onDownloadProgress?: (event: DownloadProgressEvent) => void;
 }
+
+/**
+ * Event surfaced by the download flow so callers can render progress.
+ * `phase` is the only field guaranteed across all events; `bytesDone`
+ * and `bytesTotal` are present when the upstream advertises a
+ * Content-Length header.
+ */
+export type DownloadProgressEvent =
+  | { phase: 'start'; file: string; url: string }
+  | { phase: 'bytes'; file: string; bytesDone: number; bytesTotal: number | null }
+  | { phase: 'verifying'; file: string }
+  | { phase: 'done'; file: string; bytes: number }
+  | { phase: 'error'; file: string; message: string };
 
 export interface OnnxInferResult {
   /** Raw human-readable label (e.g. "exfiltration"). Convenience for logs. */
@@ -122,6 +161,9 @@ export class OnnxEngine {
 
   private readonly modelDir: string;
   private readonly skipIntegrityCheck: boolean;
+  private readonly noAutoDownload: boolean;
+  private readonly downloadBaseUrl: string;
+  private readonly onDownloadProgress: (event: DownloadProgressEvent) => void;
   private session: ort.InferenceSession | null = null;
   private vocab: Map<string, number> | null = null;
 
@@ -132,6 +174,9 @@ export class OnnxEngine {
     // of what callers pass.
     this.skipIntegrityCheck =
       (config.skipIntegrityCheck ?? false) && process.env.NODE_ENV !== 'production';
+    this.noAutoDownload = config.noAutoDownload ?? false;
+    this.downloadBaseUrl = config.downloadBaseUrl ?? HUGGINGFACE_RESOLVE_BASE;
+    this.onDownloadProgress = config.onDownloadProgress ?? defaultProgressReporter;
   }
 
   isLoaded(): boolean {
@@ -145,17 +190,36 @@ export class OnnxEngine {
     const dataPath = join(this.modelDir, ONNX_DATA_FILE);
     const tokenizerPath = join(this.modelDir, TOKENIZER_FILE);
 
-    for (const [label, p] of [
+    // Auto-download any missing files unless explicitly disabled. The
+    // download verifies SHA-256 against EXPECTED_SHA256 as part of the
+    // write so an interrupted or tampered download never lands on disk.
+    const fileSpec: ReadonlyArray<readonly [string, string]> = [
       ['model', modelPath],
       ['model external data', dataPath],
       ['tokenizer', tokenizerPath],
-    ] as const) {
-      if (!existsSync(p)) {
+    ];
+    const missing = fileSpec.filter(([, p]) => !existsSync(p));
+    if (missing.length > 0) {
+      if (this.noAutoDownload) {
+        const [label, p] = missing[0];
         throw new Error(
           `NanoMind ${label} not found at ${p}. ` +
-            `Download v0.5.0 from huggingface.co/opena2a/nanomind-security-classifier ` +
+            `Auto-download is disabled (noAutoDownload). ` +
+            `Download v0.5.0 from huggingface.co/${HUGGINGFACE_REPO} ` +
             `into ${this.modelDir}/ before starting the daemon.`,
         );
+      }
+      await mkdir(this.modelDir, { recursive: true });
+      for (const [, p] of missing) {
+        const name = pathBasename(p);
+        const expected = EXPECTED_SHA256[name];
+        if (!expected) {
+          throw new Error(
+            `NanoMind cannot auto-download ${name}: no expected SHA-256 registered. ` +
+              `Update EXPECTED_SHA256 in onnx-engine.ts if a new artifact is required.`,
+          );
+        }
+        await this.downloadAndVerify(name, p, expected);
       }
     }
 
@@ -227,6 +291,85 @@ export class OnnxEngine {
       confidence: probs[argmax],
     };
   }
+
+  /**
+   * Stream-download a single file from the configured base URL,
+   * verify its SHA-256, and atomically rename into place. Writes to a
+   * `.part` sibling first so a crash or signal mid-download never
+   * leaves a partial file at the canonical path.
+   */
+  private async downloadAndVerify(
+    name: string,
+    destPath: string,
+    expectedSha256: string,
+  ): Promise<void> {
+    const url = `${this.downloadBaseUrl}/${name}`;
+    const partPath = `${destPath}.part`;
+
+    this.onDownloadProgress({ phase: 'start', file: name, url });
+
+    let bytesWritten = 0;
+    let bytesTotal: number | null = null;
+    const hash = createHash('sha256');
+
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const out = createWriteStream(partPath);
+        let settled = false;
+        const finish = (err?: Error) => {
+          if (settled) return;
+          settled = true;
+          out.destroy();
+          if (err) reject(err);
+          else resolve();
+        };
+
+        followGet(url, DOWNLOAD_MAX_REDIRECTS, (err, res) => {
+          if (err) return finish(err);
+          if (!res) return finish(new Error('no response'));
+          if (res.statusCode === undefined || res.statusCode < 200 || res.statusCode >= 300) {
+            res.resume();
+            return finish(new Error(`download ${name}: HTTP ${res.statusCode}`));
+          }
+          const contentLength = res.headers['content-length'];
+          if (contentLength !== undefined) bytesTotal = parseInt(contentLength, 10);
+
+          res.on('data', (chunk: Buffer) => {
+            hash.update(chunk);
+            bytesWritten += chunk.length;
+            this.onDownloadProgress({ phase: 'bytes', file: name, bytesDone: bytesWritten, bytesTotal });
+            if (!out.write(chunk)) res.pause();
+          });
+          out.on('drain', () => res.resume());
+          res.on('end', () => {
+            out.end(() => finish());
+          });
+          res.on('error', finish);
+          out.on('error', finish);
+        });
+      });
+
+      this.onDownloadProgress({ phase: 'verifying', file: name });
+      const actualSha = hash.digest('hex');
+      if (!this.skipIntegrityCheck && actualSha !== expectedSha256) {
+        await unlink(partPath).catch(() => undefined);
+        throw new Error(
+          `Downloaded ${name} failed integrity check: ` +
+            `expected ${expectedSha256}, got ${actualSha}. ` +
+            `Network corruption or upstream artifact tampering. ` +
+            `Re-run the daemon to retry.`,
+        );
+      }
+
+      await rename(partPath, destPath);
+      this.onDownloadProgress({ phase: 'done', file: name, bytes: bytesWritten });
+    } catch (err) {
+      await unlink(partPath).catch(() => undefined);
+      const message = err instanceof Error ? err.message : String(err);
+      this.onDownloadProgress({ phase: 'error', file: name, message });
+      throw err;
+    }
+  }
 }
 
 /**
@@ -275,4 +418,58 @@ async function fileSha256(path: string): Promise<string> {
     s.on('end', () => resolve(h.digest('hex')));
     s.on('error', reject);
   });
+}
+
+/**
+ * Follow HTTPS/HTTP redirects up to `maxRedirects` and invoke `cb`
+ * with the final response. Used by the model downloader so HuggingFace's
+ * 302/307 redirect to S3 is transparent to the caller.
+ */
+type ResponseLike = import('node:http').IncomingMessage;
+function followGet(
+  url: string,
+  maxRedirects: number,
+  cb: (err: Error | null, res: ResponseLike | null) => void,
+): void {
+  const get = url.startsWith('https://') ? httpsGet : httpGet;
+  const req = get(url, (res) => {
+    const status = res.statusCode ?? 0;
+    if (status >= 300 && status < 400 && res.headers.location) {
+      res.resume();
+      if (maxRedirects <= 0) {
+        cb(new Error(`too many redirects following ${url}`), null);
+        return;
+      }
+      const next = new URL(res.headers.location, url).toString();
+      followGet(next, maxRedirects - 1, cb);
+      return;
+    }
+    cb(null, res);
+  });
+  req.on('error', (err) => cb(err, null));
+}
+
+function pathBasename(p: string): string {
+  const idx = p.lastIndexOf('/');
+  return idx === -1 ? p : p.slice(idx + 1);
+}
+
+/**
+ * Default progress reporter: one informative line per file on stderr.
+ * Stderr (not stdout) so it doesn't pollute the daemon's structured
+ * output. Per-byte events are throttled to once per ~10% so we don't
+ * spam the log on small downloads.
+ */
+function defaultProgressReporter(event: DownloadProgressEvent): void {
+  if (event.phase === 'start') {
+    console.error(`[nanomind-daemon] downloading ${event.file} from ${event.url} ...`);
+  } else if (event.phase === 'verifying') {
+    console.error(`[nanomind-daemon] verifying ${event.file} (SHA-256) ...`);
+  } else if (event.phase === 'done') {
+    console.error(`[nanomind-daemon] ${event.file} ready (${event.bytes} bytes)`);
+  } else if (event.phase === 'error') {
+    console.error(`[nanomind-daemon] ${event.file} failed: ${event.message}`);
+  }
+  // Per-byte 'bytes' events are deliberately silent in the default
+  // reporter to avoid log spam. Custom reporters can render a bar.
 }
