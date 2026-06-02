@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.3.0
+
+### Auto-download + eager readiness (closes #28)
+
+- `start()` now downloads missing model artifacts (`nanomind-tme.onnx`, `nanomind-tme.onnx.data`, `tokenizer.json`) from the canonical HuggingFace bucket and SHA-256 verifies each file against `EXPECTED_SHA256` before binding HTTP. Consumers running `npx @nanomind/daemon start` on a clean machine get a real classification on the first `/v1/infer`; previously the first request returned 500 (`NanoMind ONNX not found at ...`) and downstream tools (`@opena2a/aicomply 2.0`) silently fell back to regex-only Guard.
+- `start()` is now eager: `engine.ensureReady()` runs before the HTTP server binds. `GET /health` only returns 200 after the model has loaded — no more "daemon up, classifier broken" race window.
+- Partial downloads use a `.part` rename pattern + per-byte SHA-256, so bad bytes never land at the canonical path. No `.part` file is left behind on HTTP failure.
+- Redirects followed up to 5 levels (huggingface.co 302 to S3 chain works transparently).
+
+### Air-gap / opt-out
+
+- `--no-download` CLI flag and `NANOMIND_NO_AUTO_DOWNLOAD=1` env var preserve the old fail-fast behavior for air-gapped operators who stage model files themselves.
+
+### API additions (all additive on `OnnxEngineConfig`)
+
+- `noAutoDownload?: boolean` opts out of auto-download.
+- `downloadBaseUrl?: string` is a test seam for overriding the default HF base URL.
+- `onDownloadProgress?: (event: DownloadProgressEvent) => void` observes `start` / `bytes` / `verifying` / `done` / `error` events for progress UI. Default observer logs one line per file to stderr.
+
+### Tests
+
+- 18/18 pass (was 11; +7 download tests). All download tests use a local mock HTTP server so the suite stays offline-safe.
+
+---
+
 ## 0.2.0
 
 ### CLI
