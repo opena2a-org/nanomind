@@ -296,7 +296,7 @@ class OnnxEngine {
             });
             this.onDownloadProgress({ phase: 'verifying', file: name });
             const actualSha = hash.digest('hex');
-            if (actualSha !== expectedSha256) {
+            if (!this.skipIntegrityCheck && actualSha !== expectedSha256) {
                 await (0, promises_1.unlink)(partPath).catch(() => undefined);
                 throw new Error(`Downloaded ${name} failed integrity check: ` +
                     `expected ${expectedSha256}, got ${actualSha}. ` +

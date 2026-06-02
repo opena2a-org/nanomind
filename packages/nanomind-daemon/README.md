@@ -11,7 +11,10 @@ npm install @nanomind/daemon
 ## Quick Start
 
 ```bash
-# Start the daemon
+# Start the daemon — first run downloads the v0.5.0 classifier
+# (3 files, ~8MB total) from the canonical HuggingFace bucket and
+# SHA-256 verifies each before binding HTTP. Subsequent starts skip
+# the download.
 nanomind-daemon start
 
 # Check status
@@ -20,6 +23,10 @@ nanomind-daemon status
 # Stop
 nanomind-daemon stop
 ```
+
+For air-gapped operators who stage model files manually, pass `--no-download`
+(or set `NANOMIND_NO_AUTO_DOWNLOAD=1`) to preserve the old fail-fast behavior.
+See [Model files](#model-files) for the manual staging procedure.
 
 ## HTTP API
 
@@ -125,7 +132,10 @@ curl http://127.0.0.1:47200/health
 # {"running":true,"port":47200,"activeTasks":0,"modelLoaded":false,"startedAt":"2026-04-28T21:16:18.748Z","uptime":2069}
 ```
 
-`modelLoaded` is `false` until the first `/v1/infer` call — the model lazy-loads on demand and unloads after `idleUnloadSeconds` of inactivity.
+`modelLoaded` is `true` as soon as `/health` returns 200. `start()` calls
+`engine.ensureReady()` before binding HTTP, so the daemon will not accept
+requests until the classifier has loaded. The model unloads after
+`idleUnloadSeconds` of inactivity and re-loads lazily on the next request.
 
 ### GET /v1/status
 
@@ -185,7 +195,20 @@ The daemon loads the v0.5.0 production NanoMind classifier (Mamba-TME, 8 blocks,
 | `nanomind-tme.onnx.data` | External weights data file (~8MB). |
 | `tokenizer.json` | Word-level vocabulary (6000 entries). |
 
-Download from HuggingFace (`opena2a/nanomind-security-classifier`):
+### Default: auto-download (since 0.3.0)
+
+`nanomind-daemon start` (or `daemon.start()` programmatically) downloads any
+missing files from the canonical HuggingFace bucket
+(`opena2a/nanomind-security-classifier`) on first run. Each file is SHA-256
+verified against the hash recorded in `nanomind-models.json` (v0.5.0) before
+landing at the canonical path. A partial download writes to a `.part` file
+and is renamed only after verification, so a tampered or interrupted transfer
+never lands at the canonical path.
+
+### Manual staging (air-gapped)
+
+Pass `--no-download` to the CLI or set `NANOMIND_NO_AUTO_DOWNLOAD=1` to
+preserve the old fail-fast behavior. Stage the files yourself:
 
 ```bash
 mkdir -p ~/.nanomind/models
@@ -194,6 +217,23 @@ BASE=https://huggingface.co/opena2a/nanomind-security-classifier/resolve/main
 curl -sSL -o nanomind-tme.onnx        "$BASE/nanomind-tme.onnx"
 curl -sSL -o nanomind-tme.onnx.data   "$BASE/nanomind-tme.onnx.data"
 curl -sSL -o tokenizer.json           "$BASE/tokenizer.json"
+
+NANOMIND_NO_AUTO_DOWNLOAD=1 nanomind-daemon start
+```
+
+### Programmatic API
+
+The `OnnxEngineConfig` surface is additive — defaults preserve the new
+auto-download:
+
+```ts
+interface OnnxEngineConfig {
+  modelDir?: string;
+  skipIntegrityCheck?: boolean;
+  noAutoDownload?: boolean;
+  downloadBaseUrl?: string;
+  onDownloadProgress?: (event: DownloadProgressEvent) => void;
+}
 ```
 
 ## Security
