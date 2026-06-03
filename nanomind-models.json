@@ -126,7 +126,8 @@
       "latestVersion": "0.5.0",
       "consumers": [
         "hackmyagent",
-        "opena2a-cli"
+        "opena2a-cli",
+        "aicomply"
       ]
     },
     "nanomind-security-analyst": {
