@@ -1,85 +1,53 @@
-name: Publish Models to HuggingFace
+name: Validate Model Manifest
+
+# Models are published to HuggingFace MANUALLY via `hf upload` from the private
+# training tree (`training/` is gitignored in this public repo, so the HF push
+# script cannot run in CI). This workflow therefore validates the manifest on
+# every change; it does not publish. The prior auto-publish job referenced
+# `training/scripts/push-to-huggingface.py`, which has never existed in the
+# public checkout and failed on every run.
+#
+# Manual publish procedure: see nanomind-training/RUNBOOK_UPDATE_MODEL.md Step 6
+# (`npx secretless-ai run --only HUGGIN_KEY -- make publish MODEL_VERSION=<v>`).
 
 on:
   push:
     branches: [main]
     paths:
-      - 'training/models-tme-v*/**'
-      - 'training/models/**'
+      - 'nanomind-models.json'
+  pull_request:
+    paths:
       - 'nanomind-models.json'
   workflow_dispatch:
-    inputs:
-      model:
-        description: 'Model to publish (blank = all public)'
-        required: false
-        type: string
-      version:
-        description: 'Version to publish (blank = latest)'
-        required: false
-        type: string
-      dry_run:
-        description: 'Dry run only'
-        required: false
-        type: boolean
-        default: false
 
 jobs:
-  publish:
+  validate-manifest:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          lfs: true
 
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
-      - name: Install dependencies
-        run: pip install huggingface_hub
-
-      - name: Validate manifest
+      - name: Validate manifest is well-formed JSON
         run: python -c "import json; json.load(open('nanomind-models.json'))"
 
-      - name: Dry run check
-        run: python training/scripts/push-to-huggingface.py --dry-run
-
-      - name: Publish to HuggingFace
-        if: ${{ inputs.dry_run != true }}
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      - name: Validate manifest invariants
         run: |
-          ARGS=""
-          if [ -n "${{ inputs.model }}" ]; then
-            ARGS="$ARGS --model ${{ inputs.model }}"
-          fi
-          if [ -n "${{ inputs.version }}" ]; then
-            ARGS="$ARGS --version ${{ inputs.version }}"
-          fi
-          python training/scripts/push-to-huggingface.py $ARGS
-
-      - name: Commit manifest updates
-        if: ${{ inputs.dry_run != true }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          if git diff --quiet nanomind-models.json; then
-            echo "No manifest changes"
-          else
-            git add nanomind-models.json
-            git commit -m "Update model manifest after HuggingFace publish"
-            git push
-          fi
-
-  notify-consumers:
-    needs: publish
-    if: ${{ inputs.dry_run != true }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: Notify HackMyAgent
-        uses: peter-evans/repository-dispatch@v3
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          repository: opena2a-org/hackmyagent
-          event-type: nanomind-model-updated
-          client-payload: '{"model": "nanomind-security-classifier", "version": "v0.3.0"}'
+          python - <<'PY'
+          import json, sys
+          m = json.load(open('nanomind-models.json'))
+          errs = []
+          for name, model in m.get('models', {}).items():
+              versions = model.get('versions', {})
+              latest = model.get('latestVersion')
+              if versions and latest and latest not in versions:
+                  errs.append(f"{name}: latestVersion {latest} not in versions")
+              latest_count = sum(1 for v in versions.values() if v.get('status') == 'latest')
+              if versions and latest_count != 1:
+                  errs.append(f"{name}: expected exactly 1 'latest' version, found {latest_count}")
+          if errs:
+              print("\n".join(errs)); sys.exit(1)
+          print("manifest invariants OK")
+          PY
