@@ -211,7 +211,7 @@
           "corpus": "instruct-v3-enriched",
           "status": "superseded-by-3.0.0",
           "modelCard": "models/nanomind-v3-qwen3-1.7B-sft-r64/MODEL-CARD.md",
-          "changelog": "Beta retag of rc1 per [CDS-022] on 2026-04-16. Base swap from SmolLM2-12L to Qwen3-1.7B. LR 2e-5 SFT, LoRA r=64. Oracle 10-way +34.4 pp, binary +19.6 pp vs v0.1.0 (SmolLM2). Persistence class added to canonical classes. Beta: two gate failures documented (off-topic refusal at NLM layer \u2014 addressed e2e by v3.1 gate; FP-suppression on benign security code \u2014 requires corpus rebalance). For HMA internal validation only until v3.0.0. Superseded by 3.0.0 stable on 2026-05-11 (same artifact, promoted with documented FP caveat per [CDS-020] CPO sign-off)."
+          "changelog": "Beta retag of rc1 on 2026-04-16. Base swap from SmolLM2-12L to Qwen3-1.7B. LR 2e-5 SFT, LoRA r=64. Oracle 10-way +34.4 pp, binary +19.6 pp vs v0.1.0 (SmolLM2). Persistence class added to canonical classes. Beta: two gate failures documented (off-topic refusal at NLM layer \u2014 addressed e2e by v3.1 gate; FP-suppression on benign security code \u2014 requires corpus rebalance). For HMA internal validation only until v3.0.0. Superseded by 3.0.0 stable on 2026-05-11 (same artifact, shipped with the documented FP caveat)."
         },
         "3.0.0": {
           "architecture": "Qwen3-1.7B LoRA r=64 SFT fused (bfloat16)",
@@ -244,7 +244,7 @@
             "refusalOffTopicNlmStandalone": "FAIL \u2014 34.0% vs \u226590% (specialist NLM; addressed e2e by v3.1 input-classifier gate)",
             "refusalOffTopicE2eWithGate": "PASS \u2014 92.0% with v3.1 input-classifier gate in front",
             "refusalInDomain": "PASS \u2014 100.0%",
-            "fpSuppression": "DOCUMENTED LIMITATION \u2014 57.0% vs \u226595% gate (security-adjacent benign over-classified at 43% rate). Per [CDS-020] CPO sign-off 2026-05-11: shipped with explicit caveat in model card; human review recommended for HMA scans of security libraries (JWT, RBAC, parameterized queries, rate limiters, OAuth). Fix planned for v3.1 via +100 benign-security-code training samples."
+            "fpSuppression": "DOCUMENTED LIMITATION (corrected 2026-06-03) \u2014 ~77% benign-suppression on real security code, vs \u226595% gate. The original 57.0% was measured on a gate later found to be 41% placeholder filler that depressed the headline; on a repaired 82-sample real-library gate the analyst clears 77% (63/82) as benign. Roughly 1 in 4 benign security artifacts may still be over-flagged, so spot-checking analyst findings on dedicated security libraries (JWT, RBAC, parameterized queries, rate limiters, OAuth, crypto) remains advisable. A corpus retrain (v3.1) was a no-go (+2pp, oracle regressed); scoped fix is a benign-security-code pre-pass, not corpus expansion."
           },
           "corpus": "instruct-v3-enriched",
           "status": "latest",
@@ -277,7 +277,7 @@
               "consumer": "hackmyagent (hardcoded GGUF download path in nanomind-core/inference/security-analyst.ts)"
             }
           },
-          "changelog": "v3.0.0 stable. Promoted from 3.0.0-beta same-artifact per [CDS-020] CPO sign-off on documented FP-suppression caveat 2026-05-11. Base: Qwen3-1.7B. Method: LoRA r=64, alpha=128, LR 2e-5 SFT, 1821 iters. Oracle: 10-way 70.0%, binary 97.8%, attack-only 9-way 67.3% \u2014 all ship gates pass. Internal 332-sample 94.24%. Off-topic refusal 92% e2e with v3.1 input-classifier gate (PR #13). FP-suppression 57% on security-adjacent benign \u2014 DOCUMENTED LIMITATION; HMA users must human-review findings on legitimate security libraries (JWT, RBAC, parameterized queries, rate limiters, OAuth implementations). v3.1 fix planned: +100 benign-security-code training samples."
+          "changelog": "v3.0.0 stable. Promoted from 3.0.0-beta (same artifact) 2026-05-11; shipped with the documented FP-suppression caveat. Base: Qwen3-1.7B. Method: LoRA r=64, alpha=128, LR 2e-5 SFT, 1821 iters. Oracle: 10-way 70.0%, binary 97.8%, attack-only 9-way 67.3% \u2014 all ship gates pass. Internal 332-sample 94.24%. Off-topic refusal 92% e2e with v3.1 input-classifier gate (PR #13). FP-suppression on security-adjacent benign: corrected 2026-06-03 to ~77% (was reported 57% on a gate later found to be 41% placeholder filler); spot-checking analyst findings on dedicated security libraries (JWT, RBAC, parameterized queries, rate limiters, OAuth) remains advisable. v3.1 corpus retrain was a NO-GO (+2pp, oracle regressed); scoped fix is a benign-security-code pre-pass, not corpus expansion."
         }
       },
       "latestStable": "3.0.0",
