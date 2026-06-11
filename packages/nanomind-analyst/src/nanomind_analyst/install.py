@@ -188,14 +188,29 @@ def run_install(*, skip_healthz_wait: bool = False) -> int:
     # plist (old SHA constants, old model dir).
     launchd.bootout()
 
-    _emit(f"installing classifier into {paths.classifier_dir()}")
-    artifacts.install_classifier(
-        source_dir=artifacts.wheel_classifier_source_dir(),
-        target_dir=paths.classifier_dir(),
-    )
+    # The trade for booting out first: a failure between here and bootstrap
+    # leaves the daemon UNLOADED (the old order left a previously-healthy
+    # daemon running until the end). That is deliberate — re-bootstrapping
+    # the old plist against a half-mutated artifact dir would crash-loop —
+    # but the user must be told the daemon is now stopped, not left to
+    # discover it.
+    try:
+        _emit(f"installing classifier into {paths.classifier_dir()}")
+        artifacts.install_classifier(
+            source_dir=artifacts.wheel_classifier_source_dir(),
+            target_dir=paths.classifier_dir(),
+        )
 
-    plist = launchd.write_plist(launchd.build_plist_spec())
-    _emit(f"wrote launchd plist to {plist}")
+        plist = launchd.write_plist(launchd.build_plist_spec())
+        _emit(f"wrote launchd plist to {plist}")
+    except BaseException:
+        sys.stderr.write(
+            "install failed after the daemon was unloaded; the daemon is "
+            "now STOPPED (not crash-looping). Re-run `nanomind-analyst "
+            "install` to restore a consistent artifact + plist and restart "
+            "it.\n"
+        )
+        raise
 
     launchd.bootstrap(plist)
     _emit(f"bootstrapped {paths.LABEL} into gui/{paths.uid()}")

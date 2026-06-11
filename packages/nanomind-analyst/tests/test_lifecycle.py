@@ -124,7 +124,7 @@ class TestStatus:
         assert "uptimeSec=?" in out  # graceful unknown
 
     def test_agent_loaded_socket_degraded(
-        self, monkeypatch, capsys, fake_sock
+        self, monkeypatch, capsys, fake_sock, no_drift
     ):
         server, _ = fake_sock
         monkeypatch.setattr(launchd, "print_state", lambda: (0, "loaded"))
@@ -405,7 +405,7 @@ class TestStatusJson:
         }
 
     def test_degraded_json_includes_gate_probe(
-        self, monkeypatch, capsys, fake_sock
+        self, monkeypatch, capsys, fake_sock, no_drift
     ):
         server, sock_path = fake_sock
         monkeypatch.setattr(launchd, "print_state", lambda: (0, "loaded"))
@@ -442,6 +442,30 @@ class TestStatusJson:
             "label": None,
             "expected": "off-topic",
             "passed": False,
+        }
+        # Degraded is an rc=1 path; it carries the artifact block like the
+        # other failure paths.
+        assert payload["artifact"] == {"classifierMatchesWheel": True}
+
+    def test_degraded_json_reports_drift(self, monkeypatch, capsys, fake_sock):
+        """A drifted artifact (old operating point) can be why the gate
+        probe is failing — the degraded path must surface it too."""
+        server, _ = fake_sock
+        monkeypatch.setattr(launchd, "print_state", lambda: (0, "loaded"))
+        monkeypatch.setattr(
+            artifacts, "installed_classifier_drift", lambda d: ["meta.json"]
+        )
+        t = self._ready_with(
+            server,
+            {"ok": False, "daemonState": "degraded", "gateProbe": {}},
+        )
+        rc = lifecycle.run_status(json_output=True)
+        t.join(timeout=3.0)
+        assert rc == 1
+        payload = json.loads(capsys.readouterr().out.strip())
+        assert payload["artifact"] == {
+            "classifierMatchesWheel": False,
+            "driftedFiles": ["meta.json"],
         }
 
     def test_no_response_json_reports_drift(self, monkeypatch, capsys, fake_sock):

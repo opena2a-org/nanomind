@@ -75,7 +75,7 @@ def _emit_drift_human(drifted: list[str], *, daemon_down: bool) -> None:
     if daemon_down:
         _emit(
             "  a drifted artifact can fail the daemon's boot-time SHA "
-            "verify (crash loop) — this may be why the daemon is down"
+            "verify (crash loop) — this may be why the daemon is not serving"
         )
         _emit(
             "  run `nanomind-analyst install` to restore a consistent "
@@ -187,6 +187,10 @@ def run_status(*, json_output: bool = False) -> int:
                 _emit(f"gate threshold: {threshold:.2f}")
             _emit_drift_human(drifted, daemon_down=False)
         return 0
+    # Degraded (daemon answers but is not ready) is the third rc=1 path that
+    # carries the artifact block — a drifted artifact (e.g. an old gate
+    # operating point) can be why the probe is failing.
+    artifact_block, drifted = _artifact_block()
     if json_output:
         healthz_block = {"state": health.get("daemonState")}
         probe = health.get("gateProbe") or {}
@@ -201,6 +205,7 @@ def run_status(*, json_output: bool = False) -> int:
                 "agent": {"loaded": True},
                 "socket": {"path": paths.SOCK_PATH, "present": True},
                 "healthz": healthz_block,
+                "artifact": artifact_block,
             }
         )
         return 1
@@ -212,6 +217,7 @@ def run_status(*, json_output: bool = False) -> int:
             f"expected={probe.get('expected')!r} "
             f"passed={probe.get('passed')}"
         )
+    _emit_drift_human(drifted, daemon_down=True)
     return 1
 
 

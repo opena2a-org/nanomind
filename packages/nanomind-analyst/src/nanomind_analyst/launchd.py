@@ -98,12 +98,22 @@ def write_plist(spec: PlistSpec, *, target: Path | None = None) -> Path:
     """Write the plist to disk and return its path.
 
     Same-directory temp file + os.replace so launchd (or an interrupt) never
-    observes a half-written plist at the canonical path.
+    observes a half-written plist at the canonical path. The temp file is
+    opened O_CREAT|O_EXCL|O_NOFOLLOW so a pre-created file or symlink at the
+    deterministic .tmp name fails the install closed instead of writing
+    through the link (LaunchAgents is user-writable; same-uid squatting).
     """
     target = target or paths.plist_path()
     target.parent.mkdir(parents=True, exist_ok=True)
     tmp = target.with_name(target.name + ".tmp")
-    tmp.write_bytes(render_plist(spec))
+    tmp.unlink(missing_ok=True)
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(render_plist(spec))
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
     os.replace(tmp, target)
     return target
 

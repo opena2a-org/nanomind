@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import hashlib
 import os
-import shutil
 import stat
 import sys
 from dataclasses import dataclass
@@ -231,9 +230,30 @@ def install_classifier(
 
     target_dir.mkdir(parents=True, exist_ok=True)
     for fname in ("classifier.joblib", "meta.json"):
-        tmp = target_dir / f"{fname}.tmp"
-        shutil.copy2(source_dir / fname, tmp)
-        os.replace(tmp, target_dir / fname)
+        _atomic_install_file(source_dir / fname, target_dir / fname)
+
+
+def _atomic_install_file(source: Path, target: Path) -> None:
+    """Write source's bytes to target via same-directory temp + os.replace.
+
+    The temp file is opened with O_CREAT|O_EXCL|O_NOFOLLOW so a pre-created
+    file or symlink at the deterministic .tmp name (same-uid squatting on the
+    user-writable Application Support dir) makes the install FAIL CLOSED
+    instead of writing through the link. The unlink first clears a stranded
+    .tmp from a previously interrupted install (lstat semantics: removes the
+    link itself, never the link target).
+    """
+    tmp = target.with_name(target.name + ".tmp")
+    tmp.unlink(missing_ok=True)
+    data = source.read_bytes()
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(data)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
+    os.replace(tmp, target)
 
 
 def installed_classifier_drift(target_dir: Path) -> list[str]:
