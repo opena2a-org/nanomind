@@ -4,7 +4,19 @@
     "security-artifact",
     "off-topic"
   ],
-  "threshold": 0.65,
+  "threshold": 0.9,
+  "thresholdHistory": [
+    {
+      "value": 0.65,
+      "from": "2026-04-17 (training default)",
+      "rationale": "test-split operating point on the in-house off-topic vs security-artifact eval"
+    },
+    {
+      "value": 0.9,
+      "from": "2026-06-07 (Phase C-1, CDS)",
+      "rationale": "0.65 false-bypassed 30% of external prose attacks (deployed recall 65.6% vs NLM ceiling 94.5%) for ~0 FPR benefit; 0.90 is the lowest threshold with zero attack false-bypass on the Phase B clean corpus. See reports/nanomind-phase-c-gate-fix.md."
+    }
+  ],
   "seed": 42,
   "testSize": 0.3,
   "embeddingDim": 384,

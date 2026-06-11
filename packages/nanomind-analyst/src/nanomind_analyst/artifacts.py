@@ -51,8 +51,13 @@ EXPECTED_NLM_TOKENIZER_SHA256 = (
 EXPECTED_CLASSIFIER_JOBLIB_SHA256 = (
     "a9a699cf2adc1768d2d8777fdb2f9c5ce16fd087ead060ba9e2944a5bd5f9db6"
 )
+# meta.json carries the gate operating point. 0.1.3 ships threshold 0.90
+# (CDS-029: 0.65 false-bypassed 30% of external prose attacks for ~0 FPR
+# benefit) + thresholdHistory; mirrors nanomind-training
+# training/artifacts/input-classifier-v1/meta.json. With the artifact at
+# 0.90 the INPUT_CLASSIFIER_THRESHOLD plist override becomes unnecessary.
 EXPECTED_CLASSIFIER_META_SHA256 = (
-    "79ac141c5b039e62ca7c7b111ba065545c2528b8c06524c9432410d8f11212b2"
+    "69cb4033e9c4373693ebf5fbd04dc00ff2aae81090938f48a2b8a1bb9c8871a4"
 )
 
 # These are the NLM files the daemon actually needs. Anything else fetched by

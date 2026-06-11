@@ -2,6 +2,23 @@
 
 ## 0.1.3
 
+Gate operating point: the wheel-embedded input-classifier meta.json now
+ships threshold **0.90** (CDS-029) with a `thresholdHistory` audit trail,
+mirroring the canonical artifact in nanomind-training.
+
+- At 0.65 the gate false-bypassed 30% of external prose attacks (deployed
+  recall 65.6% vs the NLM's 94.5% ceiling) for ~0 FPR benefit; 0.90 is the
+  lowest threshold with zero attack false-bypass on the Phase B clean
+  corpus. See nanomind-training `reports/nanomind-phase-c-gate-fix.md`.
+- `EXPECTED_CLASSIFIER_META_SHA256` re-pinned to the new meta.json. The
+  expected SHAs are baked into the launchd plist at `nanomind-analyst
+  install` time, so an existing install stays self-consistent until you
+  re-run `install` — run `nanomind-analyst install` after upgrading to
+  pick up the new artifact.
+- Deployments that set `INPUT_CLASSIFIER_THRESHOLD=0.90` as a plist env
+  override can drop the override after reinstall; the artifact now
+  carries the operating point.
+
 P1 fix: the boot/healthz gate probe is now threshold-independent.
 
 - The probe asserted the bypass LABEL for `# README\n\nProject Setup`, which
