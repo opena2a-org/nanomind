@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.1.3
+
+P1 fix: the boot/healthz gate probe is now threshold-independent.
+
+- The probe asserted the bypass LABEL for `# README\n\nProject Setup`, which
+  encodes the gate's 0.65 operating point. Deploying the CDS-029 threshold
+  (`INPUT_CLASSIFIER_THRESHOLD=0.90`, zero attack false-bypass on the Phase B
+  clean corpus) made the gate correctly decline to bypass that input — the
+  daemon then refused to bind and launchd crash-looped, so the threshold fix
+  was undeployable.
+- The probe now asserts the LR head ranks the input as more-likely-off-topic
+  (`proba_off_topic >= 0.5`), which still catches a wedged embedder or
+  scrambled head without coupling boot to the deployed threshold.
+- `healthz.gateProbe` gains `probaOffTopic` and `minProbaOffTopic`;
+  `expected` carries the new contract as a human-readable string so older
+  clients render sensibly. Regression tests in `tests/test_healthz_probe.py`.
+
 ## 0.1.2
 
 Bug-fix release for 3 P1 / 3 P2 issues surfaced by a fresh-user release test on the 0.1.1 wheel. 0.1.1 was never published to PyPI; users on 0.1.0 should skip directly to 0.1.2.

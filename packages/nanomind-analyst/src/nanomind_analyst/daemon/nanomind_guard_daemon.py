@@ -19,8 +19,8 @@ Boot order:
        at deserialization).
     3. Construct InputClassifier (downloads embedder if cache cold).
     4. Construct NanoMindNLM (loads ~3.4 GB bf16 weights).
-    5. Run gate probe ("# README\n\nProject Setup" -> off-topic). Refuse to
-       bind on probe failure.
+    5. Run gate probe ("# README\n\nProject Setup" must score
+       proba_off_topic >= 0.5). Refuse to bind on probe failure.
     6. Bind socket, accept connections serially.
 
 See briefs/nanomind-guard-daemon.md for the wire protocol and decisions.
@@ -71,7 +71,14 @@ DEFAULT_MAX_BYTES = 1 * 1024 * 1024  # 1 MB
 DEFAULT_WARN_BYTES = 100 * 1024  # 100 KB
 DEFAULT_MAX_NEW_TOKENS = 512
 HEALTHZ_PROBE_INPUT = "# README\n\nProject Setup"
-HEALTHZ_EXPECTED_LABEL = "off-topic"
+# The probe verifies the embedder + LR head are loaded and directionally sane,
+# NOT the deployed operating point: the head must rank this trivially
+# non-security input as more-likely-off-topic than security-artifact
+# (proba_off_topic >= 0.5). Asserting the bypass LABEL would couple boot to
+# the gate threshold — at threshold 0.90 (CDS-029) the gate correctly declines
+# to bypass this input, which is not an embedder failure. That coupling put
+# the daemon in a launchd crash loop on the 0.90 rollout (2026-06-10).
+HEALTHZ_PROBE_MIN_PROBA = 0.5
 RECV_CHUNK = 64 * 1024  # 64 KB recv chunks; loop until we have a full line
 ENVELOPE_OVERHEAD = 4096  # JSON wrapper around `text` field
 DEFAULT_CONN_TIMEOUT_SEC = 5.0  # slowloris cutoff for accepted connections
@@ -424,7 +431,7 @@ def handle_healthz(state: DaemonState) -> dict[str, Any]:
     probe_passed = False
     try:
         probe_pred = state.classifier.predict_one(HEALTHZ_PROBE_INPUT)
-        probe_passed = probe_pred.label == HEALTHZ_EXPECTED_LABEL
+        probe_passed = probe_pred.proba_off_topic >= HEALTHZ_PROBE_MIN_PROBA
     except Exception as exc:
         log.exception("healthz gate probe failed: %s", exc)
 
@@ -434,7 +441,10 @@ def handle_healthz(state: DaemonState) -> dict[str, Any]:
         "gateProbe": {
             "input": HEALTHZ_PROBE_INPUT,
             "label": probe_pred.label if probe_pred is not None else None,
-            "expected": HEALTHZ_EXPECTED_LABEL,
+            "probaOffTopic": probe_pred.proba_off_topic if probe_pred is not None else None,
+            "minProbaOffTopic": HEALTHZ_PROBE_MIN_PROBA,
+            # Older clients render this string verbatim next to `label`.
+            "expected": f"proba_off_topic >= {HEALTHZ_PROBE_MIN_PROBA}",
             "passed": probe_passed,
         },
         "uptimeSec": round(time.time() - state.boot_ts, 3),
