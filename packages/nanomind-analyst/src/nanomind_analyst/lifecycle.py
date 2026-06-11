@@ -12,7 +12,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import launchd, paths
+from . import artifacts, launchd, paths
 
 
 def _emit(line: str) -> None:
@@ -101,6 +101,13 @@ def run_status(*, json_output: bool = False) -> int:
         return 1
     if health.get("daemonState") == "ready":
         uptime = health.get("uptimeSec")
+        # Artifact drift: a pip upgrade leaves the installed classifier (and
+        # the plist's SHA pins) untouched, so a daemon can be "ready" while
+        # serving an artifact this wheel no longer ships — e.g. the old
+        # threshold-0.65 gate after the 0.1.3 upgrade. Surface it; never
+        # leave it silent. Exit code stays 0: the daemon IS serving.
+        drifted = artifacts.installed_classifier_drift(paths.classifier_dir())
+        threshold = health.get("classifierThreshold")
         if json_output:
             healthz_block: dict = {
                 "state": "ready",
@@ -108,13 +115,17 @@ def run_status(*, json_output: bool = False) -> int:
             }
             if isinstance(uptime, (int, float)):
                 healthz_block["uptimeSec"] = uptime
-            _emit_json(
-                {
-                    "agent": {"loaded": True},
-                    "socket": {"path": paths.SOCK_PATH, "present": True},
-                    "healthz": healthz_block,
-                }
-            )
+            if isinstance(threshold, (int, float)):
+                healthz_block["classifierThreshold"] = threshold
+            payload: dict = {
+                "agent": {"loaded": True},
+                "socket": {"path": paths.SOCK_PATH, "present": True},
+                "healthz": healthz_block,
+                "artifact": {"classifierMatchesWheel": not drifted},
+            }
+            if drifted:
+                payload["artifact"]["driftedFiles"] = drifted
+            _emit_json(payload)
         else:
             uptime_str = f"{uptime:.0f}" if isinstance(uptime, (int, float)) else "?"
             _emit(
@@ -122,6 +133,18 @@ def run_status(*, json_output: bool = False) -> int:
                 f"requestsServed={health.get('requestsServed')}, "
                 f"uptimeSec={uptime_str})"
             )
+            if isinstance(threshold, (int, float)):
+                _emit(f"gate threshold: {threshold:.2f}")
+            if drifted:
+                _emit(
+                    f"artifact: input-classifier drifted from this wheel "
+                    f"({', '.join(drifted)})"
+                )
+                _emit(
+                    "  the running daemon is serving an older artifact "
+                    "(possibly an older gate operating point)"
+                )
+                _emit("  run `nanomind-analyst install` to update it")
         return 0
     if json_output:
         healthz_block = {"state": health.get("daemonState")}

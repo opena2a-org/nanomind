@@ -151,12 +151,14 @@ def run_install(*, skip_healthz_wait: bool = False) -> int:
     paths.app_support_dir().mkdir(parents=True, exist_ok=True)
     paths.logs_dir().mkdir(parents=True, exist_ok=True)
 
-    _emit(f"installing classifier into {paths.classifier_dir()}")
-    artifacts.install_classifier(
-        source_dir=artifacts.wheel_classifier_source_dir(),
-        target_dir=paths.classifier_dir(),
-    )
-
+    # Fetch the NLM FIRST. It is the long, interruptible step (multi-minute
+    # network transfer), and it must not sit between the two writes that have
+    # to stay consistent: the classifier copy and the plist (which bakes the
+    # expected classifier SHAs). If the classifier dir were updated before a
+    # fetch that then aborts (network drop, Ctrl-C), the next daemon relaunch
+    # would verify the NEW artifact against the OLD plist SHA and launchd
+    # would crash-loop until install is re-run. Ordering the fetch first
+    # keeps the artifact-dir + plist mutation window as small as possible.
     _emit(
         f"fetching NLM weights (~3.4 GB) from {artifacts.HF_REPO_ID}"
         f"@{artifacts.HF_REVISION[:7]}"
@@ -165,6 +167,12 @@ def run_install(*, skip_healthz_wait: bool = False) -> int:
     artifacts.fetch_nlm(
         target_dir=paths.nlm_dir(),
         progress=lambda p: _emit(f"  {p.stage}: {p.detail}"),
+    )
+
+    _emit(f"installing classifier into {paths.classifier_dir()}")
+    artifacts.install_classifier(
+        source_dir=artifacts.wheel_classifier_source_dir(),
+        target_dir=paths.classifier_dir(),
     )
 
     plist = launchd.write_plist(launchd.build_plist_spec())

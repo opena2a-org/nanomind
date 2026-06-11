@@ -17,7 +17,20 @@ mirroring the canonical artifact in nanomind-training.
   pick up the new artifact.
 - Deployments that set `INPUT_CLASSIFIER_THRESHOLD=0.90` as a plist env
   override can drop the override after reinstall; the artifact now
-  carries the operating point.
+  carries the operating point. Upgrade the pip package FIRST, then run
+  `nanomind-analyst install` — running `install` from an old wheel
+  regenerates the plist from that wheel's constants and would silently
+  restore the 0.65 artifact (and wipe the override).
+- `nanomind-analyst status` now reports the live gate threshold and
+  warns when the installed classifier artifact differs from the wheel's
+  pinned SHAs (the post-upgrade-before-reinstall state), instead of
+  leaving the old operating point silently in place. `status --json`
+  gains `healthz.classifierThreshold` and an `artifact` block
+  (`classifierMatchesWheel`, `driftedFiles`).
+- `install` now fetches the NLM weights BEFORE touching the classifier
+  artifact dir and the plist, so an interrupted fetch can no longer
+  leave a new artifact paired with an old plist SHA (which would
+  crash-loop the daemon on its next relaunch until install was re-run).
 
 P1 fix: the boot/healthz gate probe is now threshold-independent.
 

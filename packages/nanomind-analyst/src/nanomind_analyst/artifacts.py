@@ -221,6 +221,30 @@ def install_classifier(
         shutil.copy2(source_dir / fname, target_dir / fname)
 
 
+def installed_classifier_drift(target_dir: Path) -> list[str]:
+    """Names of installed classifier files whose SHA differs from this wheel's pins.
+
+    A pip upgrade does NOT touch the installed artifact dir or the plist —
+    only `nanomind-analyst install` does — so after an upgrade that changed
+    an artifact pin (e.g. the 0.1.3 meta.json threshold 0.65 -> 0.90), the
+    running daemon keeps serving the OLD operating point indefinitely and
+    nothing fails. `status` calls this to surface that drift instead of
+    leaving it silent. Missing files are reported as drifted too.
+    """
+    drifted: list[str] = []
+    for fname, expected in (
+        ("classifier.joblib", EXPECTED_CLASSIFIER_JOBLIB_SHA256),
+        ("meta.json", EXPECTED_CLASSIFIER_META_SHA256),
+    ):
+        path = target_dir / fname
+        try:
+            if _sha256_file(path) != expected:
+                drifted.append(fname)
+        except OSError:
+            drifted.append(fname)
+    return drifted
+
+
 def wheel_classifier_source_dir() -> Path:
     """Locate the input-classifier-v1 directory shipped inside the wheel."""
     # Resolves to <site-packages>/nanomind_analyst/data/input-classifier-v1/
