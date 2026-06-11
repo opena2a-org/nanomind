@@ -50,6 +50,45 @@ def _healthz_once(timeout_sec: float = 2.0) -> dict | None:
         sock.close()
 
 
+def _artifact_block() -> tuple[dict, list[str]]:
+    """Compare the installed classifier against this wheel's SHA pins.
+
+    Returns (json-block, drifted-files). Used on the ready path AND the
+    failure paths (socket missing, healthz no-response): a drifted artifact
+    can fail the daemon's boot-time SHA verify, so drift is most explanatory
+    exactly when the daemon is dead.
+    """
+    drifted = artifacts.installed_classifier_drift(paths.classifier_dir())
+    block: dict = {"classifierMatchesWheel": not drifted}
+    if drifted:
+        block["driftedFiles"] = drifted
+    return block, drifted
+
+
+def _emit_drift_human(drifted: list[str], *, daemon_down: bool) -> None:
+    if not drifted:
+        return
+    _emit(
+        f"artifact: input-classifier drifted from this wheel "
+        f"({', '.join(drifted)})"
+    )
+    if daemon_down:
+        _emit(
+            "  a drifted artifact can fail the daemon's boot-time SHA "
+            "verify (crash loop) — this may be why the daemon is down"
+        )
+        _emit(
+            "  run `nanomind-analyst install` to restore a consistent "
+            "artifact + plist"
+        )
+    else:
+        _emit(
+            "  the running daemon is serving an older artifact "
+            "(possibly an older gate operating point)"
+        )
+        _emit("  run `nanomind-analyst install` to update it")
+
+
 def run_status(*, json_output: bool = False) -> int:
     """Report whether the agent is loaded and whether the daemon answers.
 
@@ -70,34 +109,46 @@ def run_status(*, json_output: bool = False) -> int:
         _emit("agent: loaded")
 
     if not Path(paths.SOCK_PATH).exists():
+        # Probe artifact drift on this failure path too: a drifted artifact
+        # can fail the daemon's boot-time SHA verify, and a crash-looping
+        # daemon presents exactly as "socket missing". Hiding drift here
+        # would hide it precisely when it explains the dead daemon.
+        artifact_block, drifted = _artifact_block()
         if json_output:
             _emit_json(
                 {
                     "agent": {"loaded": True},
                     "socket": {"path": paths.SOCK_PATH, "present": False},
+                    "artifact": artifact_block,
                 }
             )
         else:
             _emit(f"socket: missing at {paths.SOCK_PATH}")
             _emit("  daemon may still be booting; rerun in a few seconds")
             _emit(f"  or check `nanomind-analyst logs` (tail {paths.log_path()})")
+            _emit_drift_human(drifted, daemon_down=True)
         return 1
     if not json_output:
         _emit(f"socket: present at {paths.SOCK_PATH}")
 
     health = _healthz_once()
     if health is None:
+        # Same rationale as the socket-missing path: drift can be WHY the
+        # daemon stopped answering, so surface it on this failure path too.
+        artifact_block, drifted = _artifact_block()
         if json_output:
             _emit_json(
                 {
                     "agent": {"loaded": True},
                     "socket": {"path": paths.SOCK_PATH, "present": True},
                     "healthz": {"state": "no-response"},
+                    "artifact": artifact_block,
                 }
             )
         else:
             _emit("healthz: no response")
             _emit(f"  check `nanomind-analyst logs` (tail {paths.log_path()})")
+            _emit_drift_human(drifted, daemon_down=True)
         return 1
     if health.get("daemonState") == "ready":
         uptime = health.get("uptimeSec")
@@ -106,7 +157,7 @@ def run_status(*, json_output: bool = False) -> int:
         # serving an artifact this wheel no longer ships — e.g. the old
         # threshold-0.65 gate after the 0.1.3 upgrade. Surface it; never
         # leave it silent. Exit code stays 0: the daemon IS serving.
-        drifted = artifacts.installed_classifier_drift(paths.classifier_dir())
+        artifact_block, drifted = _artifact_block()
         threshold = health.get("classifierThreshold")
         if json_output:
             healthz_block: dict = {
@@ -117,15 +168,14 @@ def run_status(*, json_output: bool = False) -> int:
                 healthz_block["uptimeSec"] = uptime
             if isinstance(threshold, (int, float)):
                 healthz_block["classifierThreshold"] = threshold
-            payload: dict = {
-                "agent": {"loaded": True},
-                "socket": {"path": paths.SOCK_PATH, "present": True},
-                "healthz": healthz_block,
-                "artifact": {"classifierMatchesWheel": not drifted},
-            }
-            if drifted:
-                payload["artifact"]["driftedFiles"] = drifted
-            _emit_json(payload)
+            _emit_json(
+                {
+                    "agent": {"loaded": True},
+                    "socket": {"path": paths.SOCK_PATH, "present": True},
+                    "healthz": healthz_block,
+                    "artifact": artifact_block,
+                }
+            )
         else:
             uptime_str = f"{uptime:.0f}" if isinstance(uptime, (int, float)) else "?"
             _emit(
@@ -135,16 +185,7 @@ def run_status(*, json_output: bool = False) -> int:
             )
             if isinstance(threshold, (int, float)):
                 _emit(f"gate threshold: {threshold:.2f}")
-            if drifted:
-                _emit(
-                    f"artifact: input-classifier drifted from this wheel "
-                    f"({', '.join(drifted)})"
-                )
-                _emit(
-                    "  the running daemon is serving an older artifact "
-                    "(possibly an older gate operating point)"
-                )
-                _emit("  run `nanomind-analyst install` to update it")
+            _emit_drift_human(drifted, daemon_down=False)
         return 0
     if json_output:
         healthz_block = {"state": health.get("daemonState")}

@@ -185,26 +185,13 @@ def fetch_nlm(
             )
 
 
-def install_classifier(
-    *,
-    source_dir: Path,
-    target_dir: Path,
-    progress: ProgressCallback | None = None,
-) -> None:
-    """Copy the wheel-embedded input-classifier-v1 files into target_dir.
+def verify_wheel_classifier(source_dir: Path) -> None:
+    """Verify the wheel-embedded classifier files against the baked SHA pins.
 
-    Verifies SHA against EXPECTED_CLASSIFIER_*_SHA256 BEFORE copying, so a
-    tampered wheel cannot ship a poisoned pickle through this path. The
-    daemon will re-verify at boot before joblib.load() runs.
+    Called as an install pre-flight BEFORE the multi-minute NLM fetch (a
+    corrupt wheel should fail in the first second, not after 3.4 GB of
+    transfer) and again by install_classifier immediately before the copy.
     """
-    if progress is not None:
-        progress(
-            FetchProgress(
-                stage="installing-classifier",
-                detail=f"{source_dir} -> {target_dir}",
-            )
-        )
-
     _verify(
         source_dir / "classifier.joblib",
         EXPECTED_CLASSIFIER_JOBLIB_SHA256,
@@ -216,9 +203,37 @@ def install_classifier(
         name="input-classifier-v1 meta.json (in wheel)",
     )
 
+
+def install_classifier(
+    *,
+    source_dir: Path,
+    target_dir: Path,
+    progress: ProgressCallback | None = None,
+) -> None:
+    """Copy the wheel-embedded input-classifier-v1 files into target_dir.
+
+    Verifies SHA against EXPECTED_CLASSIFIER_*_SHA256 BEFORE copying, so a
+    tampered wheel cannot ship a poisoned pickle through this path. The
+    daemon will re-verify at boot before joblib.load() runs.
+
+    Each file lands via a same-directory temp file + os.replace so a reader
+    (the daemon's boot-time SHA verify) never observes a half-written file.
+    """
+    if progress is not None:
+        progress(
+            FetchProgress(
+                stage="installing-classifier",
+                detail=f"{source_dir} -> {target_dir}",
+            )
+        )
+
+    verify_wheel_classifier(source_dir)
+
     target_dir.mkdir(parents=True, exist_ok=True)
     for fname in ("classifier.joblib", "meta.json"):
-        shutil.copy2(source_dir / fname, target_dir / fname)
+        tmp = target_dir / f"{fname}.tmp"
+        shutil.copy2(source_dir / fname, tmp)
+        os.replace(tmp, target_dir / fname)
 
 
 def installed_classifier_drift(target_dir: Path) -> list[str]:

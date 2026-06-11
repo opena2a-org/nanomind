@@ -12,6 +12,7 @@ them on every relaunch.
 """
 from __future__ import annotations
 
+import os
 import plistlib
 import subprocess
 from dataclasses import dataclass
@@ -94,10 +95,16 @@ def render_plist(spec: PlistSpec) -> bytes:
 
 
 def write_plist(spec: PlistSpec, *, target: Path | None = None) -> Path:
-    """Write the plist to disk and return its path."""
+    """Write the plist to disk and return its path.
+
+    Same-directory temp file + os.replace so launchd (or an interrupt) never
+    observes a half-written plist at the canonical path.
+    """
     target = target or paths.plist_path()
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_bytes(render_plist(spec))
+    tmp = target.with_name(target.name + ".tmp")
+    tmp.write_bytes(render_plist(spec))
+    os.replace(tmp, target)
     return target
 
 

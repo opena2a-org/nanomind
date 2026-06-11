@@ -263,6 +263,85 @@ class TestInstallFlow:
         bootstrap_idx = call_order.index("bootstrap")
         assert bootout_idx < bootstrap_idx
 
+    def test_install_boots_out_before_mutating_artifact_and_plist(
+        self, tmp_path, monkeypatch
+    ):
+        """The daemon must be unloaded BEFORE the classifier copy and plist
+        write, so an interrupt inside that mutation window cannot crash-loop
+        a running daemon against mismatched SHA pins."""
+        monkeypatch.setattr("platform.system", lambda: "Darwin")
+        monkeypatch.setattr("platform.machine", lambda: "arm64")
+        fake_home = tmp_path / "home"
+        fake_home.mkdir()
+        monkeypatch.setattr(paths, "home", lambda: fake_home)
+
+        order: list[str] = []
+        monkeypatch.setattr(
+            artifacts,
+            "fetch_nlm",
+            lambda *, target_dir, progress=None, hf_downloader=None: order.append(
+                "fetch_nlm"
+            ),
+        )
+        monkeypatch.setattr(
+            artifacts,
+            "install_classifier",
+            lambda *, source_dir, target_dir, progress=None: order.append(
+                "install_classifier"
+            ),
+        )
+        fake_plist = tmp_path / "fake.plist"
+
+        def fake_write_plist(spec, *, target=None):
+            order.append("write_plist")
+            return fake_plist
+
+        monkeypatch.setattr(launchd, "write_plist", fake_write_plist)
+        monkeypatch.setattr(launchd, "bootout", lambda: order.append("bootout"))
+        monkeypatch.setattr(
+            launchd, "bootstrap", lambda plist: order.append("bootstrap")
+        )
+
+        rc = install.run_install(skip_healthz_wait=True)
+        assert rc == 0
+        assert order == [
+            "fetch_nlm",
+            "bootout",
+            "install_classifier",
+            "write_plist",
+            "bootstrap",
+        ]
+
+    def test_install_leaves_no_temp_files(self, tmp_path, monkeypatch):
+        """Atomic temp+os.replace writes must not strand .tmp files."""
+        fake_home = tmp_path / "home"
+        fake_home.mkdir()
+        monkeypatch.setattr(paths, "home", lambda: fake_home)
+        monkeypatch.setattr("platform.system", lambda: "Darwin")
+        monkeypatch.setattr("platform.machine", lambda: "arm64")
+        monkeypatch.setattr(
+            artifacts,
+            "fetch_nlm",
+            lambda *, target_dir, progress=None, hf_downloader=None: target_dir.mkdir(
+                parents=True, exist_ok=True
+            )
+            or [
+                (target_dir / f).write_bytes(b"x")
+                for f in artifacts.NLM_REQUIRED_FILES
+            ],
+        )
+
+        class R:
+            returncode = 0
+            stdout = ""
+            stderr = ""
+
+        monkeypatch.setattr("subprocess.run", lambda *a, **kw: R())
+        rc = install.run_install(skip_healthz_wait=True)
+        assert rc == 0
+        leftovers = list(fake_home.rglob("*.tmp"))
+        assert leftovers == []
+
 
 class TestHealthzProbeSocketGuard:
     """The installer's healthz probe must refuse attacker-bound sockets.

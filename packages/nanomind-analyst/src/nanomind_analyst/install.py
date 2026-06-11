@@ -1,5 +1,6 @@
-"""Orchestrate the install: platform check -> classifier copy -> NLM fetch ->
-plist write -> launchctl bootstrap -> healthz wait.
+"""Orchestrate the install: platform check -> wheel classifier pre-flight
+verify -> NLM fetch -> launchctl bootout -> classifier copy -> plist write ->
+launchctl bootstrap -> healthz wait.
 
 Each step prints a one-line update to stdout so a human watching the install
 sees forward progress (the NLM fetch is the long step, several minutes on a
@@ -151,6 +152,12 @@ def run_install(*, skip_healthz_wait: bool = False) -> int:
     paths.app_support_dir().mkdir(parents=True, exist_ok=True)
     paths.logs_dir().mkdir(parents=True, exist_ok=True)
 
+    # Pre-flight: verify the wheel-embedded classifier against the baked SHA
+    # pins BEFORE the 3.4 GB fetch. A corrupt or tampered wheel fails in the
+    # first second instead of after a multi-minute transfer.
+    _emit("verifying wheel-embedded classifier artifacts")
+    artifacts.verify_wheel_classifier(artifacts.wheel_classifier_source_dir())
+
     # Fetch the NLM FIRST. It is the long, interruptible step (multi-minute
     # network transfer), and it must not sit between the two writes that have
     # to stay consistent: the classifier copy and the plist (which bakes the
@@ -169,6 +176,18 @@ def run_install(*, skip_healthz_wait: bool = False) -> int:
         progress=lambda p: _emit(f"  {p.stage}: {p.detail}"),
     )
 
+    # bootout BEFORE mutating the artifact dir + plist, not after. With the
+    # daemon unloaded during the mutation window, an interrupt between the
+    # classifier copy and the plist write cannot crash-loop a RUNNING daemon
+    # against mismatched SHA pins. (The window is shrunk, not fully closed:
+    # the stale on-disk plist would still be loaded at the next GUI login if
+    # install is never re-run.) bootout is idempotent on a not-loaded
+    # service, and bootstrap below reloads the fresh plist either way —
+    # without the bootout, launchctl bootstrap returns rc=17 ("already
+    # loaded") and the daemon would keep running with the OLD in-memory
+    # plist (old SHA constants, old model dir).
+    launchd.bootout()
+
     _emit(f"installing classifier into {paths.classifier_dir()}")
     artifacts.install_classifier(
         source_dir=artifacts.wheel_classifier_source_dir(),
@@ -178,13 +197,6 @@ def run_install(*, skip_healthz_wait: bool = False) -> int:
     plist = launchd.write_plist(launchd.build_plist_spec())
     _emit(f"wrote launchd plist to {plist}")
 
-    # bootout-then-bootstrap so reinstalls/upgrades actually pick up the new
-    # plist. launchctl bootstrap returns rc=17 ("already loaded") if the LABEL
-    # is in launchd's in-memory state — without a prior bootout, the daemon
-    # would keep running with the OLD plist (old SHA constants, old model
-    # dir) even though we just rewrote the file on disk. bootout is idempotent
-    # on a not-loaded service.
-    launchd.bootout()
     launchd.bootstrap(plist)
     _emit(f"bootstrapped {paths.LABEL} into gui/{paths.uid()}")
 

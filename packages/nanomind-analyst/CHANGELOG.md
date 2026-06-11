@@ -26,11 +26,24 @@ mirroring the canonical artifact in nanomind-training.
   pinned SHAs (the post-upgrade-before-reinstall state), instead of
   leaving the old operating point silently in place. `status --json`
   gains `healthz.classifierThreshold` and an `artifact` block
-  (`classifierMatchesWheel`, `driftedFiles`).
+  (`classifierMatchesWheel`, `driftedFiles`). The drift probe also runs
+  on the failure paths (socket missing, healthz no-response) — a drifted
+  artifact can fail the daemon's boot-time SHA verify, so drift is most
+  explanatory exactly when the daemon is down.
+- `install` now verifies the wheel-embedded classifier against the baked
+  SHA pins as a pre-flight, BEFORE the 3.4 GB NLM fetch — a corrupt or
+  tampered wheel fails in the first second instead of after a
+  multi-minute transfer.
 - `install` now fetches the NLM weights BEFORE touching the classifier
-  artifact dir and the plist, so an interrupted fetch can no longer
-  leave a new artifact paired with an old plist SHA (which would
-  crash-loop the daemon on its next relaunch until install was re-run).
+  artifact dir and the plist, boots the daemon out BEFORE that mutation
+  window (so an interrupt between the classifier copy and the plist
+  write cannot crash-loop a running daemon against mismatched SHA pins),
+  and lands both the classifier files and the plist via same-directory
+  temp file + `os.replace` so no reader ever observes a half-written
+  file. The window is shrunk, not fully closed: if install is
+  interrupted between the copy and the plist write and never re-run, the
+  stale on-disk plist is still loaded at the next GUI login and will
+  refuse the new artifact until `nanomind-analyst install` completes.
 
 P1 fix: the boot/healthz gate probe is now threshold-independent.
 

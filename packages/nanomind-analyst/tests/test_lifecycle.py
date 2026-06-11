@@ -175,7 +175,7 @@ class TestStatusJson:
         payload = json.loads(capsys.readouterr().out.strip())
         assert payload == {"agent": {"loaded": False}}
 
-    def test_socket_missing_json(self, monkeypatch, capsys, tmp_path):
+    def test_socket_missing_json(self, monkeypatch, capsys, tmp_path, no_drift):
         monkeypatch.setattr(launchd, "print_state", lambda: (0, "loaded"))
         sock_path = str(tmp_path / "missing.sock")
         monkeypatch.setattr(paths, "SOCK_PATH", sock_path)
@@ -185,7 +185,43 @@ class TestStatusJson:
         assert payload == {
             "agent": {"loaded": True},
             "socket": {"path": sock_path, "present": False},
+            "artifact": {"classifierMatchesWheel": True},
         }
+
+    def test_socket_missing_json_reports_drift(
+        self, monkeypatch, capsys, tmp_path
+    ):
+        """Drift must be probed on the failure paths too — a drifted artifact
+        can fail the daemon's boot-time SHA verify, and a crash-looping
+        daemon presents exactly as 'socket missing'."""
+        monkeypatch.setattr(launchd, "print_state", lambda: (0, "loaded"))
+        monkeypatch.setattr(paths, "SOCK_PATH", str(tmp_path / "missing.sock"))
+        monkeypatch.setattr(
+            artifacts, "installed_classifier_drift", lambda d: ["meta.json"]
+        )
+        rc = lifecycle.run_status(json_output=True)
+        assert rc == 1
+        payload = json.loads(capsys.readouterr().out.strip())
+        assert payload["artifact"] == {
+            "classifierMatchesWheel": False,
+            "driftedFiles": ["meta.json"],
+        }
+
+    def test_socket_missing_human_reports_drift(
+        self, monkeypatch, capsys, tmp_path
+    ):
+        monkeypatch.setattr(launchd, "print_state", lambda: (0, "loaded"))
+        monkeypatch.setattr(paths, "SOCK_PATH", str(tmp_path / "missing.sock"))
+        monkeypatch.setattr(
+            artifacts, "installed_classifier_drift", lambda d: ["meta.json"]
+        )
+        rc = lifecycle.run_status()
+        assert rc == 1
+        out = capsys.readouterr().out
+        assert "socket: missing" in out
+        assert "drifted from this wheel" in out
+        assert "boot-time SHA verify" in out
+        assert "nanomind-analyst install" in out
 
     def test_ready_json(self, monkeypatch, capsys, fake_sock, no_drift):
         server, sock_path = fake_sock
@@ -340,30 +376,7 @@ class TestStatusJson:
         assert "nanomind-analyst install" in out
 
 
-class TestInstalledClassifierDrift:
-    def test_matching_artifact_reports_no_drift(self, tmp_path, monkeypatch):
-        src = artifacts.wheel_classifier_source_dir()
-        import shutil
-
-        for fname in ("classifier.joblib", "meta.json"):
-            shutil.copy2(src / fname, tmp_path / fname)
-        assert artifacts.installed_classifier_drift(tmp_path) == []
-
-    def test_stale_meta_reports_drift(self, tmp_path):
-        src = artifacts.wheel_classifier_source_dir()
-        import shutil
-
-        shutil.copy2(src / "classifier.joblib", tmp_path / "classifier.joblib")
-        (tmp_path / "meta.json").write_text('{"threshold": 0.65}')
-        assert artifacts.installed_classifier_drift(tmp_path) == ["meta.json"]
-
-    def test_missing_files_report_drift(self, tmp_path):
-        assert artifacts.installed_classifier_drift(tmp_path) == [
-            "classifier.joblib",
-            "meta.json",
-        ]
-
-    def test_no_response_json(self, monkeypatch, capsys, fake_sock):
+    def test_no_response_json(self, monkeypatch, capsys, fake_sock, no_drift):
         """Socket exists but the daemon does not answer healthz."""
         server, sock_path = fake_sock
         monkeypatch.setattr(launchd, "print_state", lambda: (0, "loaded"))
@@ -388,6 +401,7 @@ class TestInstalledClassifierDrift:
             "agent": {"loaded": True},
             "socket": {"path": str(sock_path), "present": True},
             "healthz": {"state": "no-response"},
+            "artifact": {"classifierMatchesWheel": True},
         }
 
     def test_degraded_json_includes_gate_probe(
@@ -429,6 +443,59 @@ class TestInstalledClassifierDrift:
             "expected": "off-topic",
             "passed": False,
         }
+
+    def test_no_response_json_reports_drift(self, monkeypatch, capsys, fake_sock):
+        """healthz no-response is the other dead-daemon presentation; drift
+        must be surfaced there too."""
+        server, _ = fake_sock
+        monkeypatch.setattr(launchd, "print_state", lambda: (0, "loaded"))
+        monkeypatch.setattr(
+            artifacts, "installed_classifier_drift", lambda d: ["meta.json"]
+        )
+
+        import threading
+
+        def respond():
+            conn, _ = server.accept()
+            with conn:
+                conn.recv(4096)
+                # send nothing
+
+        t = threading.Thread(target=respond, daemon=True)
+        t.start()
+        rc = lifecycle.run_status(json_output=True)
+        t.join(timeout=3.0)
+        assert rc == 1
+        payload = json.loads(capsys.readouterr().out.strip())
+        assert payload["healthz"] == {"state": "no-response"}
+        assert payload["artifact"] == {
+            "classifierMatchesWheel": False,
+            "driftedFiles": ["meta.json"],
+        }
+
+
+class TestInstalledClassifierDrift:
+    def test_matching_artifact_reports_no_drift(self, tmp_path):
+        src = artifacts.wheel_classifier_source_dir()
+        import shutil
+
+        for fname in ("classifier.joblib", "meta.json"):
+            shutil.copy2(src / fname, tmp_path / fname)
+        assert artifacts.installed_classifier_drift(tmp_path) == []
+
+    def test_stale_meta_reports_drift(self, tmp_path):
+        src = artifacts.wheel_classifier_source_dir()
+        import shutil
+
+        shutil.copy2(src / "classifier.joblib", tmp_path / "classifier.joblib")
+        (tmp_path / "meta.json").write_text('{"threshold": 0.65}')
+        assert artifacts.installed_classifier_drift(tmp_path) == ["meta.json"]
+
+    def test_missing_files_report_drift(self, tmp_path):
+        assert artifacts.installed_classifier_drift(tmp_path) == [
+            "classifier.joblib",
+            "meta.json",
+        ]
 
 
 class TestStartStopRestart:
