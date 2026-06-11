@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import hashlib
 import os
-import shutil
 import stat
 import sys
 from dataclasses import dataclass
@@ -51,8 +50,13 @@ EXPECTED_NLM_TOKENIZER_SHA256 = (
 EXPECTED_CLASSIFIER_JOBLIB_SHA256 = (
     "a9a699cf2adc1768d2d8777fdb2f9c5ce16fd087ead060ba9e2944a5bd5f9db6"
 )
+# meta.json carries the gate operating point. 0.1.3 ships threshold 0.90
+# (CDS-029: 0.65 false-bypassed 30% of external prose attacks for ~0 FPR
+# benefit) + thresholdHistory; mirrors nanomind-training
+# training/artifacts/input-classifier-v1/meta.json. With the artifact at
+# 0.90 the INPUT_CLASSIFIER_THRESHOLD plist override becomes unnecessary.
 EXPECTED_CLASSIFIER_META_SHA256 = (
-    "79ac141c5b039e62ca7c7b111ba065545c2528b8c06524c9432410d8f11212b2"
+    "69cb4033e9c4373693ebf5fbd04dc00ff2aae81090938f48a2b8a1bb9c8871a4"
 )
 
 # These are the NLM files the daemon actually needs. Anything else fetched by
@@ -180,26 +184,13 @@ def fetch_nlm(
             )
 
 
-def install_classifier(
-    *,
-    source_dir: Path,
-    target_dir: Path,
-    progress: ProgressCallback | None = None,
-) -> None:
-    """Copy the wheel-embedded input-classifier-v1 files into target_dir.
+def verify_wheel_classifier(source_dir: Path) -> None:
+    """Verify the wheel-embedded classifier files against the baked SHA pins.
 
-    Verifies SHA against EXPECTED_CLASSIFIER_*_SHA256 BEFORE copying, so a
-    tampered wheel cannot ship a poisoned pickle through this path. The
-    daemon will re-verify at boot before joblib.load() runs.
+    Called as an install pre-flight BEFORE the multi-minute NLM fetch (a
+    corrupt wheel should fail in the first second, not after 3.4 GB of
+    transfer) and again by install_classifier immediately before the copy.
     """
-    if progress is not None:
-        progress(
-            FetchProgress(
-                stage="installing-classifier",
-                detail=f"{source_dir} -> {target_dir}",
-            )
-        )
-
     _verify(
         source_dir / "classifier.joblib",
         EXPECTED_CLASSIFIER_JOBLIB_SHA256,
@@ -211,9 +202,82 @@ def install_classifier(
         name="input-classifier-v1 meta.json (in wheel)",
     )
 
+
+def install_classifier(
+    *,
+    source_dir: Path,
+    target_dir: Path,
+    progress: ProgressCallback | None = None,
+) -> None:
+    """Copy the wheel-embedded input-classifier-v1 files into target_dir.
+
+    Verifies SHA against EXPECTED_CLASSIFIER_*_SHA256 BEFORE copying, so a
+    tampered wheel cannot ship a poisoned pickle through this path. The
+    daemon will re-verify at boot before joblib.load() runs.
+
+    Each file lands via a same-directory temp file + os.replace so a reader
+    (the daemon's boot-time SHA verify) never observes a half-written file.
+    """
+    if progress is not None:
+        progress(
+            FetchProgress(
+                stage="installing-classifier",
+                detail=f"{source_dir} -> {target_dir}",
+            )
+        )
+
+    verify_wheel_classifier(source_dir)
+
     target_dir.mkdir(parents=True, exist_ok=True)
     for fname in ("classifier.joblib", "meta.json"):
-        shutil.copy2(source_dir / fname, target_dir / fname)
+        _atomic_install_file(source_dir / fname, target_dir / fname)
+
+
+def _atomic_install_file(source: Path, target: Path) -> None:
+    """Write source's bytes to target via same-directory temp + os.replace.
+
+    The temp file is opened with O_CREAT|O_EXCL|O_NOFOLLOW so a pre-created
+    file or symlink at the deterministic .tmp name (same-uid squatting on the
+    user-writable Application Support dir) makes the install FAIL CLOSED
+    instead of writing through the link. The unlink first clears a stranded
+    .tmp from a previously interrupted install (lstat semantics: removes the
+    link itself, never the link target).
+    """
+    tmp = target.with_name(target.name + ".tmp")
+    tmp.unlink(missing_ok=True)
+    data = source.read_bytes()
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(data)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
+    os.replace(tmp, target)
+
+
+def installed_classifier_drift(target_dir: Path) -> list[str]:
+    """Names of installed classifier files whose SHA differs from this wheel's pins.
+
+    A pip upgrade does NOT touch the installed artifact dir or the plist —
+    only `nanomind-analyst install` does — so after an upgrade that changed
+    an artifact pin (e.g. the 0.1.3 meta.json threshold 0.65 -> 0.90), the
+    running daemon keeps serving the OLD operating point indefinitely and
+    nothing fails. `status` calls this to surface that drift instead of
+    leaving it silent. Missing files are reported as drifted too.
+    """
+    drifted: list[str] = []
+    for fname, expected in (
+        ("classifier.joblib", EXPECTED_CLASSIFIER_JOBLIB_SHA256),
+        ("meta.json", EXPECTED_CLASSIFIER_META_SHA256),
+    ):
+        path = target_dir / fname
+        try:
+            if _sha256_file(path) != expected:
+                drifted.append(fname)
+        except OSError:
+            drifted.append(fname)
+    return drifted
 
 
 def wheel_classifier_source_dir() -> Path:

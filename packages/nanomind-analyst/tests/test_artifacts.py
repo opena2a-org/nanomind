@@ -166,6 +166,35 @@ class TestInstallClassifier:
             _verify(link, sha, name="test-artifact")
         assert "symlink" in str(exc.value)
 
+    def test_pre_created_tmp_symlink_is_not_followed(self, tmp_path):
+        """Same-uid squatting on the deterministic .tmp name: a pre-created
+        symlink at classifier.joblib.tmp must not cause the install to write
+        through the link (which would land classifier.joblib AS a symlink to
+        an attacker-owned file). The unlink-first + O_EXCL|O_NOFOLLOW write
+        removes the squatted link and lands a regular file."""
+        import os
+        import stat
+
+        target_dir = tmp_path / "classifier"
+        target_dir.mkdir()
+        attacker_file = tmp_path / "attacker-owned.bin"
+        attacker_file.write_bytes(b"attacker bytes")
+        for fname in ("classifier.joblib", "meta.json"):
+            (target_dir / f"{fname}.tmp").symlink_to(attacker_file)
+
+        artifacts.install_classifier(
+            source_dir=artifacts.wheel_classifier_source_dir(),
+            target_dir=target_dir,
+        )
+
+        for fname in ("classifier.joblib", "meta.json"):
+            st = os.lstat(target_dir / fname)
+            assert stat.S_ISREG(st.st_mode), f"{fname} must be a regular file"
+        # The attacker's file was never written through.
+        assert attacker_file.read_bytes() == b"attacker bytes"
+        # And the installed files match the wheel pins.
+        assert artifacts.installed_classifier_drift(target_dir) == []
+
     def test_refuses_tampered_source(self, tmp_path):
         """install_classifier verifies source SHAs BEFORE copying; a tampered
         wheel cannot ship a poisoned pickle through this path."""

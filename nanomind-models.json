@@ -222,7 +222,7 @@
           "dtype": "bfloat16",
           "inferenceDevice": "Apple MPS (bfloat16 required)",
           "servingRuntime": "NanoMind-Guard daemon (PR #14, f98e649) over /tmp/nanomind-guard.sock",
-          "inputGate": "v3.1 input-classifier gate (PR #13, 1e90bf8) \u2014 MiniLM-L6 + sklearn LR @ threshold 0.65 + byte-level BIDI/stego pre-filter \u2014 REQUIRED for production deployment to achieve e2e off-topic refusal \u226590%",
+          "inputGate": "v3.1 input-classifier gate (PR #13, 1e90bf8) \u2014 MiniLM-L6 + sklearn LR @ threshold 0.90 (CDS-029, 2026-06-07; was 0.65 \u2014 see thresholdHistory in input-classifier-v1 meta.json, shipped in nanomind-analyst 0.1.3) + byte-level BIDI/stego pre-filter. At 0.90 the gate is a latency control, not an off-topic refusal control: 0.65 false-bypassed 30% of external prose attacks for ~0 FPR benefit (reports/nanomind-phase-c-gate-fix.md).",
           "metrics": {
             "oracleCanon10Way": 0.7,
             "oracleBinary": 0.978,
@@ -242,7 +242,7 @@
             "oracleAttackOnly9Way": "PASS \u2014 67.3% vs \u226565%",
             "internal332Sample": "PASS \u2014 94.24% vs \u226590%",
             "refusalOffTopicNlmStandalone": "FAIL \u2014 34.0% vs \u226590% (specialist NLM; addressed e2e by v3.1 input-classifier gate)",
-            "refusalOffTopicE2eWithGate": "PASS \u2014 92.0% with v3.1 input-classifier gate in front",
+            "refusalOffTopicE2eWithGate": "PASS \u2014 92.0% measured at gate threshold 0.65 (2026-05-11). SUPERSEDED as an operating-point claim by CDS-029: at the deployed threshold 0.90 most off-topic input reaches the NLM (gate bypass rate on genuine off-topic drops 86% -> 2%), so e2e off-topic refusal at 0.90 has NOT been re-measured and the 92.0% figure must not be cited for the current deployment. CDS-029 accepted this trade for +29 pts attack recall; off-topic discrimination deferred (reports/nanomind-phase-c-gate-fix.md).",
             "refusalInDomain": "PASS \u2014 100.0%",
             "fpSuppression": "DOCUMENTED LIMITATION \u2014 57.0% vs \u226595% gate (security-adjacent benign over-classified at 43% rate). Per [CDS-020] CPO sign-off 2026-05-11: shipped with explicit caveat in model card; human review recommended for HMA scans of security libraries (JWT, RBAC, parameterized queries, rate limiters, OAuth). Fix planned for v3.1 via +100 benign-security-code training samples."
           },

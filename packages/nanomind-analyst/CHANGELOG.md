@@ -2,6 +2,58 @@
 
 ## 0.1.3
 
+Gate operating point: the wheel-embedded input-classifier meta.json now
+ships threshold **0.90** (CDS-029) with a `thresholdHistory` audit trail,
+mirroring the canonical artifact in nanomind-training.
+
+- At 0.65 the gate false-bypassed 30% of external prose attacks (deployed
+  recall 65.6% vs the NLM's 94.5% ceiling) for ~0 FPR benefit; 0.90 is the
+  lowest threshold with zero attack false-bypass on the Phase B clean
+  corpus. See nanomind-training `reports/nanomind-phase-c-gate-fix.md`.
+- `EXPECTED_CLASSIFIER_META_SHA256` re-pinned to the new meta.json. The
+  expected SHAs are baked into the launchd plist at `nanomind-analyst
+  install` time, so an existing install stays self-consistent until you
+  re-run `install` — run `nanomind-analyst install` after upgrading to
+  pick up the new artifact.
+- Deployments that set `INPUT_CLASSIFIER_THRESHOLD=0.90` as a plist env
+  override can drop the override after reinstall; the artifact now
+  carries the operating point. Upgrade the pip package FIRST, then run
+  `nanomind-analyst install` — running `install` from an old wheel
+  regenerates the plist from that wheel's constants and would silently
+  restore the 0.65 artifact (and wipe the override).
+- `nanomind-analyst status` now reports the live gate threshold and
+  warns when the installed classifier artifact differs from the wheel's
+  pinned SHAs (the post-upgrade-before-reinstall state), instead of
+  leaving the old operating point silently in place. `status --json`
+  gains `healthz.classifierThreshold` and an `artifact` block
+  (`classifierMatchesWheel`, `driftedFiles`). The drift probe also runs
+  on the failure paths (socket missing, healthz no-response, degraded) —
+  a drifted artifact can fail the daemon's boot-time SHA verify or gate
+  probe, so drift is most explanatory exactly when the daemon is not
+  serving.
+- `install` now verifies the wheel-embedded classifier against the baked
+  SHA pins as a pre-flight, BEFORE the 3.4 GB NLM fetch — a corrupt or
+  tampered wheel fails in the first second instead of after a
+  multi-minute transfer.
+- `install` now fetches the NLM weights BEFORE touching the classifier
+  artifact dir and the plist, boots the daemon out BEFORE that mutation
+  window (so an interrupt between the classifier copy and the plist
+  write cannot crash-loop a running daemon against mismatched SHA pins),
+  and lands both the classifier files and the plist via same-directory
+  temp file + `os.replace` so no reader ever observes a half-written
+  file. Temp files are opened `O_CREAT|O_EXCL|O_NOFOLLOW`, so a
+  pre-created file or symlink squatting the deterministic `.tmp` name
+  fails the install closed instead of being written through. Two
+  honest trade-offs: (1) the window is shrunk, not fully closed — if
+  install is interrupted between the copy and the plist write and never
+  re-run, the stale on-disk plist is still loaded at the next GUI login
+  and will refuse the new artifact until `nanomind-analyst install`
+  completes; (2) a failure inside that window now leaves a
+  previously-running daemon STOPPED (the old order left it running on
+  its old plist) — deliberate, since re-bootstrapping against a
+  half-mutated artifact dir would crash-loop, and the installer says so
+  explicitly on that path and points at the re-run.
+
 P1 fix: the boot/healthz gate probe is now threshold-independent.
 
 - The probe asserted the bypass LABEL for `# README\n\nProject Setup`, which
