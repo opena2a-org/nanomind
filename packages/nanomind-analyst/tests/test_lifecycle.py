@@ -582,3 +582,60 @@ class TestLogs:
         assert str(log) in execed[0][1]
         assert "-F" not in execed[0][1]  # follow=False
         assert "-n" in execed[0][1]
+
+
+class TestHealthzRetry:
+    """`_healthz` retries a momentarily-busy daemon before declaring it dead.
+
+    A single 2s probe can time out while the daemon serves a long in-flight
+    NLM generation; `status` and `status --json` could then disagree within
+    the same second (2026-06-11 release-test finding). The retry closes that.
+    """
+
+    def test_returns_first_success_without_sleeping(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr(
+            lifecycle, "_healthz_once", lambda timeout_sec=2.0: {"ok": True}
+        )
+        monkeypatch.setattr(
+            lifecycle.time, "sleep", lambda s: calls.append(s)
+        )
+        assert lifecycle._healthz() == {"ok": True}
+        assert calls == []  # no backoff when the first probe answers
+
+    def test_retries_then_succeeds(self, monkeypatch):
+        responses = [None, None, {"ok": True}]
+        sleeps = []
+        monkeypatch.setattr(
+            lifecycle, "_healthz_once", lambda timeout_sec=2.0: responses.pop(0)
+        )
+        monkeypatch.setattr(lifecycle.time, "sleep", lambda s: sleeps.append(s))
+        assert lifecycle._healthz(attempts=3, backoff_sec=0.01) == {"ok": True}
+        assert sleeps == [0.01, 0.01]  # backed off before attempts 2 and 3
+
+    def test_returns_none_after_all_attempts_fail(self, monkeypatch):
+        attempts = []
+        monkeypatch.setattr(
+            lifecycle,
+            "_healthz_once",
+            lambda timeout_sec=2.0: attempts.append(1) or None,
+        )
+        monkeypatch.setattr(lifecycle.time, "sleep", lambda s: None)
+        assert lifecycle._healthz(attempts=3, backoff_sec=0.01) is None
+        assert len(attempts) == 3  # probed the full budget before giving up
+
+    def test_status_recovers_when_second_probe_answers(
+        self, monkeypatch, capsys, fake_sock, no_drift
+    ):
+        """End-to-end: run_status must report ready when the first probe times
+        out but a retry answers, instead of falsely reporting no-response."""
+        responses = [None, {"daemonState": "ready", "uptimeSec": 5}]
+        monkeypatch.setattr(launchd, "print_state", lambda: (0, "loaded"))
+        monkeypatch.setattr(
+            lifecycle, "_healthz_once", lambda timeout_sec=2.0: responses.pop(0)
+        )
+        monkeypatch.setattr(lifecycle.time, "sleep", lambda s: None)
+        rc = lifecycle.run_status()
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "no response" not in out.lower()
