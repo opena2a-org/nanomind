@@ -38,6 +38,7 @@ import re
 import secrets
 import signal
 import socket
+import stat
 import sys
 import threading
 import time
@@ -181,6 +182,27 @@ def verify_artifact_integrity(cfg: Config) -> None:
             raise IntegrityError(
                 f"classifier artifact missing: {path}. "
                 f"Set NANOMIND_GUARD_CLASSIFIER_DIR or restore the artifact."
+            )
+        # Defense in depth: reject a symlink left at the artifact path before
+        # we hash it, mirroring the installer-side lstat reject (artifacts.py
+        # _verify). This makes the SHA read a real file rather than follow a
+        # link to one elsewhere, catching a leftover/accidental symlink or one
+        # planted by a same-uid process.
+        #
+        # This does NOT close the full check-to-load TOCTOU: verify and
+        # joblib.load open the path independently (predictor.py reopens by
+        # name), so a same-uid process could still rename a SHA-matching real
+        # file in between and have load read attacker bytes. Same-uid only, no
+        # privilege boundary crossed. Closing the load-time window needs an
+        # open-once O_NOFOLLOW fd shared by hash and load — tracked follow-up,
+        # not this change. lstats the leaf only (a symlinked parent dir is out
+        # of scope under the same-uid trust model).
+        st = os.lstat(path)
+        if stat.S_ISLNK(st.st_mode):
+            raise IntegrityError(
+                f"classifier artifact is a symlink ({path}); refusing to "
+                f"verify or load. The artifact directory should contain real "
+                f"files; a symlink here may indicate a tampered deployment."
             )
         actual = sha256_file(path)
         if actual != expected:

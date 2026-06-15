@@ -50,6 +50,30 @@ def _healthz_once(timeout_sec: float = 2.0) -> dict | None:
         sock.close()
 
 
+def _healthz(
+    attempts: int = 3, timeout_sec: float = 2.0, backoff_sec: float = 0.25
+) -> dict | None:
+    """Probe healthz with a few quick retries before declaring no-response.
+
+    A single 2s probe can intermittently time out while the daemon is busy
+    serving a long in-flight NLM generation: the recv times out, the call
+    returns None, and `status` reports no-response although the daemon is
+    healthy. Observed under heavy load (DVAA saturation) where `status` and
+    `status --json` could disagree within the same second. Retry a couple of
+    times with a short backoff so a momentarily-busy daemon is not reported
+    dead. Both human and --json modes go through this helper, so they no
+    longer disagree under load.
+    """
+    health = None
+    for attempt in range(attempts):
+        health = _healthz_once(timeout_sec=timeout_sec)
+        if health is not None:
+            return health
+        if attempt + 1 < attempts:
+            time.sleep(backoff_sec)
+    return health
+
+
 def _artifact_block() -> tuple[dict, list[str]]:
     """Compare the installed classifier against this wheel's SHA pins.
 
@@ -131,7 +155,7 @@ def run_status(*, json_output: bool = False) -> int:
     if not json_output:
         _emit(f"socket: present at {paths.SOCK_PATH}")
 
-    health = _healthz_once()
+    health = _healthz()
     if health is None:
         # Same rationale as the socket-missing path: drift can be WHY the
         # daemon stopped answering, so surface it on this failure path too.
