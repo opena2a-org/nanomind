@@ -53,6 +53,7 @@ Response (malicious classification):
   "result": "exfiltration",
   "confidence": 0.94,
   "attackClass": "exfiltration_pattern",
+  "classification": "classified",
   "evidence": "exfiltration",
   "latencyMs": 2,
   "modelVersion": "nanomind-tme-v0.5.0"
@@ -67,7 +68,23 @@ Response (benign):
   "result": "benign",
   "confidence": 0.91,
   "attackClass": "",
+  "classification": "classified",
   "evidence": "benign",
+  "latencyMs": 1,
+  "modelVersion": "nanomind-tme-v0.5.0"
+}
+```
+
+Response (abstain — model could not produce a usable verdict):
+
+```json
+{
+  "intent": "INTENT_CHECK",
+  "result": "injection",
+  "confidence": 0.31,
+  "attackClass": "",
+  "classification": "abstain",
+  "evidence": "injection",
   "latencyMs": 1,
   "modelVersion": "nanomind-tme-v0.5.0"
 }
@@ -80,8 +97,9 @@ Response (benign):
 | `intent` | string | yes | Echoes the request intent (or routed intent if not provided). |
 | `result` | string | yes | Raw model label (e.g. `"injection"`, `"benign"`) — convenience for human-readable logs. |
 | `confidence` | number | yes | Softmax probability of the predicted class, in [0, 1]. |
-| `attackClass` | string | yes | Canonical attack-class label, or empty string. See enum + mapping below. |
-| `evidence` | string | no | Raw 10-way model label. Carries audit-trail granularity beyond the canonical bucket. |
+| `attackClass` | string | yes | Canonical attack-class label, or empty string. See enum + mapping below. On `abstain` it is forced to `""`. |
+| `classification` | string | yes | `"classified"` or `"abstain"`. See "classification (abstain signal)" below. |
+| `evidence` | string | no | Raw 10-way model label. Carries audit-trail granularity beyond the canonical bucket. Preserved even on `abstain`. |
 | `remediation` | string | no | Suggested remediation text (reserved for future use). |
 | `latencyMs` | number | yes | End-to-end inference latency in milliseconds. |
 | `modelVersion` | string | yes | Loaded model identifier. |
@@ -115,15 +133,28 @@ The model emits 10 raw labels (matching the 10-class training corpus). The daemo
 | `lateral_movement` | `tool_misuse` |
 | `policy_violation` | `tool_misuse` |
 
+### `classification` (abstain signal)
+
+Added in 0.4.0 (FGA Step 5 Stage 1, issue #131). `classification` tells the consumer whether `attackClass` is a usable verdict or a deterministic fallback, so a confident benign is distinguishable from "the model couldn't answer" — both of which carry `attackClass: ""`.
+
+| Value | Meaning |
+|---|---|
+| `"classified"` | The model produced a usable verdict (benign OR an attack class) at or above `ABSTAIN_CONFIDENCE_FLOOR` (0.5). `attackClass` is authoritative. |
+| `"abstain"` | The model could not produce a usable verdict — inference threw (the HTTP 500 path), the engine reported no usable confidence (a missing or `NaN` score), or the predicted-class confidence was below the floor. `attackClass` is forced to `""` so a low-confidence guess is never actionable; the raw guess is preserved in `evidence`. A non-classifying engine abstains rather than reporting a confident benign. |
+
+The daemon never emits a transport-level `"fail_open"` — that is the consumer's status for "couldn't reach / couldn't decode the daemon". The HTTP 500 error body also carries `classification: "abstain"` so a consumer that reads the body without checking the status code still sees an explicit abstain.
+
+`ABSTAIN_CONFIDENCE_FLOOR` (0.5) is a conservative Stage-1 heuristic, not a calibrated value. Because the v0.5.0 classifier saturates confidence near 1.0 on most inputs, it rarely trips today; Stage 2 (selective-risk calibration) replaces it.
+
 ### FGA contract
 
 AIM's FGA Step 5 (`fga_engine.go::checkIntentSync`) reads this response and blocks when:
 
 ```
-attackClass != "" && confidence > 0.8
+classification == "classified" && attackClass != "" && confidence > 0.8
 ```
 
-The wire contract is required (the field is always present); the *value* is empty when the model classifies the request as benign and non-empty otherwise. Consumers needing 10-way granularity (e.g. dashboards, runtime correlation) read the raw label from `evidence`.
+The fields are required (always present); `attackClass` is empty when the model classifies the request as benign and non-empty otherwise, and `classification` records whether that verdict is usable. A non-2xx daemon response, an undecodable body, or `classification: "abstain"` proceeds without blocking but is recorded distinctly (`fail_open` for transport, `abstain` for an unusable verdict) rather than as a clean benign. Consumers needing 10-way granularity (e.g. dashboards, runtime correlation) read the raw label from `evidence`.
 
 ### GET /health
 

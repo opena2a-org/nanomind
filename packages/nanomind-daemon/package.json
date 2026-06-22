@@ -1,6 +1,6 @@
 {
   "name": "@nanomind/daemon",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Persistent NanoMind inference daemon with HTTP and IPC interfaces",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

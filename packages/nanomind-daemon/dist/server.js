@@ -1,10 +1,24 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.NanoMindDaemon = exports.DEFAULT_CONFIG = void 0;
+exports.NanoMindDaemon = exports.DEFAULT_CONFIG = exports.ABSTAIN_CONFIDENCE_FLOOR = void 0;
 const node_http_1 = require("node:http");
 const router_1 = require("@nanomind/router");
 const node_events_1 = require("node:events");
 const onnx_engine_ts_1 = require("./onnx-engine.js");
+/**
+ * Stage-1 abstain floor (issue #131, [CHIEF-CDS]). When the predicted class's
+ * softmax probability is below this, `/v1/infer` emits classification:"abstain"
+ * + attackClass:"" instead of a verdict, so a low-confidence guess can never
+ * masquerade as a confident benign downstream.
+ *
+ * 0.5 is a deliberately conservative Stage-1 heuristic, NOT a calibrated value:
+ * below even odds the top-of-10 class is not trustworthy. The v0.5.0 classifier
+ * saturates confidence near 1.0 on most inputs (see README "Known model-quality
+ * limitations"), so this rarely trips today — the dominant Stage-1 fix is the
+ * explicit `classification` field, not this threshold. Stage 2 (selective-risk
+ * calibration) replaces this constant with a tuned floor.
+ */
+exports.ABSTAIN_CONFIDENCE_FLOOR = 0.5;
 exports.DEFAULT_CONFIG = {
     httpPort: 47200,
     ipcPath: process.platform === 'win32'
@@ -169,14 +183,31 @@ class NanoMindDaemon extends node_events_1.EventEmitter {
             // to the Bug 1 contract defaults (attackClass:"", confidence:0.85)
             // so any engine that doesn't classify (legacy llamafile, test stubs)
             // still emits a valid InferResponse.
+            // Deterministic fallback (issue #131, Stage 1): a verdict is only usable
+            // when the engine reports a real confidence AND it is at least
+            // ABSTAIN_CONFIDENCE_FLOOR. A missing / NaN confidence means the engine
+            // could not produce a usable score (a non-classifying legacy/stub engine,
+            // or a malformed result) — that is "model couldn't answer", so it abstains
+            // rather than masquerading as a confident benign. Below the floor we also
+            // abstain and force attackClass to "" so a low-confidence guess can read
+            // downstream as neither an attack nor a confident benign. Either way the
+            // explicit `classification` lets the consumer tell "model says benign"
+            // ("classified", "") from "model couldn't answer" ("abstain", "").
+            const hasConfidence = typeof result.confidence === 'number' && !Number.isNaN(result.confidence);
+            const confidence = hasConfidence ? result.confidence : 0;
+            const rawAttackClass = result.attackClass ?? '';
+            const classification = hasConfidence && confidence >= exports.ABSTAIN_CONFIDENCE_FLOOR ? 'classified' : 'abstain';
             const response = {
                 intent: intent ?? 'UNKNOWN',
                 result: result.text,
-                confidence: typeof result.confidence === 'number' ? result.confidence : 0.85,
-                attackClass: result.attackClass ?? '',
+                confidence,
+                attackClass: classification === 'classified' ? rawAttackClass : '',
+                classification,
                 latencyMs: Date.now() - startMs,
                 modelVersion: this.engine.modelVersion ?? 'unknown',
             };
+            // Preserve the raw label for audit even on abstain, so an abstained
+            // low-confidence guess stays inspectable in telemetry.
             if (result.rawLabel)
                 response.evidence = result.rawLabel;
             res.writeHead(200);
@@ -189,11 +220,15 @@ class NanoMindDaemon extends node_events_1.EventEmitter {
             // engine-error path the response carries `attackClass: ''` so FGA
             // Step 5 doesn't have to special-case missing fields. The 500
             // status code is what tells the consumer that classification did
-            // not run; the empty attackClass is a no-block hint.
+            // not run; the empty attackClass is a no-block hint. Stage 1 (#131)
+            // adds `classification: "abstain"` to the body so a consumer that
+            // reads the body without checking the status code STILL sees an
+            // explicit abstain instead of a clean benign.
             res.end(JSON.stringify({
                 error: 'inference_error',
                 message,
                 attackClass: '',
+                classification: 'abstain',
                 confidence: 0,
                 latencyMs: Date.now() - startMs,
             }));
