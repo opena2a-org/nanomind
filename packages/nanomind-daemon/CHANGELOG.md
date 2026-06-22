@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.4.0
+
+### Explicit abstain contract — FGA Step 5 Stage 1 (closes the silent-open half of #131)
+
+`/v1/infer` responses now carry a `classification` field — `"classified"` or `"abstain"` — so a consumer can tell a confident benign apart from "the model couldn't answer". Until now both produced `attackClass: ""`, and AIM FGA Step 5 had to treat every empty class as an indistinct abstain (the conflation issue #131 is about).
+
+- New `InferResponse.classification: "classified" | "abstain"`.
+  - `"classified"`: the model produced a usable verdict (benign OR an attack class) at or above `ABSTAIN_CONFIDENCE_FLOOR`. `attackClass` is authoritative (`""` is a confident benign).
+  - `"abstain"`: the model could not produce a usable verdict — inference threw, the engine reported no usable confidence (a missing or `NaN` score, e.g. a non-classifying legacy/stub engine), or the predicted-class confidence was below the floor. `attackClass` is forced to `""` (a low-confidence guess can never read downstream as a verdict) and the raw guess is preserved in `evidence`. A non-classifying engine therefore abstains rather than masquerading as a confident benign.
+- New exported `ABSTAIN_CONFIDENCE_FLOOR = 0.5` ([CHIEF-CDS]). A deliberately conservative Stage-1 heuristic, **not** a calibrated value — below even odds the top-of-10 class is not trustworthy. The v0.5.0 classifier saturates confidence near 1.0 on most inputs, so this rarely trips today; the dominant Stage-1 fix is the explicit `classification` field. Stage 2 (selective-risk calibration) replaces the constant.
+- The HTTP 500 (engine-error) body now also carries `classification: "abstain"`, so a consumer that reads the body without checking the status code still sees an explicit abstain instead of a clean benign.
+- **Backward + forward compatible:** the field is additive. Older consumers that ignore it still get a deterministic `attackClass` (`""` on abstain); an older daemon that omits it lets AIM fall back to its legacy `attackClass==""?abstain:classified` heuristic. No lockstep deploy required.
+
+This is a contract/fallback change only — no model retrain. Stage 1 does **not** re-enable any live Beat-5 classification line; that is gated on Stage 2 (fine-tune to F1 > 0.85).
+
+### Tests
+
+- 21/21 pass (was 18; +3: a no-confidence engine result abstains; sub-floor confidence abstains and blanks attackClass; a verdict exactly at the inclusive floor classifies through).
+
+---
+
 ## 0.3.0
 
 ### Auto-download + eager readiness (closes #28)
