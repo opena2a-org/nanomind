@@ -1,14 +1,14 @@
 name: CI
 
+# Runs on EVERY PR to main (no workflow-level paths filter) so the aggregate
+# "CI Gate" check always reports a status and can be a required check without
+# wedging PRs that don't touch code (a path-filtered required check would sit
+# forever on "Expected — waiting for status"). Relevant-path detection is done
+# in the `changes` job; the expensive jobs are skipped when nothing relevant
+# changed, and `CI Gate` treats a skip as a pass.
 on:
   pull_request:
     branches: [main]
-    paths:
-      - 'packages/**'
-      - 'integrations/**'
-      - 'package.json'
-      - 'package-lock.json'
-      - '.github/workflows/**'
 
 concurrency:
   group: ci-${{ github.event.pull_request.number }}
@@ -16,10 +16,30 @@ concurrency:
 
 permissions:
   contents: read
+  pull-requests: read  # dorny/paths-filter lists PR files via the API on pull_request events
 
 jobs:
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            code:
+              - 'packages/**'
+              - 'integrations/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - '.github/workflows/**'
+
   build-and-test:
     name: Build & Test
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -34,6 +54,8 @@ jobs:
 
   pack-smoke:
     name: Pack smoke (publish surface non-empty)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -78,3 +100,34 @@ jobs:
           done
           exit $fail
         timeout-minutes: 3
+
+  # Aggregate gate — the single required check for branch protection. Always
+  # runs (even when the jobs above are skipped) so it reports on every PR. It
+  # fails only if a job that actually ran failed or was cancelled; a skipped
+  # job (no relevant changes) counts as a pass.
+  ci-gate:
+    name: CI Gate
+    needs: [changes, build-and-test, pack-smoke]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify no required job failed
+        run: |
+          ch='${{ needs.changes.result }}'
+          bt='${{ needs.build-and-test.result }}'
+          ps='${{ needs.pack-smoke.result }}'
+          echo "changes=$ch  build-and-test=$bt  pack-smoke=$ps"
+          # Change-detection MUST succeed; otherwise the build/test jobs are
+          # skipped for the wrong reason and a code change could slip through
+          # untested. Fail closed.
+          if [ "$ch" != "success" ]; then
+            echo "::error::change-detection job did not succeed ($ch); failing closed."
+            exit 1
+          fi
+          for r in "$bt" "$ps"; do
+            if [ "$r" = "failure" ] || [ "$r" = "cancelled" ]; then
+              echo "::error::A required CI job did not pass ($r)."
+              exit 1
+            fi
+          done
+          echo "All required jobs passed or were skipped (no relevant changes)."
