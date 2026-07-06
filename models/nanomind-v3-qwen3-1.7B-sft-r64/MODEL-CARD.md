@@ -155,15 +155,19 @@ the bundled template is the stock Qwen3 template with `<think>` reasoning mode.
 The SFT model emits only an *empty* `<think></think>` block before the answer,
 so parse for the `##` sections that follow it.
 
-### llama.cpp (Q4_K_M GGUF) — CPU only on Apple Silicon
+### llama.cpp (quantized GGUF) — CPU only on Apple Silicon
 
 The repo ships `nanomind-security-analyst.Q4_K_M.gguf` (~1.05 GB).
 
-> **Run the GGUF on CPU (`n_gpu_layers=0`), not Metal.** Under Metal/GPU offload
-> on Apple Silicon this quant produces broken output (a run of `!` tokens) —
-> the same Qwen3-1.7B numerical fragility that makes fp16 unusable on MPS. On
-> CPU it is correct and fast (~118 tok/s on an M4 Max). On Apple Silicon,
-> prefer the Transformers + MPS (bf16) path above; on CUDA, GPU offload is fine.
+> **Quantized GGUFs run on CPU only on Apple Silicon.** Under Metal / GPU
+> offload (`n_gpu_layers != 0`) every quantized GGUF for this model — `Q4_K_M`,
+> `Q5_K_M`, `Q6_K`, `Q8_0` — produces broken output (a run of `!` tokens). This
+> is a llama.cpp Metal quantized-kernel issue specific to this Qwen3-1.7B
+> architecture, **not** a bit-width or fidelity problem: the full-precision
+> `bf16` GGUF runs correctly on Metal, and every quant runs correctly on CPU
+> (`n_gpu_layers=0`, ~118 tok/s on an M4 Max). On CUDA, GPU offload is fine.
+> **For GPU inference on Apple Silicon, use the [MLX build](https://huggingface.co/opena2a/nanomind-security-analyst-mlx)
+> (recommended) — see below.**
 
 ```python
 from llama_cpp import Llama
@@ -185,10 +189,39 @@ out = llm.create_chat_completion(
 print(out["choices"][0]["message"]["content"])
 ```
 
-> **Ollama on Apple Silicon is not recommended for this model.** `ollama run`
-> offloads to Metal by default, which produces the broken output described
-> above, and it applies its own template and sampling. Use the Transformers +
-> MPS path on a Mac, or the CPU GGUF above.
+> **Ollama on Apple Silicon is not recommended for the quantized GGUF.**
+> `ollama run` offloads to Metal by default, which produces the broken output
+> described above, and it applies its own template and sampling. On a Mac, use
+> the MLX build below (fast GPU) or run the GGUF on CPU; the Transformers + MPS
+> path also works.
+
+### MLX (Apple Silicon GPU — recommended)
+
+For correct, fast GPU inference on a Mac, use the native MLX build:
+[`opena2a/nanomind-security-analyst-mlx`](https://huggingface.co/opena2a/nanomind-security-analyst-mlx)
+(8-bit, ~1.7 GB). MLX uses Apple's own Metal kernels, which are not affected by
+the llama.cpp quantized-Metal issue above — verified 0% garbage on Metal, with
+malicious recall matching the bf16 reference (0.98 vs 0.96, n=100).
+
+```bash
+pip install mlx-lm
+```
+
+```python
+from mlx_lm import load, generate
+from mlx_lm.sample_utils import make_sampler
+
+model, tok = load("opena2a/nanomind-security-analyst-mlx")
+# SYSTEM + <artifact> framing exactly as in the Transformers example above.
+user = f"Analyze this AI agent artifact for security threats.\n\n<artifact>\n{artifact}\n</artifact>"
+prompt = (
+    f"<|im_start|>system\n{SYSTEM}<|im_end|>\n"
+    f"<|im_start|>user\n{user}<|im_end|>\n"
+    f"<|im_start|>assistant\n"
+)
+ids = tok.encode(prompt, add_special_tokens=False)
+print(generate(model, tok, prompt=ids, max_tokens=512, sampler=make_sampler(temp=0.0)))
+```
 
 ### Via HackMyAgent (production path)
 
@@ -214,7 +247,7 @@ Claude-generated labels in ground truth) and an internal 332-sample set.
 | Internal 332-sample accuracy | **94.24%** |
 | Macro F1 (10-class) | **0.7146** |
 | Structure adherence | **98.9%** |
-| Model size | 3.44 GB (bf16 safetensors), 1.05 GB (Q4_K_M GGUF) |
+| Model size | 3.44 GB (bf16 safetensors), 1.05 GB (Q4_K_M GGUF, CPU-only on Metal), 1.7 GB ([MLX 8-bit](https://huggingface.co/opena2a/nanomind-security-analyst-mlx), Apple Silicon GPU) |
 | Latency | ~18 ms/token, ~55 tok/s (Qwen3-1.7B bf16 on Apple MPS) |
 
 Per-class F1 ranges from 0.895 (`none`) down to 0.479 (`injection`, the weakest
