@@ -9,7 +9,7 @@ description = "Installer for the NanoMind Analyst daemon: serves the Qwen3-1.7B 
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
-authors = [{ name = "OpenA2A", email = "hello@opena2a.org" }]
+authors = [{ name = "OpenA2A", email = "info@opena2a.org" }]
 keywords = ["nanomind", "ai-security", "agent-trust", "opena2a", "daemon"]
 classifiers = [
     "Development Status :: 3 - Alpha",
