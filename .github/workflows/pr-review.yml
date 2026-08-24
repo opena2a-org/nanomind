@@ -56,6 +56,13 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BASE_REF: ${{ github.base_ref }}
         run: |
+          # BASE_REF is the target branch name from github.base_ref: pinned to
+          # main by the trigger, passed through env: rather than interpolated
+          # into this script, and used only inside double quotes with a
+          # refs/remotes/origin/ prefix, so it cannot split, substitute or turn
+          # into an option. The check is belt-and-braces: a name outside this
+          # set fails closed before any git call.
+          [[ "$BASE_REF" =~ ^[A-Za-z0-9._/-]+$ ]] || { echo "::error::unexpected base ref name"; exit 1; }
           # PR metadata
           # GitHub's diff API rejects PRs over 20,000 changed lines (HTTP 406
           # "diff exceeded the maximum number of lines") and times out (504) on
