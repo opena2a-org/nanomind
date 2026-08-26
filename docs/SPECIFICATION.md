@@ -3,7 +3,7 @@
 **Version:** 3.0
 **Status:** Active
 **Last Updated:** 2026-04-09
-**Maintainer:** Chief Data Scientist (Claude LLM / human hire)
+**Maintainer:** Chief Data Scientist
 
 ---
 
@@ -505,7 +505,7 @@ The path to 99.999% is not manual curation. It is the **Registry intelligence pi
 | Current | Mamba TME (8 blocks, 128d) | Good speed/accuracy balance | 6.3 MB |
 | Next | Mamba TME (12 blocks, 256d) | More capacity for 15+ classes and 50K+ data | ~15 MB |
 | Future | Hybrid Mamba + character-level tokenizer | Better Unicode handling for stego | ~20 MB |
-| Research | Knowledge distillation from Claude | Transfer LLM understanding to small model | Budget TBD |
+| Research | Knowledge distillation from a frontier LLM | Transfer LLM understanding to small model | Budget TBD |
 
 **Constraint:** All models must stay within the deployment mode size budgets (Section 7). If a larger model is needed for accuracy, it must be justified by benchmarks showing the smaller model cannot achieve the target.
 
@@ -580,7 +580,7 @@ As the model scales to handle more nuance, the class taxonomy will expand toward
 
 ## 12. Chief Data Scientist Responsibilities
 
-The Chief Data Scientist (currently Claude LLM, may be a human hire) is responsible for:
+The Chief Data Scientist is responsible for:
 
 1. **Model quality**: Every model meets release criteria before shipping
 2. **Benchmark maintenance**: Benchmarks are up to date, cover real threats, and catch regressions

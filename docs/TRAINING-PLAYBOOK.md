@@ -82,7 +82,7 @@ node scripts/collect-skills-corpus.js \
 | >= 0.90 | Auto-include (Registry scans with critical findings, AgentPwn confirmed) |
 | 0.85 - 0.90 | Auto-include with spot-check (10% sample review) |
 | 0.60 - 0.85 | Manual review required (warnings, edge cases) |
-| < 0.60 | Exclude or escalate to Claude for relabeling |
+| < 0.60 | Exclude or escalate for relabeling |
 
 **Merge with local corpus:**
 
