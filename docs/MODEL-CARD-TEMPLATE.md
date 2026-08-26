@@ -11,7 +11,7 @@ Copy this template to `docs/model-cards/v{VERSION}.md` for each model release. F
 **Status:** latest | stable | deprecated
 **Corpus:** sft-v{N}
 **Previous Version:** v{PREV}
-**Trained By:** {name / "Claude LLM (automated)"}
+**Trained By:** {name / "automated pipeline"}
 
 ## Summary
 
