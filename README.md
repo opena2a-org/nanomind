@@ -238,8 +238,8 @@ npx tsx --test packages/nanomind-runtime/src/e2e.test.ts
 ## Related
 
 - [OpenA2A Registry](https://github.com/opena2a-org/opena2a-registry) — issues ATCs, hosts fleet intelligence
-- [HackMyAgent](https://github.com/opena2a-org/hackmyagent) — 204-check security scanner
-- [Agent Threat Matrix](https://github.com/opena2a-org/agent-threat-matrix) — 57 techniques, 36 attack classes
+- [HackMyAgent](https://github.com/opena2a-org/hackmyagent) — security scanner: 310 static checks across 69 categories, 29 NanoMind semantic checks across 7 analyzers, 164 adversarial payloads, as of 2026-08-25 (hackmyagent 0.32.0; static counts: `npx hackmyagent check-metadata --json`)
+- [Agent Threat Matrix](https://github.com/opena2a-org/agent-threat-matrix) — 61 techniques, 40 attack classes, 9 tactics, as of 2026-08-25 (Matrix v1.1; live counts: `curl -s https://api.oa2a.org/api/v1/threat-matrix/stats`)
 
 ## License
 
