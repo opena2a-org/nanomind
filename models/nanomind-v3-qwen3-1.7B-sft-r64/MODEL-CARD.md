@@ -31,9 +31,6 @@ model-index:
     - type: accuracy
       value: 0.6733
       name: Oracle attack-only 9-way
-    - type: accuracy
-      value: 0.9424
-      name: Internal 332-sample accuracy
     - type: f1
       value: 0.7146
       name: Macro F1 (10-class)
@@ -236,17 +233,42 @@ hackmyagent scan ./my-agent --deep --nanomind
 
 ## Metrics
 
-Evaluated on a frozen 500-sample oracle set (`oracle-v060-instruct`, no
-Claude-generated labels in ground truth) and an internal 332-sample set.
+Two evaluation sets, both published as release assets on the
+[v3.0.0 release](https://github.com/opena2a-org/nanomind/releases/tag/security-analyst-v3.0.0).
+Every number below can be recomputed from those files.
+
+- **Oracle, 500 samples** (`oracle-v060-instruct`; `eval-oracle-500.json` and
+  `eval-oracle-500-canonicalized.json`). Frozen, and never passed through the
+  language-model enrichment pipeline. 450 of the 500 artifacts are synthetic, and
+  each label is a dataset-construction assignment recorded at generation time
+  rather than an independent human review. Rows marked "Oracle" are measured here.
+- **Internal, 332 samples** (`eval-full-332.json`), held out from the
+  instruction-tuning corpus and absent from the training split. It mixes seven
+  task types, 236 of its 332 records carry a language-model-written reference
+  explanation, and accuracy is scored over the 295 records that carry an expected
+  class.
+
+**Correction, 2026-08-27.** This section previously reported "Internal 332-sample
+accuracy 94.24%" and stated that the oracle contained no model-generated labels in
+ground truth. Three things were wrong and are corrected here rather than removed.
+The 94.24% was scored over **295** records, not the 332 its label named. It also
+credited seven cases where the model flagged a benign artifact as malicious: ten
+records in that set carry a source label of benign against a ground truth of
+malicious, so the model was scored correct for seven false positives and wrong for
+three correct answers. On the same denominator the corrected figure is
+**92.88% (274/295)**. And the no-model-generated-labels claim was false of the
+sibling eval split cited in the same sentence, which is 67.8% model-enriched. The
+artifact that shows all of this, `eval-full-332.json`, was already public; it has
+not been changed.
 
 | Metric | Value |
 |--------|-------|
 | Oracle binary (threat vs benign) | **97.8%** |
 | Oracle 10-way (canonicalized) | **70.0%** |
 | Oracle attack-only 9-way | **67.3%** |
-| Internal 332-sample accuracy | **94.24%** |
+| Internal mixed-task accuracy (295 scored of 332, corrected) | **92.88%** |
 | Macro F1 (10-class) | **0.7146** |
-| Structure adherence | **98.9%** |
+| Structure adherence | **98.9%** oracle, **93.8%** internal |
 | Model size | 3.44 GB (bf16 safetensors), 1.05 GB (Q4_K_M GGUF, CPU-only on Metal), 1.7 GB ([MLX 8-bit](https://huggingface.co/opena2a/nanomind-security-analyst-mlx), Apple Silicon GPU) |
 | Latency | ~18 ms/token, ~55 tok/s (Qwen3-1.7B bf16 on Apple MPS) |
 
@@ -385,7 +407,6 @@ For maintainers. Not needed to use the model.
 | Oracle canonicalized 10-way | ≥70.0% | 70.0% (350/500) | PASS |
 | Oracle binary | beat SmolLM2 78.2% | 97.8% | PASS (+19.6 pp) |
 | Oracle attack-only 9-way | beat SmolLM2 29.8% | 67.3% | PASS (+37.6 pp) |
-| Internal 332-sample | 77.4–87.4% | 94.24% | PASS |
 | Structure adherence | — | 98.9% | report |
 | Refusal — off-topic (standalone) | ≥90% | 34.0% | FAIL — Limitation 1 |
 | Refusal — in-domain | ≥90% | 100.0% | PASS |
@@ -410,9 +431,17 @@ For maintainers. Not needed to use the model.
 
 SFT, LoRA r=64 / alpha=128, LR 2e-5 (≥5e-5 diverges on this base), 1821
 iterations, on `instruct-v3-enriched`. Hardware: Apple M4 Max (MPS). Use internal
-eval, not val loss, as the quality signal (val loss variance 1.061–1.393). No
-Claude-generated labels in eval ground truth; red-team mutations for eval
-augmentation only.
+eval, not val loss, as the quality signal (val loss variance 1.061-1.393).
+
+Label provenance. Oracle class labels are assigned at dataset construction and
+frozen. In `instruct-v3-enriched`, class labels come from a deterministic extractor
+field where the source record carried one, and for 498 records they were instead
+recovered by parsing the class out of the record's pre-existing completion (37 of
+236 enriched eval records, 413 of 1884 train, 48 of 234 holdout). The reference
+explanation accompanying each label in that corpus, including its `confidence` and
+`severity` fields, is language-model-written throughout. We have identified
+labelling defects on the parsed path and are correcting them. Red-team mutations
+are label-preserving and used for eval augmentation only.
 
 ### Consumers
 

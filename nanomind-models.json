@@ -189,7 +189,7 @@
             "oracleCanon10Way": 0.7,
             "oracleBinary": 0.978,
             "oracleAttackOnly9Way": 0.6733,
-            "internal332Sample": 0.9424,
+            "internalMixedTask": 0.9288,
             "structureAdherence": 0.989,
             "macroF1": 0.7146,
             "latencyMsPerToken": 18.0,
@@ -202,7 +202,7 @@
             "oracleCanon10Way": "PASS",
             "oracleBinary": "PASS",
             "oracleAttackOnly9Way": "PASS",
-            "internal332Sample": "PASS",
+            "internalMixedTask": "report",
             "refusalOffTopicNlmStandalone": "FAIL \u2014 34.0% vs \u226590% (specialist model)",
             "refusalOffTopicE2eWithGate": "PASS \u2014 92.0% with v3.1 input-classifier gate in front (64% pre-gate)",
             "refusalInDomain": "PASS \u2014 100.0%",
@@ -227,7 +227,7 @@
             "oracleCanon10Way": 0.7,
             "oracleBinary": 0.978,
             "oracleAttackOnly9Way": 0.6733,
-            "internal332Sample": 0.9424,
+            "internalMixedTask": 0.9288,
             "structureAdherence": 0.989,
             "macroF1": 0.7146,
             "latencyMsPerToken": 18.0,
@@ -240,7 +240,7 @@
             "oracleCanon10Way": "PASS \u2014 70.0% vs \u226570%",
             "oracleBinary": "PASS \u2014 97.8% vs \u226597%",
             "oracleAttackOnly9Way": "PASS \u2014 67.3% vs \u226565%",
-            "internal332Sample": "PASS \u2014 94.24% vs \u226590%",
+            "internalMixedTask": "report \u2014 92.88% (274/295); not a release gate, no threshold of record (CDS 2026-08-27)",
             "refusalOffTopicNlmStandalone": "FAIL \u2014 34.0% vs \u226590% (specialist NLM; addressed e2e by v3.1 input-classifier gate)",
             "refusalOffTopicE2eWithGate": "PASS \u2014 92.0% measured at gate threshold 0.65 (2026-05-11). SUPERSEDED as an operating-point claim by CDS-029: at the deployed threshold 0.90 most off-topic input reaches the NLM (gate bypass rate on genuine off-topic drops 86% -> 2%), so e2e off-topic refusal at 0.90 has NOT been re-measured and the 92.0% figure must not be cited for the current deployment. CDS-029 accepted this trade for +29 pts attack recall; off-topic discrimination deferred (reports/nanomind-phase-c-gate-fix.md).",
             "refusalInDomain": "PASS \u2014 100.0%",
@@ -277,7 +277,7 @@
               "consumer": "hackmyagent (hardcoded GGUF download path in nanomind-core/inference/security-analyst.ts)"
             }
           },
-          "changelog": "v3.0.0 stable. Promoted from 3.0.0-beta (same artifact) 2026-05-11; shipped with the documented FP-suppression caveat. Base: Qwen3-1.7B. Method: LoRA r=64, alpha=128, LR 2e-5 SFT, 1821 iters. Oracle: 10-way 70.0%, binary 97.8%, attack-only 9-way 67.3% \u2014 all ship gates pass. Internal 332-sample 94.24%. Off-topic handled by the v3.1 input-classifier gate at threshold 0.90 (CDS-029; the earlier 92% e2e figure was measured at 0.65 and is not the current operating point). FP-suppression on security-adjacent benign: corrected 2026-06-03 to ~77% (63/82 on a repaired real-library gate; the earlier 57% was on a gate later found to be 41% placeholder filler). Ordinary-benign FPR ~1%; spot-checking analyst findings on dedicated security libraries (JWT, RBAC, parameterized queries, rate limiters, OAuth) remains advisable. v3.1 corpus retrain was a NO-GO (+2pp, oracle regressed); scoped fix is a benign-security-code pre-pass, not corpus expansion."
+          "changelog": "v3.0.0 stable. Promoted from 3.0.0-beta (same artifact) 2026-05-11; shipped with the documented FP-suppression caveat. Base: Qwen3-1.7B. Method: LoRA r=64, alpha=128, LR 2e-5 SFT, 1821 iters. Oracle: 10-way 70.0%, binary 97.8%, attack-only 9-way 67.3% \u2014 all ship gates pass. Internal mixed-task 92.88% (274/295 scored; corrected 2026-08-27 from a published 94.24% that used a 332 denominator and credited seven benign false positives). Off-topic handled by the v3.1 input-classifier gate at threshold 0.90 (CDS-029; the earlier 92% e2e figure was measured at 0.65 and is not the current operating point). FP-suppression on security-adjacent benign: corrected 2026-06-03 to ~77% (63/82 on a repaired real-library gate; the earlier 57% was on a gate later found to be 41% placeholder filler). Ordinary-benign FPR ~1%; spot-checking analyst findings on dedicated security libraries (JWT, RBAC, parameterized queries, rate limiters, OAuth) remains advisable. v3.1 corpus retrain was a NO-GO (+2pp, oracle regressed); scoped fix is a benign-security-code pre-pass, not corpus expansion."
         }
       },
       "latestStable": "3.0.0",
