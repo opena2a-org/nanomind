@@ -3,7 +3,7 @@
 **Version:** 3.0
 **Status:** Active
 **Last Updated:** 2026-04-09
-**Maintainer:** Chief Data Scientist
+**Maintainer:** NanoMind model owner
 
 ---
 
@@ -467,9 +467,9 @@ Benchmark datasets are stored in `nanomind-training/benchmarks/` and MUST NOT ov
 
 | Dataset | Purpose | Samples | Maintained By |
 |---------|---------|---------|---------------|
-| `benchmark-accuracy.json` | Standard accuracy test | 500+ | Chief Data Scientist |
+| `benchmark-accuracy.json` | Standard accuracy test | 500+ | Model owner |
 | `benchmark-adversarial.json` | Adversarial robustness | 200+ | Security team |
-| `benchmark-benign-unicode.json` | False positive regression | 100+ | Chief Data Scientist |
+| `benchmark-benign-unicode.json` | False positive regression | 100+ | Model owner |
 | `benchmark-real-world.json` | Real packages/configs | 50+ | Manually curated |
 
 ### 9.3 Continuous Benchmarking
@@ -578,9 +578,9 @@ As the model scales to handle more nuance, the class taxonomy will expand toward
 | `threat_matrix_attack_classes` | 172 | 36+ classes → NanoMind class mapping |
 | `agentpwn_interactions` | 127 | Honeypot confirmed attacks |
 
-## 12. Chief Data Scientist Responsibilities
+## 12. Model Owner Responsibilities
 
-The Chief Data Scientist is responsible for:
+The model owner is responsible for:
 
 1. **Model quality**: Every model meets release criteria before shipping
 2. **Benchmark maintenance**: Benchmarks are up to date, cover real threats, and catch regressions

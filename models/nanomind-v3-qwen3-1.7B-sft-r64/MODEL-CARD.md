@@ -300,7 +300,7 @@ In production, HMA pre-filters inputs to agent artifacts and the NanoMind-Guard
 daemon runs an input-classifier gate in front of the model. A note on a figure
 you may see elsewhere: an earlier measurement reported 92% end-to-end off-topic
 refusal, but that was taken with the gate at threshold 0.65. The gate now ships
-at **0.90** (decision CDS-029), deliberately trading off-topic discrimination
+at **0.90**, deliberately trading off-topic discrimination
 for +29 points of attack recall; end-to-end off-topic refusal has **not** been
 re-measured at 0.90, so the 92% figure should not be cited for the current
 deployment. Off-topic discrimination is a v4 corpus item.
@@ -392,7 +392,7 @@ For maintainers. Not needed to use the model.
 - **2026-06-03** — FP-suppression caveat corrected 57% → ~77% after the
   benign-security gate was found to be 41% placeholder filler and repaired
   (see Limitation 2).
-- **CDS-029** (2026-06-07) — input-classifier gate threshold 0.65 → 0.90,
+- **2026-06-07** — input-classifier gate threshold 0.65 → 0.90,
   trading off-topic discrimination for +29 pts attack recall. Supersedes the 92%
   e2e off-topic-refusal operating-point claim (see Limitation 1).
 - The classifier line ends at v0.5.0 (Mamba TME); the analyst (this model and

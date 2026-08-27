@@ -242,4 +242,4 @@ make benchmark MODEL_DIR=training/models-tme-v6 CORPUS_DIR=../nanomind-training/
 # Output: benchmark-report.json with PASS/FAIL per benchmark
 ```
 
-This does not exist yet. Building it is a priority for the Chief Data Scientist.
+This does not exist yet. Building it is a priority for the model owner.
