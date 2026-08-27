@@ -58,7 +58,7 @@ nanomind-daemon stop
 | Model | Visibility | Architecture | Accuracy | Status |
 |-------|-----------|--------------|----------|--------|
 | [nanomind-security-classifier](https://huggingface.co/opena2a/nanomind-security-classifier) | Public | Mamba TME (10 classes) | Recall 100%, Precision 79.6%, F1 88.7%, Benign FPR 9.1% (oracle-verified, TME v5 2026-04-15) | Production (v0.5.0 — terminal classifier release per CDS-003) |
-| [nanomind-security-analyst](https://huggingface.co/opena2a/nanomind-security-analyst) | Public | Qwen3-1.7B SFT LoRA r=64 (10 classes) | Oracle 10-way 70.0%, binary 97.8%, attack-only 9-way 67.3%, internal 332-sample 94.24% (off-topic handled by the v3.1 input gate) | Production (v3.0.0, published 2026-05-11) |
+| [nanomind-security-analyst](https://huggingface.co/opena2a/nanomind-security-analyst) | Public | Qwen3-1.7B SFT LoRA r=64 (10 classes) | Oracle 10-way 70.0%, binary 97.8%, attack-only 9-way 67.3%, internal mixed-task 92.88% (295 scored of 332; off-topic handled by the v3.1 input gate) | Production (v3.0.0, published 2026-05-11) |
 | nanomind-mcp-analyzer | Internal | Planned | -- | Planned |
 | nanomind-trust-scorer | Internal | Planned | -- | Planned |
 | nanomind-runtime-guard | Internal | Planned | -- | Planned |
