@@ -1,8 +1,8 @@
 # NanoMind Specification
 
-**Version:** 3.0
+**Version:** 3.1
 **Status:** Active
-**Last Updated:** 2026-04-09
+**Last Updated:** 2026-09-02
 **Maintainer:** NanoMind model owner
 
 ---
@@ -268,13 +268,30 @@ Fallback: If ONNX runtime is unavailable, vocabulary-based scoring provides degr
 3. Full model card documentation
 4. Consumer tool updates (all tools that use the model must handle the new class)
 
+### 4.3 Emitted-Token Vocabulary
+
+§4.2 defines the **class namespace**: the values stored, indexed, reported and published as an attack class. This section defines the **emitted-token namespace**: the value the security analyst writes on its `attackClass:` output line, the value the analyst's guard daemon returns in `predictedAttackClass`, and the value a training record, gate fixture or oracle target carries in its `attackClass` field. The two namespaces differ by exactly one token.
+
+| Emitted token | Meaning | Normalizes to |
+|---------------|---------|---------------|
+| one of the nine attack classes of §4.2 (`exfiltration` through `steganography`) | an attack of that class was found | the same-named class |
+| `none` | no attack class applies: the benign case | `benign`, only when the accompanying verdict (`classification`, or the record's label) independently says benign |
+
+Rules:
+1. `none` is the only emitted token for the benign case. `benign` MUST NOT be emitted in an `attackClass` position, and `none` MUST NOT be added to the taxonomy of §4.2: it is a not-applicable marker, not an eleventh class.
+2. `none` normalizes to `benign` only on an independent benign verdict. A record or response carrying `none` with a malicious or missing verdict is a contradiction and MUST be refused, not resolved. Absence of a class is not evidence of benign behavior on its own.
+3. Consumers MUST NOT test for `benign` in an emitted-token position; the benign case reads `none` there. A consumer that keys on `benign` alone silently misclassifies every benign record, observable as a benign-suppression rate near 0% while the share of `none` reads near 100%.
+4. Scope: the inference daemon's `/v1/infer` response field `attackClass` (§3.4) is a third namespace, the consumer-side bucket enum documented in the daemon package README, in which the empty string means no confident attack verdict and `classification` carries the verdict status. It is not governed by this table.
+
+This specification is the normative definition of both namespaces. The class-resolution module of the training repository (`nanomind-training`, private) is the machine-readable copy for training tooling; it MUST resolve every token in this table exactly as stated here and MUST NOT admit any marker as a class. Every other declaration of the class list, in any repository, is a derived copy of §4.2 and MUST NOT add, drop or rename a class.
+
 ## 5. Consumer Integration Requirements
 
 Every tool that uses NanoMind MUST:
 
 1. **Pin to a specific model version** via SHA-256 hashes of model files
 2. **Verify integrity** on every model load (SHA-256 check)
-3. **Handle all classes** in the current taxonomy (unknown classes logged, not crashed)
+3. **Handle all classes** in the current taxonomy (unknown classes logged, not crashed), and the emitted-token vocabulary of §4.3: `attackClass: none` is the benign case, never an unknown class
 4. **Graceful degradation** if model download fails or ONNX runtime unavailable
 5. **Report inference latency** if it exceeds the target for that mode
 6. **Never trust a single signal** -- NanoMind classification is one input to the decision, not the decision itself (defense-in-depth)
@@ -606,6 +623,7 @@ The model owner is responsible for:
 | 2026-04 | Increased vocab from 4000 to 6000 | Better Unicode token capture for steganography class |
 | 2026-04 | Augmented v9 with v8 attack data | v9 alone had too few samples per class (318 vs 400) |
 | 2026-04 | Excluded v8 policy_violation from augmentation | Contaminated with stego examples that were relabeled in v9 |
+| 2026-09 | Defined the emitted-token vocabulary (§4.3): `none` is the benign-case token and normalizes to class `benign`; not an eleventh class | The spec defined classes but never the emitted token, so two spellings of the benign case were both locally defensible; a null marker admitted as a class would be a terminal-benign path with no verdict cross-check |
 
 ## 14. References
 
