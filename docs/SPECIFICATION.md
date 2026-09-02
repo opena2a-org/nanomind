@@ -270,7 +270,7 @@ Fallback: If ONNX runtime is unavailable, vocabulary-based scoring provides degr
 
 ### 4.3 Emitted-Token Vocabulary
 
-§4.2 defines the **class namespace**: the values stored, indexed, reported and published as an attack class. This section defines the **emitted-token namespace**: the value the security analyst writes on its `attackClass:` output line, the value the guard daemon returns in `predictedAttackClass`, and the value a training record, gate fixture or oracle target carries in its `attackClass` field. The two namespaces differ by exactly one token.
+§4.2 defines the **class namespace**: the values stored, indexed, reported and published as an attack class. This section defines the **emitted-token namespace**: the value the security analyst writes on its `attackClass:` output line, the value the analyst's guard daemon returns in `predictedAttackClass`, and the value a training record, gate fixture or oracle target carries in its `attackClass` field. The two namespaces differ by exactly one token.
 
 | Emitted token | Meaning | Normalizes to |
 |---------------|---------|---------------|
