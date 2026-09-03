@@ -236,6 +236,150 @@ describe('NanoMindDaemon', () => {
   });
 });
 
+describe('NanoMindDaemon /health/ready (NMD-02)', () => {
+  let daemon: NanoMindDaemon;
+  const READY_PORT = 47298; // distinct from the main suite's 47299
+  const BASE = `http://127.0.0.1:${READY_PORT}`;
+  const PKG = JSON.parse(
+    readFileSync(join(fileURLToPath(new URL('.', import.meta.url)), '..', 'package.json'), 'utf-8'),
+  ) as { version: string };
+
+  // Stub engine so the suite never touches real model artifacts. Setting
+  // `failLoadWith` makes the next load attempt throw with that message,
+  // simulating a model-load failure on a concrete filesystem path.
+  let failLoadWith: string | null = null;
+  const stubEngine = {
+    ensureReady: async () => {
+      if (failLoadWith) throw new Error(failLoadWith);
+    },
+    infer: async () => ({ text: 'stub-result' }),
+  };
+
+  before(async () => {
+    daemon = new NanoMindDaemon({
+      httpPort: READY_PORT,
+      idleUnloadSeconds: 60,
+      engine: stubEngine,
+    });
+    await daemon.start();
+    await new Promise(resolve => setTimeout(resolve, 100));
+  });
+
+  after(async () => {
+    await daemon.stop();
+  });
+
+  it('NMD-02.AC2 answers 503 with ready:false and model unavailable before the model is loaded', async () => {
+    // start() loads eagerly, so recreate the not-loaded state the idle
+    // unload path (server.ts idle_unload) leaves the daemon in.
+    (daemon as unknown as { modelLoaded: boolean }).modelLoaded = false;
+
+    const resp = await fetch(`${BASE}/health/ready`);
+    assert.strictEqual(resp.status, 503);
+    assert.strictEqual(resp.headers.get('cache-control'), 'no-store');
+    const body = await resp.json() as {
+      ready: boolean;
+      dependencies: { model: { status: string; required: boolean; reason?: string } };
+    };
+    assert.strictEqual(body.ready, false, 'ready must mirror the 503');
+    assert.strictEqual(body.dependencies.model.status, 'unavailable');
+    assert.strictEqual(body.dependencies.model.required, true);
+    assert.strictEqual(body.dependencies.model.reason, 'model not loaded');
+  });
+
+  it('NMD-02.AC3 never leaks the engine error or filesystem path into the 503 body', async () => {
+    (daemon as unknown as { modelLoaded: boolean }).modelLoaded = false;
+    failLoadWith = 'ENOENT: no such file /tmp/nanomind-probe-fixture/model.onnx';
+
+    // Drive the on-demand load path; it fails with the fixture path in the
+    // engine error.
+    const infer = await fetch(`${BASE}/v1/infer`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ intent: 'INTENT_CHECK', input: 'probe' }),
+    });
+    assert.strictEqual(infer.status, 500);
+    await infer.text();
+
+    const resp = await fetch(`${BASE}/health/ready`);
+    assert.strictEqual(resp.status, 503);
+    const raw = await resp.text();
+    assert.ok(!raw.includes('/tmp/nanomind-probe-'), 'ready body must not carry the engine path');
+    assert.ok(!raw.includes('ENOENT'), 'ready body must not carry the engine error');
+    const body = JSON.parse(raw) as { dependencies: { model: { reason?: string } } };
+    assert.strictEqual(body.dependencies.model.reason, 'model not loaded');
+    failLoadWith = null;
+  });
+
+  it('NMD-02.AC2 answers 200 with the full readiness body after the load path sets modelLoaded', async () => {
+    (daemon as unknown as { modelLoaded: boolean }).modelLoaded = false;
+
+    // A successful infer runs the load path that sets modelLoaded.
+    const infer = await fetch(`${BASE}/v1/infer`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ intent: 'INTENT_CHECK', input: 'probe' }),
+    });
+    assert.strictEqual(infer.status, 200);
+    await infer.text();
+
+    const resp = await fetch(`${BASE}/health/ready`);
+    assert.strictEqual(resp.status, 200);
+    assert.strictEqual(resp.headers.get('cache-control'), 'no-store');
+    const body = await resp.json() as {
+      ready: boolean;
+      service: string;
+      commit: string | null;
+      version: string;
+      checkedAt: string;
+      degraded: boolean;
+      dependencies: { model: { status: string; required: boolean } };
+    };
+    assert.strictEqual(body.ready, true, 'ready must mirror the 200');
+    assert.strictEqual(body.service, 'nanomind-daemon');
+    assert.strictEqual(body.version, PKG.version, 'version comes from the package manifest');
+    assert.ok(!Number.isNaN(Date.parse(body.checkedAt)), 'checkedAt must be a parseable timestamp');
+    assert.strictEqual(body.degraded, false);
+    assert.strictEqual(body.dependencies.model.status, 'ok');
+    assert.strictEqual(body.dependencies.model.required, true);
+    assert.ok(
+      body.commit === null || /^[0-9a-f]{40}$/.test(body.commit),
+      'commit is the npm-stamped gitHead or null',
+    );
+  });
+
+  it('NMD-02.AC2 emits exactly the seven top-level keys and only known model-cell keys', async () => {
+    const TOP_KEYS = ['ready', 'service', 'commit', 'version', 'checkedAt', 'degraded', 'dependencies'];
+    const MODEL_KEYS = new Set(['status', 'required', 'latencyMs', 'reason']);
+
+    for (const loaded of [true, false]) {
+      (daemon as unknown as { modelLoaded: boolean }).modelLoaded = loaded;
+      const resp = await fetch(`${BASE}/health/ready`);
+      const body = await resp.json() as { dependencies: { model: Record<string, unknown> } };
+      assert.deepStrictEqual(
+        Object.keys(body).sort(),
+        [...TOP_KEYS].sort(),
+        `top-level key set (modelLoaded=${loaded})`,
+      );
+      assert.deepStrictEqual(Object.keys(body.dependencies), ['model']);
+      for (const key of Object.keys(body.dependencies.model)) {
+        assert.ok(MODEL_KEYS.has(key), `unexpected model-cell key ${key} (modelLoaded=${loaded})`);
+      }
+    }
+    (daemon as unknown as { modelLoaded: boolean }).modelLoaded = true;
+  });
+
+  it('NMD-02.AC3 leaves /health as the plain getStatus() body without readiness keys', async () => {
+    const resp = await fetch(`${BASE}/health`);
+    assert.strictEqual(resp.status, 200);
+    const body = await resp.json() as Record<string, unknown>;
+    assert.strictEqual(body.running, true);
+    for (const key of ['ready', 'service', 'dependencies']) {
+      assert.ok(!(key in body), `/health must not carry ${key}`);
+    }
+  });
+});
+
 /**
  * Acceptance test for Bug 2 (ONNX swap). Runs the real OnnxEngine against
  * 10 deterministically-sampled `injection`-labeled strings from the local

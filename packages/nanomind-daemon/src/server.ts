@@ -2,6 +2,13 @@ import { createServer, IncomingMessage, ServerResponse } from 'node:http';
 import { classifyIntent } from '@nanomind/router';
 import { EventEmitter } from 'node:events';
 import { OnnxEngine } from './onnx-engine.ts';
+import { manifest } from './manifest.mts';
+
+const SERVICE_NAME = 'nanomind-daemon';
+const SERVICE_COMMIT: string | null =
+  typeof manifest.gitHead === 'string' && /^[0-9a-f]{40}$/.test(manifest.gitHead)
+    ? manifest.gitHead
+    : null;
 
 /**
  * Minimal engine surface the daemon relies on. Both the production
@@ -197,6 +204,29 @@ export class NanoMindDaemon extends EventEmitter {
     if (url === '/health' && method === 'GET') {
       res.writeHead(200);
       res.end(JSON.stringify(this.getStatus()));
+      return;
+    }
+
+    // Readiness: the model is the daemon's single required dependency.
+    // The unavailable reason is a fixed string — never an engine error or
+    // filesystem path, which must not leak onto this surface.
+    if (url === '/health/ready' && method === 'GET') {
+      const modelOk = this.modelLoaded;
+      res.setHeader('Cache-Control', 'no-store');
+      res.writeHead(modelOk ? 200 : 503);
+      res.end(JSON.stringify({
+        ready: modelOk,
+        service: SERVICE_NAME,
+        commit: SERVICE_COMMIT,
+        version: manifest.version,
+        checkedAt: new Date().toISOString(),
+        degraded: false,
+        dependencies: {
+          model: modelOk
+            ? { status: 'ok', required: true }
+            : { status: 'unavailable', required: true, reason: 'model not loaded' },
+        },
+      }));
       return;
     }
 

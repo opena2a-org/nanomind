@@ -5,6 +5,11 @@ const node_http_1 = require("node:http");
 const router_1 = require("@nanomind/router");
 const node_events_1 = require("node:events");
 const onnx_engine_ts_1 = require("./onnx-engine.js");
+const manifest_mts_1 = require("./manifest.mjs");
+const SERVICE_NAME = 'nanomind-daemon';
+const SERVICE_COMMIT = typeof manifest_mts_1.manifest.gitHead === 'string' && /^[0-9a-f]{40}$/.test(manifest_mts_1.manifest.gitHead)
+    ? manifest_mts_1.manifest.gitHead
+    : null;
 /**
  * Stage-1 abstain floor (issue #131, [CHIEF-CDS]). When the predicted class's
  * softmax probability is below this, `/v1/infer` emits classification:"abstain"
@@ -98,6 +103,28 @@ class NanoMindDaemon extends node_events_1.EventEmitter {
         if (url === '/health' && method === 'GET') {
             res.writeHead(200);
             res.end(JSON.stringify(this.getStatus()));
+            return;
+        }
+        // Readiness: the model is the daemon's single required dependency.
+        // The unavailable reason is a fixed string — never an engine error or
+        // filesystem path, which must not leak onto this surface.
+        if (url === '/health/ready' && method === 'GET') {
+            const modelOk = this.modelLoaded;
+            res.setHeader('Cache-Control', 'no-store');
+            res.writeHead(modelOk ? 200 : 503);
+            res.end(JSON.stringify({
+                ready: modelOk,
+                service: SERVICE_NAME,
+                commit: SERVICE_COMMIT,
+                version: manifest_mts_1.manifest.version,
+                checkedAt: new Date().toISOString(),
+                degraded: false,
+                dependencies: {
+                    model: modelOk
+                        ? { status: 'ok', required: true }
+                        : { status: 'unavailable', required: true, reason: 'model not loaded' },
+                },
+            }));
             return;
         }
         // Status
