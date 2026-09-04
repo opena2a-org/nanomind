@@ -106,11 +106,13 @@ Response (abstain — model could not produce a usable verdict):
 
 ### `attackClass` enum
 
-The field is always emitted. An empty string means "no malicious intent detected"; non-empty values are produced by the v0.5.0 production classifier:
+§3.4.1 of [`docs/SPECIFICATION.md`](../../docs/SPECIFICATION.md) is the normative definition of this namespace; the three tables below are a derived copy, kept honest by `src/spec-conformance.test.ts`.
+
+The field is always emitted. An empty string means "no confident attack verdict" — read `classification` to tell a confident benign from an abstain. Non-empty values are produced by the v0.5.0 production classifier:
 
 | Value | Meaning |
 |---|---|
-| `""` | No malicious intent detected (model classified as `benign`). |
+| `""` | Not applicable: the model classified the input as `benign`, or the response is an abstain. See "classification (abstain signal)" below. |
 | `"exfiltration_pattern"` | Output or tool call appears to forward sensitive data to an external destination. |
 | `"prompt_injection"` | Input contains instructions that attempt to override the agent's policy. |
 | `"tool_misuse"` | Capability or tool used outside its declared purpose. |
