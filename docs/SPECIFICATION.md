@@ -1,8 +1,8 @@
 # NanoMind Specification
 
-**Version:** 3.1
+**Version:** 3.2
 **Status:** Active
-**Last Updated:** 2026-09-02
+**Last Updated:** 2026-09-04
 **Maintainer:** NanoMind model owner
 
 ---
@@ -147,7 +147,7 @@ A persistent inference server that keeps the model loaded in memory. Called by t
 ```
 POST /v1/infer          — Classification endpoint
   Request:  { intent, artifactType, content, packageName, version }
-  Response: { classification, confidence, attackClass, evidence, remediation, latencyMs, modelVersion }
+  Response: { intent, result, confidence, attackClass, classification, evidence?, remediation?, latencyMs, modelVersion }
 
 GET  /v1/status          — Model status and health
 GET  /health             — Daemon health check
@@ -165,6 +165,52 @@ interface FabricAdapter {
 ```
 
 **File:** `nanomind/packages/nanomind-daemon/src/server.ts`, `fabric-adapter.ts`
+
+#### 3.4.1 /v1/infer Wire Vocabulary
+
+The `/v1/infer` response of §3.4 carries a THIRD namespace, distinct from the class namespace of §4.2 and the emitted-token namespace of §4.3. §4.3 rule 4 carves it out; this section defines it, so a consumer implementing against `/v1/infer` needs only this specification.
+
+**Always-present fields.** `attackClass` and `classification` are emitted on every response, on the success path and on the HTTP 500 error body alike, so a consumer never has to distinguish "absent" from "empty".
+
+**`attackClass` enum.** Exactly these five values, and no others:
+
+| Value | Meaning |
+|-------|---------|
+| `""` | Not applicable: either the model classified the input as benign, or the response is an abstain. Read `classification` to tell the two apart. |
+| `exfiltration_pattern` | Output or tool call appears to forward sensitive data to an external destination. |
+| `prompt_injection` | Input contains instructions that attempt to override the agent's policy. |
+| `tool_misuse` | Capability or tool used outside its declared purpose. |
+| `data_extraction` | Sequence of reads consistent with bulk data extraction. |
+
+The empty string is this namespace's not-applicable marker, exactly as `none` is §4.3's. They are not interchangeable: `none` MUST NOT appear in an `/v1/infer` `attackClass` field, and `benign` MUST NOT appear there either.
+
+**`classification` statuses.** Exactly these two values:
+
+| Value | Meaning |
+|-------|---------|
+| `classified` | The model produced a usable verdict — benign or an attack class — at or above the abstain confidence floor. `attackClass` is authoritative, and `""` is a confident benign. |
+| `abstain` | The model could not produce a usable verdict: inference threw, the engine reported no usable confidence, or the predicted class's confidence was below the floor. `attackClass` is forced to `""` and MUST NOT be read as benign; the raw guess, where there was one, is preserved in `evidence`. |
+
+The abstain confidence floor is `0.5`. It is a conservative Stage-1 heuristic, not a calibrated value.
+
+A consumer MUST read `classification` before treating `attackClass: ""` as a verdict: `("classified", "")` is a confident benign and `("abstain", "")` is "the model could not answer". The daemon never emits a transport-level `fail_open`; that is the consumer's own status for "could not reach, or could not decode, the daemon".
+
+**Mapping from §4.2.** The model emits one of the ten §4.2 classes as its raw label; the daemon maps it into the five-value enum above and preserves the raw label in `evidence`, so audit and telemetry keep the ten-way granularity:
+
+| §4.2 class (raw label) | `/v1/infer` `attackClass` |
+|------------------------|---------------------------|
+| `benign` | `""` |
+| `injection` | `prompt_injection` |
+| `social_engineering` | `prompt_injection` |
+| `exfiltration` | `exfiltration_pattern` |
+| `steganography` | `exfiltration_pattern` |
+| `credential_abuse` | `data_extraction` |
+| `privilege_escalation` | `tool_misuse` |
+| `persistence` | `tool_misuse` |
+| `lateral_movement` | `tool_misuse` |
+| `policy_violation` | `tool_misuse` |
+
+The mapping is total over §4.2 — each of the ten classes appears exactly once — and onto the enum: every non-empty enum value is reached by at least one row. This specification is the normative definition of this namespace; the daemon package README carries a derived copy, and the daemon package holds the conformance test that keeps the copy honest.
 
 ### 3.5 Federated Learning Protocol (L2 Fleet Intelligence)
 
@@ -281,7 +327,7 @@ Rules:
 1. `none` is the only emitted token for the benign case. `benign` MUST NOT be emitted in an `attackClass` position, and `none` MUST NOT be added to the taxonomy of §4.2: it is a not-applicable marker, not an eleventh class.
 2. `none` normalizes to `benign` only on an independent benign verdict. A record or response carrying `none` with a malicious or missing verdict is a contradiction and MUST be refused, not resolved. Absence of a class is not evidence of benign behavior on its own.
 3. Consumers MUST NOT test for `benign` in an emitted-token position; the benign case reads `none` there. A consumer that keys on `benign` alone silently misclassifies every benign record, observable as a benign-suppression rate near 0% while the share of `none` reads near 100%.
-4. Scope: the inference daemon's `/v1/infer` response field `attackClass` (§3.4) is a third namespace, the consumer-side bucket enum documented in the daemon package README, in which the empty string means no confident attack verdict and `classification` carries the verdict status. It is not governed by this table.
+4. Scope: the inference daemon's `/v1/infer` response field `attackClass` (§3.4) is a third namespace, the consumer-side bucket enum defined in §3.4.1 and copied in the daemon package README, in which the empty string means no confident attack verdict and `classification` carries the verdict status. It is not governed by this table.
 
 This specification is the normative definition of both namespaces. The class-resolution module of the training repository (`nanomind-training`, private) is the machine-readable copy for training tooling; it MUST resolve every token in this table exactly as stated here and MUST NOT admit any marker as a class. Every other declaration of the class list, in any repository, is a derived copy of §4.2 and MUST NOT add, drop or rename a class.
 
@@ -624,6 +670,7 @@ The model owner is responsible for:
 | 2026-04 | Augmented v9 with v8 attack data | v9 alone had too few samples per class (318 vs 400) |
 | 2026-04 | Excluded v8 policy_violation from augmentation | Contaminated with stego examples that were relabeled in v9 |
 | 2026-09 | Defined the emitted-token vocabulary (§4.3): `none` is the benign-case token and normalizes to class `benign`; not an eleventh class | The spec defined classes but never the emitted token, so two spellings of the benign case were both locally defensible; a null marker admitted as a class would be a terminal-benign path with no verdict cross-check |
+| 2026-09 | Defined the `/v1/infer` wire vocabulary (§3.4.1): the five-value `attackClass` enum whose empty string is the not-applicable marker, the `classified`/`abstain` statuses, the 0.5 abstain floor, and the total mapping from the ten §4.2 classes | The wire contract existed only in the daemon package README, so a consumer reading the spec alone could not tell a confident benign (`classified`, `""`) from an abstain (`abstain`, `""`) — both of which carry the same empty `attackClass` |
 
 ## 14. References
 
