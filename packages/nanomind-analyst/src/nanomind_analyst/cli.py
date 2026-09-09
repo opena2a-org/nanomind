@@ -1,7 +1,9 @@
 """Command-line entrypoint for `nanomind-analyst`.
 
 Subcommands:
-  install      Fetch artifacts, write the plist, bootstrap the daemon, wait for healthz.
+  install      Fetch artifacts, write the plist, bootstrap the agent. On-demand
+               by default (RunAtLoad false, idle exit); --resident keeps the
+               daemon warm and waits for healthz.
   uninstall    Stop and unload the daemon. Removes the plist; keeps artifacts by default.
   start        Kickstart the loaded LaunchAgent.
   stop         Send the daemon SIGTERM. The agent stays loaded.
@@ -44,12 +46,29 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_install = subparsers.add_parser(
         "install",
-        help="Fetch artifacts, write the plist, bootstrap the daemon, wait for healthz.",
+        help=(
+            "Fetch artifacts, write the plist, bootstrap the agent. The daemon "
+            "starts on demand (`nanomind-analyst start`) and exits after "
+            "900s idle unless --resident is given."
+        ),
+    )
+    p_install.add_argument(
+        "--resident",
+        action="store_true",
+        help=(
+            "Keep the daemon resident: RunAtLoad true, no idle exit "
+            "(NANOMIND_GUARD_IDLE_EXIT_SEC=0), and wait up to 60s for healthz "
+            "after bootstrap. Default is on-demand: RunAtLoad false and an "
+            "idle exit after 900s."
+        ),
     )
     p_install.add_argument(
         "--skip-healthz-wait",
         action="store_true",
-        help="Skip the post-bootstrap healthz probe (CI / scripting use).",
+        help=(
+            "With --resident, skip the post-bootstrap healthz probe (CI / "
+            "scripting use). On-demand installs never wait."
+        ),
     )
     _add_version_flag(p_install)
 
@@ -112,7 +131,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "install":
             return install.run_install(
-                skip_healthz_wait=args.skip_healthz_wait
+                skip_healthz_wait=args.skip_healthz_wait,
+                resident=args.resident,
             )
         if args.command == "uninstall":
             return install.run_uninstall(

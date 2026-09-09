@@ -56,7 +56,7 @@ class TestPlistAuthoring:
             "-m",
             "nanomind_analyst.daemon.nanomind_guard_daemon",
         ]
-        assert body["RunAtLoad"] is True
+        assert body["RunAtLoad"] is False
         # KeepAlive on crash, not on clean exit.
         assert body["KeepAlive"]["SuccessfulExit"] is False
         assert body["KeepAlive"]["Crashed"] is True
