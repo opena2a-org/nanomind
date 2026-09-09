@@ -9,6 +9,19 @@ EnvironmentVariables include the SHA256 hashes of the input-classifier
 artifacts. The daemon refuses to start without these (joblib.load is pickle =
 ACE at deserialization). We bake the hashes into the plist so the daemon sees
 them on every relaunch.
+
+The template renders two modes from `PlistSpec.resident`:
+
+  * on-demand (the default): RunAtLoad false, so bootstrapping the agent at
+    install / GUI login does not start the daemon; `nanomind-analyst start`
+    kickstarts it, and the accept loop exits on its own after
+    NANOMIND_GUARD_IDLE_EXIT_SEC seconds without a request (900 here).
+  * resident (`nanomind-analyst install --resident`): RunAtLoad true and the
+    idle exit disabled (NANOMIND_GUARD_IDLE_EXIT_SEC=0), so the process stays
+    warm between requests as it did through 0.1.3.
+
+KeepAlive is identical in both modes: restart on crash, never on a clean
+exit, so an idle exit is not undone by launchd.
 """
 from __future__ import annotations
 
@@ -19,6 +32,14 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import artifacts, paths
+
+# Idle window the plist states per mode. The on-demand value mirrors
+# DEFAULT_IDLE_EXIT_SEC in daemon/nanomind_guard_daemon.py; it is a literal
+# here (not an import) so rendering a plist never imports the daemon module
+# and its joblib / predictor graph. tests/test_on_demand.py pins the two
+# equal. Resident mode writes 0: a resident daemon is never idle-exited.
+ON_DEMAND_IDLE_EXIT_SEC = "900"
+RESIDENT_IDLE_EXIT_SEC = "0"
 
 
 @dataclass(frozen=True)
@@ -32,13 +53,18 @@ class PlistSpec:
     classifier_meta_sha256: str
     log_path: str
     sock_path: str
+    # The one mode field. False (default) renders the on-demand plist:
+    # RunAtLoad false + idle exit after 900 s. True renders the resident
+    # plist: RunAtLoad true + idle exit disabled.
+    resident: bool = False
 
 
-def build_plist_spec() -> PlistSpec:
+def build_plist_spec(*, resident: bool = False) -> PlistSpec:
     """Resolve a PlistSpec from the current install state.
 
     Caller invokes this AFTER fetch_nlm + install_classifier so the target
-    directories exist.
+    directories exist. With no argument the spec is on-demand; `resident=True`
+    is the installer's `--resident` opt-in.
     """
     return PlistSpec(
         label=paths.LABEL,
@@ -50,6 +76,7 @@ def build_plist_spec() -> PlistSpec:
         classifier_meta_sha256=artifacts.EXPECTED_CLASSIFIER_META_SHA256,
         log_path=str(paths.log_path()),
         sock_path=paths.SOCK_PATH,
+        resident=resident,
     )
 
 
@@ -66,9 +93,12 @@ def render_plist(spec: PlistSpec) -> bytes:
     body = {
         "Label": spec.label,
         "ProgramArguments": program_args,
-        "RunAtLoad": True,
-        # KeepAlive on crash but not on clean exit. A clean exit means the user
-        # ran `nanomind-analyst stop` and we should respect that.
+        # On-demand (default): launchd loads the agent but does not start the
+        # process; `nanomind-analyst start` does. Resident: start at load.
+        "RunAtLoad": bool(spec.resident),
+        # KeepAlive on crash but not on clean exit, in BOTH modes. A clean
+        # exit means the user ran `nanomind-analyst stop` or the idle window
+        # elapsed, and launchd must respect that rather than restart it.
         "KeepAlive": {"SuccessfulExit": False, "Crashed": True},
         "StandardOutPath": spec.log_path,
         "StandardErrorPath": spec.log_path,
@@ -82,6 +112,19 @@ def render_plist(spec: PlistSpec) -> bytes:
             # promptly into the launchd-managed log file. Without this, lines
             # buffer for tens of seconds and `logs` looks frozen.
             "PYTHONUNBUFFERED": "1",
+            # The idle window the daemon runs under, stated in the plist so it
+            # is readable with `plutil -p`. 900 on-demand, 0 (disabled)
+            # resident.
+            "NANOMIND_GUARD_IDLE_EXIT_SEC": (
+                RESIDENT_IDLE_EXIT_SEC if spec.resident else ON_DEMAND_IDLE_EXIT_SEC
+            ),
+            # The classifier loads its embedder by hub id
+            # (SentenceTransformer("sentence-transformers/...")); without
+            # this, every boot issues huggingface.co HEAD calls for a model
+            # that is already cached, and a boot with no network stalls on
+            # them. Both artifacts are on disk after install, so the daemon
+            # boots from the local cache only.
+            "HF_HUB_OFFLINE": "1",
         },
         # Use the user's home as working directory. The daemon reads no
         # relative paths, but launchd needs a valid cwd.

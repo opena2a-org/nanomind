@@ -17,18 +17,24 @@ The install step:
 2. Copies the input-classifier-v1 artifacts (bundled in the wheel) into `~/Library/Application Support/nanomind-analyst/artifacts/input-classifier-v1/`. SHA256 verified before copy.
 3. Fetches the Analyst NLM (~3.4 GB) from `opena2a/nanomind-security-analyst` at the pinned v3.0.0 commit. SHA256 verified after fetch.
 4. Writes a launchd plist to `~/Library/LaunchAgents/org.opena2a.nanomind-analyst.plist`.
-5. Bootstraps the LaunchAgent into the user's gui session.
-6. Waits up to 60 seconds for the daemon to bind the socket and pass its healthz probe.
+5. Bootstraps the LaunchAgent into the user's gui session. By default the plist carries `RunAtLoad` false, so nothing starts yet: the daemon runs on demand.
+6. With `--resident` only: waits up to 60 seconds for the daemon to bind the socket and pass its healthz probe.
 
 The fetch step is the long one (several minutes on first run; cached on subsequent runs).
+
+### On demand by default
+
+`nanomind-analyst install` leaves the daemon stopped. `nanomind-analyst start` starts it (cold boot loads the NLM, ~30 seconds), and it exits on its own after 900 seconds without a request, so an idle daemon has zero footprint. The window is `NANOMIND_GUARD_IDLE_EXIT_SEC` in the plist's `EnvironmentVariables` (`0` disables it); the plist also sets `HF_HUB_OFFLINE=1` so a boot never consults huggingface.co for the already-cached embedder.
+
+`nanomind-analyst install --resident` writes `RunAtLoad` true and `NANOMIND_GUARD_IDLE_EXIT_SEC=0` instead: the daemon starts at login, is kept warm between requests, and the installer waits for healthz as it did through 0.1.3.
 
 ## Commands
 
 | Command | What |
 |---------|------|
-| `nanomind-analyst install` | Full install flow. Idempotent. |
+| `nanomind-analyst install` | Full install flow. Idempotent. On-demand by default; `--resident` keeps the daemon warm and waits for healthz. |
 | `nanomind-analyst uninstall` | Stop, unload, remove plist. `--remove-artifacts` also deletes the 3.4 GB NLM. |
-| `nanomind-analyst start` | Kickstart the loaded LaunchAgent. |
+| `nanomind-analyst start` | Kickstart the loaded LaunchAgent (the on-demand cold start). |
 | `nanomind-analyst stop` | SIGTERM the daemon. Agent stays loaded; no auto-restart on clean exit. |
 | `nanomind-analyst restart` | Stop then start. |
 | `nanomind-analyst status` | Report whether the agent is loaded and healthz returns ready. |
@@ -71,7 +77,7 @@ Not supported in v0.1. The daemon is bf16 on Apple MPS; fp16 yields 0% accuracy 
 
 ## Known limitations
 
-- **Cold-boot latency.** Daemon takes ~30 seconds to load the NLM on first request after a system reboot. The install flow waits up to 60 seconds for this; subsequent restarts are faster (the launchd-managed process stays warm).
+- **Cold-boot latency.** The daemon takes ~30 seconds to load the NLM at each start. By default it starts on demand (`nanomind-analyst start`) and exits after 900 seconds idle, so that cost is paid again after every idle exit; `install --resident` keeps the process warm between requests (the install flow then waits up to 60 seconds for the first boot).
 - **NLM latency floor.** The Analyst NLM emits ~400 tokens of structured output per request at ~15 ms/token on bf16 MPS. Floor is ~6 seconds per finding. Consumers (HMA, opena2a-cli) should batch or filter before invoking. The input-classifier gate bypasses the NLM on off-topic inputs (~92% bypass rate on benign user input).
 - **Single-instance.** The daemon binds a single Unix socket. Multiple `nanomind-analyst install` runs on the same machine share the same socket; the LaunchAgent label is unique to the user.
 

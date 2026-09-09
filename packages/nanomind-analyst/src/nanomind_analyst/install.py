@@ -1,6 +1,11 @@
 """Orchestrate the install: platform check -> wheel classifier pre-flight
 verify -> NLM fetch -> launchctl bootout -> classifier copy -> plist write ->
-launchctl bootstrap -> healthz wait.
+launchctl bootstrap -> (resident mode only) healthz wait.
+
+The default install is on-demand: the plist carries RunAtLoad false, so
+bootstrap loads the agent without starting the daemon, and there is nothing
+to wait for. `--resident` writes RunAtLoad true and keeps the 60 s healthz
+wait from 0.1.3.
 
 Each step prints a one-line update to stdout so a human watching the install
 sees forward progress (the NLM fetch is the long step, several minutes on a
@@ -145,8 +150,13 @@ def _emit(line: str) -> None:
     sys.stdout.flush()
 
 
-def run_install(*, skip_healthz_wait: bool = False) -> int:
-    """Top-level install flow. Returns exit code (0 on success)."""
+def run_install(*, skip_healthz_wait: bool = False, resident: bool = False) -> int:
+    """Top-level install flow. Returns exit code (0 on success).
+
+    `resident=False` (default) writes the on-demand plist and returns right
+    after bootstrap. `resident=True` writes the resident plist and waits for
+    healthz unless `skip_healthz_wait`.
+    """
     assert_supported_platform()
 
     paths.app_support_dir().mkdir(parents=True, exist_ok=True)
@@ -201,8 +211,11 @@ def run_install(*, skip_healthz_wait: bool = False) -> int:
             target_dir=paths.classifier_dir(),
         )
 
-        plist = launchd.write_plist(launchd.build_plist_spec())
-        _emit(f"wrote launchd plist to {plist}")
+        plist = launchd.write_plist(launchd.build_plist_spec(resident=resident))
+        _emit(
+            f"wrote launchd plist to {plist} "
+            f"({'resident' if resident else 'on-demand'} mode)"
+        )
     except BaseException:
         sys.stderr.write(
             "install failed after the daemon was unloaded; the daemon is "
@@ -214,6 +227,21 @@ def run_install(*, skip_healthz_wait: bool = False) -> int:
 
     launchd.bootstrap(plist)
     _emit(f"bootstrapped {paths.LABEL} into gui/{paths.uid()}")
+
+    if not resident:
+        # RunAtLoad false: the agent is loaded but no process is running, so
+        # there is no socket to probe. The daemon starts when asked and exits
+        # on its own after the idle window.
+        _emit(
+            "the daemon starts on demand: run `nanomind-analyst start` to "
+            "start it (it exits by itself after "
+            f"{launchd.ON_DEMAND_IDLE_EXIT_SEC}s without a request)"
+        )
+        _emit(
+            "  re-run `nanomind-analyst install --resident` to keep it warm "
+            "between requests instead"
+        )
+        return 0
 
     if skip_healthz_wait:
         _emit("skipping healthz wait (--skip-healthz-wait)")

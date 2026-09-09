@@ -1,5 +1,44 @@
 # Changelog
 
+## 0.1.4
+
+The guard daemon is on-demand for good: zero footprint when idle, no
+network at boot. Run `nanomind-analyst install` after upgrading to
+regenerate the plist (the mode, the idle window and the offline flag are
+plist state, so an existing install keeps the 0.1.3 resident plist until
+you do).
+
+- **RunAtLoad false is the default.** The plist template renders two modes
+  from one `PlistSpec.resident` field. The on-demand mode (default) writes
+  `RunAtLoad` false: `install` bootstraps the LaunchAgent without starting
+  the daemon, and `nanomind-analyst start` starts it when you want it.
+  `KeepAlive` is unchanged in both modes (`SuccessfulExit` false,
+  `Crashed` true), so a clean idle exit is never restarted by launchd.
+- **Resident opt-in: `nanomind-analyst install --resident`.** Writes
+  `RunAtLoad` true and disables the idle exit, restoring the 0.1.3
+  stay-warm behaviour for hosts that want it.
+- **Idle exit: `NANOMIND_GUARD_IDLE_EXIT_SEC`, default 900.** The accept
+  loop returns cleanly (socket closed, path unlinked) once no request has
+  been accepted for that many seconds, measured from the ready point and
+  reset by every accepted connection; `0` disables the exit. The plist
+  states the value explicitly (`900` on-demand, `0` resident) so the window
+  a host runs under is readable with `plutil -p`. A non-numeric or negative
+  value refuses to start (`FATAL` naming the variable, exit 2) rather than
+  silently serving forever.
+- **The 60 s healthz wait runs only in resident mode.** An on-demand
+  install returns 0 right after bootstrap and prints that the daemon starts
+  on demand via `nanomind-analyst start`; there is no process to probe.
+  `--skip-healthz-wait` keeps its meaning under `--resident`.
+- **`HF_HUB_OFFLINE=1` in the plist environment.** The classifier loads its
+  embedder by hub id, so every boot used to issue huggingface.co HEAD calls
+  for a model already in the local cache (and stalled without network). The
+  daemon now boots from the cache only. A smoke-marked cell in
+  `tests/test_install_smoke.py` warms the cache, then repeats the embedder
+  and analyst-model loads with `HF_HUB_OFFLINE=1` and every outbound TCP
+  connect refused.
+- README: the launchd-managed process no longer stays warm between requests
+  by default; the on-demand start and the idle exit are documented instead.
+
 ## 0.1.3
 
 Gate operating point: the wheel-embedded input-classifier meta.json now

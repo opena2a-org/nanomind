@@ -21,7 +21,10 @@ Boot order:
     4. Construct NanoMindNLM (loads ~3.4 GB bf16 weights).
     5. Run gate probe ("# README\n\nProject Setup" must score
        proba_off_topic >= 0.5). Refuse to bind on probe failure.
-    6. Bind socket, accept connections serially.
+    6. Bind socket, accept connections serially. Exit cleanly once no
+       request has been accepted for NANOMIND_GUARD_IDLE_EXIT_SEC seconds
+       (default 900; 0 disables), so an on-demand daemon has zero footprint
+       when idle.
 
 See briefs/nanomind-guard-daemon.md for the wire protocol and decisions.
 """
@@ -33,6 +36,7 @@ import datetime as _dt
 import hashlib
 import json
 import logging
+import math
 import os
 import re
 import secrets
@@ -83,6 +87,13 @@ HEALTHZ_PROBE_MIN_PROBA = 0.5
 RECV_CHUNK = 64 * 1024  # 64 KB recv chunks; loop until we have a full line
 ENVELOPE_OVERHEAD = 4096  # JSON wrapper around `text` field
 DEFAULT_CONN_TIMEOUT_SEC = 5.0  # slowloris cutoff for accepted connections
+# Idle-exit window: serve() returns cleanly once no request has been accepted
+# for this many seconds (measured from the ready point, reset by every
+# accepted connection). 0 disables the exit. The launchd plist states the
+# value explicitly (900 on-demand, 0 resident); this default covers a daemon
+# started without the variable. Mirrored as a literal in launchd.py.
+DEFAULT_IDLE_EXIT_SEC = 900.0
+ACCEPT_POLL_SEC = 0.25  # accept() timeout; bounds the idle-exit latency
 SHA256_HEX_RE = re.compile(r"^[0-9a-f]{64}$")
 
 log = logging.getLogger("nanomind_guard")
@@ -105,10 +116,12 @@ class Config:
     max_new_tokens: int
     conn_timeout_sec: float
     device: str | None  # None -> NLM auto-detects
+    idle_exit_sec: float  # 0 -> never exit on idle
 
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> "Config":
         e = env if env is not None else os.environ
+        idle_exit_sec = _parse_idle_exit_sec(e.get("NANOMIND_GUARD_IDLE_EXIT_SEC"))
         joblib_sha = e.get("INPUT_CLASSIFIER_JOBLIB_SHA256", "").strip().lower()
         meta_sha = e.get("INPUT_CLASSIFIER_META_SHA256", "").strip().lower()
         if not joblib_sha or not meta_sha:
@@ -150,11 +163,34 @@ class Config:
                 e.get("NANOMIND_GUARD_CONN_TIMEOUT_SEC", DEFAULT_CONN_TIMEOUT_SEC)
             ),
             device=e.get("NANOMIND_GUARD_DEVICE") or None,
+            idle_exit_sec=idle_exit_sec,
         )
 
 
 class ConfigError(Exception):
     """Raised when the daemon cannot start due to invalid configuration."""
+
+
+def _parse_idle_exit_sec(raw: str | None) -> float:
+    """Read NANOMIND_GUARD_IDLE_EXIT_SEC; absent -> default, unreadable -> refuse.
+
+    A daemon that cannot read its idle window must not silently serve
+    forever (the pre-0.1.4 behaviour), so anything that is not a finite,
+    non-negative number is a ConfigError and main() exits 2.
+    """
+    if raw is None:
+        return DEFAULT_IDLE_EXIT_SEC
+    try:
+        value = float(raw.strip())
+    except ValueError:
+        value = math.nan
+    if not math.isfinite(value) or value < 0:
+        raise ConfigError(
+            f"NANOMIND_GUARD_IDLE_EXIT_SEC must be a non-negative number of "
+            f"seconds (0 disables the idle exit; default "
+            f"{DEFAULT_IDLE_EXIT_SEC:.0f}); got {raw!r}. Refusing to start."
+        )
+    return value
 
 
 class IntegrityError(Exception):
@@ -611,15 +647,27 @@ def serve(
 ) -> None:
     """Bind the socket and accept connections one at a time (serial).
 
+    Returns when a stop signal / `stop_event` arrives, or, with
+    `cfg.idle_exit_sec > 0`, once no connection has been accepted for that
+    many seconds (measured from the ready point, reset by every accepted
+    connection). Either way the `finally` block closes the listening socket
+    and unlinks the socket path, so launchd sees a clean exit and (KeepAlive
+    SuccessfulExit false) does not restart it.
+
     `stop_event` lets tests trigger a clean shutdown without sending signals.
     `install_signal_handlers=False` lets tests run `serve` in a background
     thread (signal handlers can only be installed from the main thread).
     """
     cfg = state.cfg
     server = _bind_socket(cfg.sock_path)
-    server.settimeout(0.25)  # poll for stop_event between accepts
+    server.settimeout(ACCEPT_POLL_SEC)  # poll for stop_event / idle between accepts
     log.info("listening on %s", cfg.sock_path)
     hard_cap = cfg.max_bytes + ENVELOPE_OVERHEAD
+    idle_exit_sec = float(cfg.idle_exit_sec)
+    if idle_exit_sec > 0:
+        log.info("idle exit after %.0fs without a request", idle_exit_sec)
+    else:
+        log.info("idle exit disabled (NANOMIND_GUARD_IDLE_EXIT_SEC=0)")
 
     stopping = False
 
@@ -632,14 +680,33 @@ def serve(
         signal.signal(signal.SIGTERM, _stop)
         signal.signal(signal.SIGINT, _stop)
 
+    # The idle window starts at the ready point.
+    last_accept = time.monotonic()
     if ready_callback is not None:
         ready_callback()
 
     def _should_stop() -> bool:
         return stopping or (stop_event is not None and stop_event.is_set())
 
+    def _idle_expired() -> bool:
+        return idle_exit_sec > 0 and (time.monotonic() - last_accept) >= idle_exit_sec
+
     try:
         while not _should_stop():
+            if _idle_expired():
+                log.info(
+                    "no request accepted for %.0fs; exiting on idle "
+                    "(NANOMIND_GUARD_IDLE_EXIT_SEC)",
+                    idle_exit_sec,
+                )
+                emit_telemetry(
+                    {
+                        "event": "idle-exit",
+                        "idleExitSec": idle_exit_sec,
+                        "requestsServed": state.requests_served,
+                    }
+                )
+                break
             try:
                 conn, _ = server.accept()
             except socket.timeout:
@@ -648,6 +715,7 @@ def serve(
                 if _should_stop():
                     break
                 raise
+            last_accept = time.monotonic()  # every accepted connection resets the window
             with conn:
                 # Slowloris cutoff: a peer that opens a connection and never
                 # finishes sending (or never reads our reply) would otherwise

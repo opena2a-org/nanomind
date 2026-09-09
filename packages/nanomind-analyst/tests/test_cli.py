@@ -78,7 +78,7 @@ class TestParser:
         monkeypatch.setattr(
             cli.install,
             "run_install",
-            lambda *, skip_healthz_wait=False: called.setdefault(
+            lambda *, skip_healthz_wait=False, resident=False: called.setdefault(
                 "skip_healthz_wait", skip_healthz_wait
             )
             or 0,
@@ -92,7 +92,7 @@ class TestParser:
         monkeypatch.setattr(
             cli.install,
             "run_install",
-            lambda *, skip_healthz_wait=False: called.setdefault(
+            lambda *, skip_healthz_wait=False, resident=False: called.setdefault(
                 "skip_healthz_wait", skip_healthz_wait
             )
             or 0,
@@ -151,7 +151,7 @@ class TestParser:
         assert seen["follow"] is False
 
     def test_install_error_returns_2_not_1(self, monkeypatch, capsys):
-        def fake_install(*, skip_healthz_wait=False):
+        def fake_install(*, skip_healthz_wait=False, resident=False):
             raise cli.install.InstallError("unsupported platform foo/bar")
 
         monkeypatch.setattr(cli.install, "run_install", fake_install)
@@ -161,7 +161,7 @@ class TestParser:
         assert "unsupported platform" in err
 
     def test_unexpected_exception_returns_1(self, monkeypatch, capsys):
-        def fake_install(*, skip_healthz_wait=False):
+        def fake_install(*, skip_healthz_wait=False, resident=False):
             raise RuntimeError("boom")
 
         monkeypatch.setattr(cli.install, "run_install", fake_install)
