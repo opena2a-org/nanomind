@@ -12,7 +12,9 @@
   this release does not read. `status` reports `degraded` and exits 1,
   names the version, and says to upgrade or rerun `nanomind-analyst
   install`; `status --json` carries the daemon's value as
-  `healthz.protocolVersion` on that path only.
+  `healthz.protocolVersion` on that path only. The `install` wait fails
+  on the first such reply and names the version, instead of polling
+  until its 60-second timeout.
 - `nanomind-analyst status` no longer fails with `AttributeError` when
   the daemon's `healthz` reply is valid JSON but not an object (for
   example `[1]`). It reports `degraded`, says the reply is not a JSON
