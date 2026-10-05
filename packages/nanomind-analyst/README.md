@@ -47,6 +47,10 @@ The fetch step is the long one (several minutes on first run; cached on subseque
 
 No root, no `/opt`, no `sudo`.
 
+## Socket protocol version
+
+The daemon's `healthz` reply carries `protocolVersion` (currently `1`). Version 1 is the `classify` and `healthz` op set; a reply without the field comes from an earlier daemon and is version 1. `status` and `install` treat a version they do not read as degraded, never as ready.
+
 ## Trust chain
 
 The install does not depend on Hugging Face being trustworthy. The wheel manifest is the authoritative source of artifact identity:

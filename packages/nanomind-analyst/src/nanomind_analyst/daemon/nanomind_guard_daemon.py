@@ -46,6 +46,7 @@ import traceback
 from pathlib import Path
 from typing import Any, Callable
 
+from ..protocol import PROTOCOL_VERSION
 from ._nlm import nlm_output_to_response
 from .input_classifier.predictor import InputClassifier
 
@@ -448,7 +449,11 @@ def handle_classify(
 
 
 def handle_healthz(state: DaemonState) -> dict[str, Any]:
-    """Probe the gate to catch 'embedder failed to load' early."""
+    """Probe the gate to catch 'embedder failed to load' early.
+
+    The reply states the socket protocol version (see `protocol`); a reply
+    without it comes from a daemon that predates the field and speaks v1.
+    """
     probe_pred = None
     probe_passed = False
     try:
@@ -459,6 +464,7 @@ def handle_healthz(state: DaemonState) -> dict[str, Any]:
 
     return {
         "ok": probe_passed,
+        "protocolVersion": PROTOCOL_VERSION,
         "daemonState": "ready" if probe_passed else "degraded",
         "gateProbe": {
             "input": HEALTHZ_PROBE_INPUT,
