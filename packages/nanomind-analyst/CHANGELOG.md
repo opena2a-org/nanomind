@@ -35,8 +35,8 @@
 - The `install` healthz wait now pauses one second after an empty or
   non-JSON reply, as it already did after a reply from a daemon that is
   not ready yet. Before, those two replies made it reconnect in a tight loop
-  until the deadline, opening over 100,000 connections a second against
-  the daemon.
+  until the deadline, opening tens of thousands of connections a second
+  against the daemon.
 
 ## 0.1.3
 
