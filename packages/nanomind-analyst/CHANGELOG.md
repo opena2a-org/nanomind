@@ -13,6 +13,13 @@
   names the version, and says to upgrade or rerun `nanomind-analyst
   install`; `status --json` carries the daemon's value as
   `healthz.protocolVersion` on that path only.
+- `NANOMIND_GUARD_DEVICE` now places the input-classifier embedder as
+  well as the NLM. Before, the embedder always let sentence-transformers
+  choose and took MPS whenever torch reported it, so on a Mac whose
+  Metal device is visible but cannot allocate, the daemon failed at
+  boot with `MPS backend out of memory` and setting the variable to
+  `cpu` did not help. With the variable unset, both models still pick
+  their device as before.
 
 ## 0.1.3
 

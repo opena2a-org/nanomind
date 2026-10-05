@@ -105,7 +105,7 @@ class Config:
     warn_bytes: int
     max_new_tokens: int
     conn_timeout_sec: float
-    device: str | None  # None -> NLM auto-detects
+    device: str | None  # embedder + NLM; None -> each auto-detects
 
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> "Config":
@@ -703,7 +703,9 @@ def boot(cfg: Config) -> DaemonState:
         cfg.classifier_dir,
     )
     try:
-        classifier = InputClassifier.from_artifact_dir(cfg.classifier_dir)
+        classifier = InputClassifier.from_artifact_dir(
+            cfg.classifier_dir, device=cfg.device
+        )
     except ValueError as exc:
         # Predictor raises ValueError on bad INPUT_CLASSIFIER_THRESHOLD. Map
         # to ConfigError so the process exits 2 (bad config) instead of 1
