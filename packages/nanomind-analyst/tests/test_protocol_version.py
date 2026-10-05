@@ -169,6 +169,29 @@ class TestStatusReadsVersion:
         assert "protocolVersion=2" in out
         assert "`nanomind-analyst install`" in out
 
+    def test_non_object_reply_degrades_json(self, fake_daemon, capsys):
+        fake_daemon([1])
+        assert lifecycle.run_status(json_output=True) == 1
+        payload = json.loads(capsys.readouterr().out.strip())
+        assert payload["healthz"]["state"] == "degraded"
+        assert payload["healthz"]["protocolVersion"] is None
+
+    def test_non_object_reply_degrades_human(self, fake_daemon, capsys):
+        fake_daemon([1])
+        assert lifecycle.run_status() == 1
+        out = capsys.readouterr().out
+        assert "healthz: 'degraded'" in out
+        assert "not a JSON object" in out
+        assert "`nanomind-analyst install`" in out
+
+    def test_non_object_gate_probe_is_not_read(self, fake_daemon, capsys):
+        fake_daemon({"daemonState": "degraded", "protocolVersion": 1, "gateProbe": [1]})
+        assert lifecycle.run_status(json_output=True) == 1
+        payload = json.loads(capsys.readouterr().out.strip())
+        assert payload["healthz"] == {"state": "degraded"}
+        assert lifecycle.run_status() == 1
+        assert "gate probe" not in capsys.readouterr().out
+
 
 class TestInstallProbeReadsVersion:
     def test_pre_versioned_daemon_passes(self, fake_daemon):
