@@ -132,7 +132,13 @@ def _healthz_probe(timeout_sec: float = 60.0) -> bool:
             if protocol.healthz_is_ready(payload):
                 return True
             if not isinstance(payload, dict):
-                last_err = "reply is not a JSON object"
+                # No later poll can turn a non-object reply into one this
+                # client reads, so it ends the wait like an unknown version.
+                sys.stderr.write(
+                    "healthz reply is not a JSON object, so the wait "
+                    "stopped at the first reply\n"
+                )
+                return False
             elif protocol.reply_protocol_version(payload) is None:
                 # The daemon's announced version cannot change between
                 # polls, so waiting out the timeout cannot succeed.

@@ -222,10 +222,23 @@ class TestInstallProbeReadsVersion:
         assert "protocolVersion=2" in err
         assert "did not return ready within" not in err
 
+    @pytest.mark.parametrize("body", [["ready"], [1]], ids=["list-of-str", "list-of-int"])
+    def test_non_object_reply_fails_on_first_reply(self, fake_daemon, capsys, body):
+        """No later poll can turn a non-object reply into one this client
+        reads, so the wait stops at the first such reply."""
+        served = fake_daemon(body)
+        started = time.monotonic()
+        assert install._healthz_probe(timeout_sec=10.0) is False
+        assert time.monotonic() - started < 3.0
+        assert len(served) == 1
+        err = capsys.readouterr().err
+        assert "not a JSON object" in err
+        assert "did not return ready within" not in err
+
     @pytest.mark.parametrize(
         "body",
-        [{**READY_V1, "daemonState": "starting", "protocolVersion": 1}, ["ready"]],
-        ids=["v1-not-ready", "non-object"],
+        [{**READY_V1, "daemonState": "starting", "protocolVersion": 1}],
+        ids=["v1-not-ready"],
     )
     def test_other_not_ready_replies_keep_polling(self, fake_daemon, capsys, body):
         served = fake_daemon(body)

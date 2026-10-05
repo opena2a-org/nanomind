@@ -21,6 +21,10 @@
   object, and exits 1; `status --json` emits its usual document with
   `healthz.protocolVersion: null`. A `gateProbe` field that is not an
   object is now left out of the output instead of raising.
+- The `install` healthz wait also fails on the first reply that is valid
+  JSON but not an object (for example `[1]`) and says so, instead of
+  polling until its 60-second timeout. `nanomind-analyst status`
+  already reported such a reply as degraded straight away.
 - `NANOMIND_GUARD_DEVICE` now places the input-classifier embedder as
   well as the NLM. Before, the embedder always let sentence-transformers
   choose and took MPS whenever torch reported it, so on a Mac whose
