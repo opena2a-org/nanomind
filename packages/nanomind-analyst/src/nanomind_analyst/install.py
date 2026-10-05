@@ -1,6 +1,13 @@
 """Orchestrate the install: platform check -> wheel classifier pre-flight
 verify -> NLM fetch -> launchctl bootout -> classifier copy -> plist write ->
-launchctl bootstrap -> healthz wait.
+launchctl bootstrap -> start -> healthz wait.
+
+The default plist is on-demand (RunAtLoad false), so bootstrap alone does not
+start the daemon: install starts it once through the same kickstart `start`
+uses and waits on the healthz probe, so a successful install has proven a
+daemon that answers. `--resident` writes RunAtLoad true, launchd starts the
+daemon at bootstrap, and install only waits. `--skip-healthz-wait` neither
+starts nor probes.
 
 Each step prints a one-line update to stdout so a human watching the install
 sees forward progress (the NLM fetch is the long step, several minutes on a
@@ -97,11 +104,10 @@ def _healthz_probe(timeout_sec: float = 60.0) -> bool:
     """Connect to the daemon's Unix socket and ask for healthz.
 
     Returns True if the daemon binds the socket and reports `daemonState=ready`
-    within the timeout. Cold-boot of the v3 NLM takes ~30s on a warm HF cache;
-    60s gives a safety margin. Returns False on the first reply that
-    announces a protocol version this client does not read. Refuses to
-    connect if the socket is a symlink or owned by a different uid — see
-    _assert_socket_owned_by_user.
+    within the timeout; the install reports the boot time it measured. Returns
+    False on the first reply that announces a protocol version this client
+    does not read. Refuses to connect if the socket is a symlink or owned by a
+    different uid — see _assert_socket_owned_by_user.
     """
     deadline = time.monotonic() + timeout_sec
     last_err: str | None = None
@@ -183,7 +189,9 @@ def _emit(line: str) -> None:
     sys.stdout.flush()
 
 
-def run_install(*, skip_healthz_wait: bool = False) -> int:
+def run_install(
+    *, skip_healthz_wait: bool = False, resident: bool = False
+) -> int:
     """Top-level install flow. Returns exit code (0 on success)."""
     assert_supported_platform()
 
@@ -239,7 +247,9 @@ def run_install(*, skip_healthz_wait: bool = False) -> int:
             target_dir=paths.classifier_dir(),
         )
 
-        plist = launchd.write_plist(launchd.build_plist_spec())
+        plist = launchd.write_plist(
+            launchd.build_plist_spec(resident=resident)
+        )
         _emit(f"wrote launchd plist to {plist}")
     except BaseException:
         sys.stderr.write(
@@ -251,15 +261,32 @@ def run_install(*, skip_healthz_wait: bool = False) -> int:
         raise
 
     launchd.bootstrap(plist)
+    started = time.monotonic()
     _emit(f"bootstrapped {paths.LABEL} into gui/{paths.uid()}")
+    if resident:
+        _emit("mode: resident (starts at login, stays running when idle)")
+    else:
+        _emit(
+            "mode: on-demand (starts when asked, exits after 15 minutes "
+            "with no request)"
+        )
 
     if skip_healthz_wait:
-        _emit("skipping healthz wait (--skip-healthz-wait)")
+        _emit("skipping daemon start and healthz wait (--skip-healthz-wait)")
         return 0
+
+    if not resident:
+        _emit("starting the daemon once to verify the install")
+        started = time.monotonic()
+        launchd.kickstart(restart=False)
 
     _emit("waiting for daemon to bind socket and pass healthz probe")
     if _healthz_probe(timeout_sec=60.0):
-        _emit(f"daemon ready at {paths.SOCK_PATH}")
+        elapsed = time.monotonic() - started
+        _emit(
+            f"daemon ready at {paths.SOCK_PATH} after {elapsed:.1f}s "
+            f"on this machine"
+        )
         _emit("run `nanomind-analyst status` to verify")
         return 0
     _emit("install completed but daemon did not pass healthz")

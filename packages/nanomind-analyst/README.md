@@ -1,6 +1,6 @@
 # nanomind-analyst
 
-Installer for the NanoMind Analyst daemon. The daemon serves the Qwen3-1.7B security analyst NLM behind an input-classifier gate over a Unix socket at `/tmp/nanomind-guard.sock`. Consumers (hackmyagent, opena2a-cli, ai-trust) connect to that socket for generative threat analysis on individual findings.
+Installer for the NanoMind Analyst daemon. The daemon serves the Qwen3-1.7B security analyst NLM behind an input-classifier gate over a Unix socket at `/tmp/nanomind-guard.sock`. hackmyagent connects to that socket for generative threat analysis on individual findings.
 
 This package writes a per-user launchd LaunchAgent, fetches and verifies the model artifacts from Hugging Face, and manages the daemon lifecycle. Apple Silicon (Darwin arm64) only in v0.1.
 
@@ -17,8 +17,8 @@ The install step:
 2. Copies the input-classifier-v1 artifacts (bundled in the wheel) into `~/Library/Application Support/nanomind-analyst/artifacts/input-classifier-v1/`. SHA256 verified before copy.
 3. Fetches the Analyst NLM (~3.4 GB) from `opena2a/nanomind-security-analyst` at the pinned v3.0.0 commit. SHA256 verified after fetch.
 4. Writes a launchd plist to `~/Library/LaunchAgents/org.opena2a.nanomind-analyst.plist`.
-5. Bootstraps the LaunchAgent into the user's gui session.
-6. Waits up to 60 seconds for the daemon to bind the socket and pass its healthz probe.
+5. Bootstraps the LaunchAgent into the user's gui session. By default the daemon runs on demand: it does not start at login, and it exits on its own after 15 minutes with no request, releasing the model's memory. `nanomind-analyst install --resident` keeps it running instead: it starts at every login and never exits for being idle.
+6. Starts the daemon once, waits up to 60 seconds for it to bind the socket and pass its healthz probe, and prints the seconds that took on this machine. `--skip-healthz-wait` skips both the start and the wait.
 
 The fetch step is the long one (several minutes on first run; cached on subsequent runs).
 
@@ -26,9 +26,9 @@ The fetch step is the long one (several minutes on first run; cached on subseque
 
 | Command | What |
 |---------|------|
-| `nanomind-analyst install` | Full install flow. Idempotent. |
+| `nanomind-analyst install` | Full install flow. Idempotent. `--resident` keeps the daemon running at all times. |
 | `nanomind-analyst uninstall` | Stop, unload, remove plist. `--remove-artifacts` also deletes the 3.4 GB NLM. |
-| `nanomind-analyst start` | Kickstart the loaded LaunchAgent. |
+| `nanomind-analyst start` | Kickstart the loaded LaunchAgent. An on-demand daemon exits again after 15 minutes with no request. |
 | `nanomind-analyst stop` | SIGTERM the daemon. Agent stays loaded; no auto-restart on clean exit. |
 | `nanomind-analyst restart` | Stop then start. |
 | `nanomind-analyst status` | Report whether the agent is loaded and healthz returns ready. |
@@ -75,8 +75,8 @@ Not supported in v0.1. The daemon is bf16 on Apple MPS; fp16 yields 0% accuracy 
 
 ## Known limitations
 
-- **Cold-boot latency.** Daemon takes ~30 seconds to load the NLM on first request after a system reboot. The install flow waits up to 60 seconds for this; subsequent restarts are faster (the launchd-managed process stays warm).
-- **NLM latency floor.** The Analyst NLM emits ~400 tokens of structured output per request at ~15 ms/token on bf16 MPS. Floor is ~6 seconds per finding. Consumers (HMA, opena2a-cli) should batch or filter before invoking. The input-classifier gate bypasses the NLM on off-topic inputs (~92% bypass rate on benign user input).
+- **Start-up time.** An on-demand daemon loads the NLM each time it is started. `install` reports the boot time it measured on your machine and waits up to 60 seconds for it. `install --resident` keeps the model loaded between requests instead.
+- **NLM latency floor.** The Analyst NLM emits ~400 tokens of structured output per request at ~15 ms/token on bf16 MPS. Floor is ~6 seconds per finding. hackmyagent batches or filters findings before invoking. The input-classifier gate bypasses the NLM on off-topic inputs (~92% bypass rate on benign user input).
 - **Single-instance.** The daemon binds a single Unix socket. Multiple `nanomind-analyst install` runs on the same machine share the same socket; the LaunchAgent label is unique to the user.
 
 ## Companion package

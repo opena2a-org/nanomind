@@ -21,7 +21,9 @@ Boot order:
     4. Construct NanoMindNLM (loads ~3.4 GB bf16 weights).
     5. Run gate probe ("# README\n\nProject Setup" must score
        proba_off_topic >= 0.5). Refuse to bind on probe failure.
-    6. Bind socket, accept connections serially.
+    6. Bind socket, accept connections serially. Exit cleanly once no
+       request has arrived for NANOMIND_GUARD_IDLE_EXIT_SEC (default 900 s;
+       0 or less never exits), which releases the model.
 
 See briefs/nanomind-guard-daemon.md for the wire protocol and decisions.
 """
@@ -84,6 +86,7 @@ HEALTHZ_PROBE_MIN_PROBA = 0.5
 RECV_CHUNK = 64 * 1024  # 64 KB recv chunks; loop until we have a full line
 ENVELOPE_OVERHEAD = 4096  # JSON wrapper around `text` field
 DEFAULT_CONN_TIMEOUT_SEC = 5.0  # slowloris cutoff for accepted connections
+DEFAULT_IDLE_EXIT_SEC = 900.0  # exit after this long with no request
 SHA256_HEX_RE = re.compile(r"^[0-9a-f]{64}$")
 
 log = logging.getLogger("nanomind_guard")
@@ -106,6 +109,7 @@ class Config:
     max_new_tokens: int
     conn_timeout_sec: float
     device: str | None  # embedder + NLM; None -> each auto-detects
+    idle_exit_sec: float  # <= 0 -> never exit for being idle
 
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> "Config":
@@ -134,6 +138,16 @@ class Config:
                     f"{name} must be exactly 64 lowercase hex characters; "
                     f"got {len(value)} chars. Recompute with shasum -a 256."
                 )
+        raw_idle = e.get("NANOMIND_GUARD_IDLE_EXIT_SEC", "")
+        try:
+            idle_exit_sec = (
+                float(raw_idle) if raw_idle.strip() else DEFAULT_IDLE_EXIT_SEC
+            )
+        except ValueError:
+            raise ConfigError(
+                "NANOMIND_GUARD_IDLE_EXIT_SEC must be a number of seconds "
+                "(0 keeps the daemon running)."
+            ) from None
         return cls(
             sock_path=e.get("NANOMIND_GUARD_SOCK", DEFAULT_SOCK_PATH),
             model_dir=e.get("NANOMIND_GUARD_MODEL_DIR", DEFAULT_MODEL_DIR),
@@ -151,6 +165,7 @@ class Config:
                 e.get("NANOMIND_GUARD_CONN_TIMEOUT_SEC", DEFAULT_CONN_TIMEOUT_SEC)
             ),
             device=e.get("NANOMIND_GUARD_DEVICE") or None,
+            idle_exit_sec=idle_exit_sec,
         )
 
 
@@ -617,6 +632,10 @@ def serve(
 ) -> None:
     """Bind the socket and accept connections one at a time (serial).
 
+    Returns once no connection has been accepted for `cfg.idle_exit_sec`
+    (measured from the end of the last request), so an on-demand daemon
+    releases the model instead of holding it resident.
+
     `stop_event` lets tests trigger a clean shutdown without sending signals.
     `install_signal_handlers=False` lets tests run `serve` in a background
     thread (signal handlers can only be installed from the main thread).
@@ -644,42 +663,61 @@ def serve(
     def _should_stop() -> bool:
         return stopping or (stop_event is not None and stop_event.is_set())
 
+    last_activity = time.monotonic()
     try:
         while not _should_stop():
             try:
                 conn, _ = server.accept()
             except TimeoutError:
+                idle = time.monotonic() - last_activity
+                if 0 < cfg.idle_exit_sec <= idle:
+                    log.info(
+                        "no request for %.0fs (idle window %.0fs); exiting "
+                        "to release the model",
+                        idle,
+                        cfg.idle_exit_sec,
+                    )
+                    break
                 continue
             except OSError:
                 if _should_stop():
                     break
                 raise
-            with conn:
-                # Slowloris cutoff: a peer that opens a connection and never
-                # finishes sending (or never reads our reply) would otherwise
-                # tie up the serial worker forever, since every other request
-                # waits behind it.
-                conn.settimeout(cfg.conn_timeout_sec)
-                try:
-                    line = _read_one_line(conn, hard_cap=hard_cap)
-                except TimeoutError:
-                    response = _error(
-                        "ERR_TIMEOUT",
-                        f"peer did not send a complete request within "
-                        f"{cfg.conn_timeout_sec}s",
-                    )
-                except ValueError as exc:
-                    response = _error("ERR_INPUT_TOO_LARGE", str(exc))
-                else:
-                    if line is None:
-                        continue  # peer closed without sending
-                    response = dispatch(state, line)
-                try:
-                    conn.sendall(json.dumps(response).encode("utf-8") + b"\n")
-                except (BrokenPipeError, ConnectionResetError, TimeoutError) as exc:
-                    log.warning(
-                        "send failed (%s): %s", type(exc).__name__, exc
-                    )
+            try:
+                with conn:
+                    # Slowloris cutoff: a peer that opens a connection and
+                    # never finishes sending (or never reads our reply) would
+                    # otherwise tie up the serial worker forever, since every
+                    # other request waits behind it.
+                    conn.settimeout(cfg.conn_timeout_sec)
+                    try:
+                        line = _read_one_line(conn, hard_cap=hard_cap)
+                    except TimeoutError:
+                        response = _error(
+                            "ERR_TIMEOUT",
+                            f"peer did not send a complete request within "
+                            f"{cfg.conn_timeout_sec}s",
+                        )
+                    except ValueError as exc:
+                        response = _error("ERR_INPUT_TOO_LARGE", str(exc))
+                    else:
+                        if line is None:
+                            continue  # peer closed without sending
+                        response = dispatch(state, line)
+                    try:
+                        conn.sendall(
+                            json.dumps(response).encode("utf-8") + b"\n"
+                        )
+                    except (
+                        BrokenPipeError,
+                        ConnectionResetError,
+                        TimeoutError,
+                    ) as exc:
+                        log.warning(
+                            "send failed (%s): %s", type(exc).__name__, exc
+                        )
+            finally:
+                last_activity = time.monotonic()
     finally:
         with contextlib.suppress(OSError):
             server.close()
