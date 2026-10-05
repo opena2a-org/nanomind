@@ -436,7 +436,7 @@ class TestHealthzProbePacing:
     """Every reply that is not ready waits a second before the next attempt.
 
     An empty or non-JSON reply used to skip the pause and reconnect in a tight
-    loop until the deadline, opening over 100,000 connections a second.
+    loop until the deadline, opening tens of thousands of connections a second.
     """
 
     @pytest.mark.parametrize(
