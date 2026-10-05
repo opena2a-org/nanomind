@@ -120,14 +120,20 @@ class InputClassifier:
         self.embedder_id = embedder_id
 
     @classmethod
-    def from_artifact_dir(cls, artifact_dir: str | Path) -> "InputClassifier":
+    def from_artifact_dir(
+        cls, artifact_dir: str | Path, *, device: str | None = None
+    ) -> "InputClassifier":
         artifact_dir = Path(artifact_dir)
         meta = json.loads((artifact_dir / "meta.json").read_text())
         lr_head = joblib.load(artifact_dir / "classifier.joblib")
         # Lazy import — sentence-transformers is heavy.
         from sentence_transformers import SentenceTransformer
 
-        embedder = SentenceTransformer(meta["embedder"])
+        # device=None lets sentence-transformers choose (MPS when torch
+        # reports it). The daemon passes NANOMIND_GUARD_DEVICE here, the
+        # same value the NLM gets, so a host whose Metal device cannot
+        # allocate can boot both models on CPU.
+        embedder = SentenceTransformer(meta["embedder"], device=device)
         # Operator override via env var, with hard floor at 0.5.
         # A threshold below 0.5 would mean "predict off-topic on any input
         # the LR head is uncertain about," which makes the gate bypass-on-
