@@ -13,6 +13,12 @@
   names the version, and says to upgrade or rerun `nanomind-analyst
   install`; `status --json` carries the daemon's value as
   `healthz.protocolVersion` on that path only.
+- `nanomind-analyst status` no longer fails with `AttributeError` when
+  the daemon's `healthz` reply is valid JSON but not an object (for
+  example `[1]`). It reports `degraded`, says the reply is not a JSON
+  object, and exits 1; `status --json` emits its usual document with
+  `healthz.protocolVersion: null`. A `gateProbe` field that is not an
+  object is now left out of the output instead of raising.
 - `NANOMIND_GUARD_DEVICE` now places the input-classifier embedder as
   well as the NLM. Before, the embedder always let sentence-transformers
   choose and took MPS whenever torch reported it, so on a Mac whose

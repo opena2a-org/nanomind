@@ -218,14 +218,19 @@ def run_status(*, json_output: bool = False) -> int:
     # carries the artifact block — a drifted artifact (e.g. an old gate
     # operating point) can be why the probe is failing.
     artifact_block, drifted = _artifact_block()
-    state = "degraded" if unknown_protocol else health.get("daemonState")
+    # Valid JSON that is not an object has no fields to read: it degrades
+    # like an unknown protocol version instead of raising.
+    reply = health if isinstance(health, dict) else {}
+    state = "degraded" if unknown_protocol else reply.get("daemonState")
+    probe = reply.get("gateProbe")
+    if not isinstance(probe, dict):
+        probe = {}
     if json_output:
         healthz_block = {"state": state}
         if unknown_protocol:
             # Re-export of the daemon's own field, so a reader can see why
             # the state degraded; not a version of this JSON.
-            healthz_block["protocolVersion"] = health.get("protocolVersion")
-        probe = health.get("gateProbe") or {}
+            healthz_block["protocolVersion"] = reply.get("protocolVersion")
         if probe:
             healthz_block["gateProbe"] = {
                 "label": probe.get("label"),
@@ -243,17 +248,22 @@ def run_status(*, json_output: bool = False) -> int:
         return 1
     _emit(f"healthz: {state!r}")
     if unknown_protocol:
-        _emit(
-            f"  daemon answers in protocolVersion="
-            f"{health.get('protocolVersion')!r:.64}; this nanomind-analyst "
-            f"reads version {protocol.PROTOCOL_VERSION}"
-        )
+        if isinstance(health, dict):
+            _emit(
+                f"  daemon answers in protocolVersion="
+                f"{health.get('protocolVersion')!r:.64}; this nanomind-analyst "
+                f"reads version {protocol.PROTOCOL_VERSION}"
+            )
+        else:
+            _emit(
+                f"  daemon reply is not a JSON object; this nanomind-analyst "
+                f"reads version {protocol.PROTOCOL_VERSION}"
+            )
         _emit(
             "  upgrade (`pip install -U nanomind-analyst`), or run "
             "`nanomind-analyst install` so the daemon runs from this install; "
             "then rerun `nanomind-analyst status`"
         )
-    probe = health.get("gateProbe") or {}
     if probe:
         _emit(
             f"  gate probe: label={probe.get('label')!r} "
