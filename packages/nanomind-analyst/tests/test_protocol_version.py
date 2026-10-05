@@ -99,6 +99,7 @@ class TestReaderInterpretsVersion:
 def fake_daemon(monkeypatch):
     """Answer every healthz connection on a short /tmp socket with `body`.
 
+    `start(body)` returns the list of requests served, one per connection.
     Darwin's sun_path is 104 bytes; pytest's tmp_path is too deep for AF_UNIX.
     """
     sock_path = Path(f"/tmp/nm-analyst-pv-{secrets.token_hex(4)}.sock")
@@ -111,6 +112,7 @@ def fake_daemon(monkeypatch):
     server.settimeout(0.2)
     stop = threading.Event()
     reply: dict = {}
+    served: list[bytes] = []
 
     def serve():
         while not stop.is_set():
@@ -119,14 +121,15 @@ def fake_daemon(monkeypatch):
             except (socket.timeout, OSError):
                 continue
             with conn:
-                conn.recv(4096)
+                served.append(conn.recv(4096))
                 conn.sendall(json.dumps(reply["body"]).encode() + b"\n")
 
     t = threading.Thread(target=serve, daemon=True)
 
-    def start(body: dict) -> None:
+    def start(body) -> list[bytes]:
         reply["body"] = body
         t.start()
+        return served
 
     yield start
     stop.set()
@@ -206,3 +209,26 @@ class TestInstallProbeReadsVersion:
         fake_daemon({**READY_V1, "protocolVersion": 2})
         assert install._healthz_probe(timeout_sec=1.5) is False
         assert "protocolVersion=2" in capsys.readouterr().err
+
+    def test_unrecognised_version_fails_on_first_reply(self, fake_daemon, capsys):
+        """The announced version cannot change between polls, so the wait
+        stops at the first such reply instead of polling out the timeout."""
+        served = fake_daemon({**READY_V1, "protocolVersion": 2})
+        started = time.monotonic()
+        assert install._healthz_probe(timeout_sec=10.0) is False
+        assert time.monotonic() - started < 3.0
+        assert len(served) == 1
+        err = capsys.readouterr().err
+        assert "protocolVersion=2" in err
+        assert "did not return ready within" not in err
+
+    @pytest.mark.parametrize(
+        "body",
+        [{**READY_V1, "daemonState": "starting", "protocolVersion": 1}, ["ready"]],
+        ids=["v1-not-ready", "non-object"],
+    )
+    def test_other_not_ready_replies_keep_polling(self, fake_daemon, capsys, body):
+        served = fake_daemon(body)
+        assert install._healthz_probe(timeout_sec=2.2) is False
+        assert len(served) >= 2
+        assert "did not return ready within" in capsys.readouterr().err

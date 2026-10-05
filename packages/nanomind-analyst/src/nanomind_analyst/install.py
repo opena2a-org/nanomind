@@ -77,8 +77,10 @@ def _healthz_probe(timeout_sec: float = 60.0) -> bool:
 
     Returns True if the daemon binds the socket and reports `daemonState=ready`
     within the timeout. Cold-boot of the v3 NLM takes ~30s on a warm HF cache;
-    60s gives a safety margin. Refuses to connect if the socket is a symlink
-    or owned by a different uid — see _assert_socket_owned_by_user.
+    60s gives a safety margin. Returns False on the first reply that
+    announces a protocol version this client does not read. Refuses to
+    connect if the socket is a symlink or owned by a different uid — see
+    _assert_socket_owned_by_user.
     """
     import json
 
@@ -129,16 +131,19 @@ def _healthz_probe(timeout_sec: float = 60.0) -> bool:
                 continue
             if protocol.healthz_is_ready(payload):
                 return True
-            if protocol.reply_protocol_version(payload) is None:
-                announced = (
-                    payload.get("protocolVersion")
-                    if isinstance(payload, dict)
-                    else None
+            if not isinstance(payload, dict):
+                last_err = "reply is not a JSON object"
+            elif protocol.reply_protocol_version(payload) is None:
+                # The daemon's announced version cannot change between
+                # polls, so waiting out the timeout cannot succeed.
+                sys.stderr.write(
+                    f"healthz reply announced protocolVersion="
+                    f"{payload.get('protocolVersion')!r:.64}; this "
+                    f"nanomind-analyst reads version "
+                    f"{protocol.PROTOCOL_VERSION}, so the wait stopped at "
+                    f"the first reply\n"
                 )
-                last_err = (
-                    f"protocolVersion={announced!r:.64} is not one this "
-                    f"nanomind-analyst reads"
-                )
+                return False
             else:
                 last_err = f"daemonState={payload.get('daemonState')!r}"
         finally:
@@ -235,7 +240,7 @@ def run_install(*, skip_healthz_wait: bool = False) -> int:
         _emit(f"daemon ready at {paths.SOCK_PATH}")
         _emit("run `nanomind-analyst status` to verify")
         return 0
-    _emit("install completed but daemon did not pass healthz within 60s")
+    _emit("install completed but daemon did not pass healthz")
     _emit(f"check `nanomind-analyst logs` (tail {paths.log_path()})")
     return 1
 
