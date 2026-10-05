@@ -56,6 +56,35 @@
   transformers 4.50 to 4.57 with sentence-transformers 5.4 to 5.7;
   transformers 5.0 to 5.3 with sentence-transformers 5.4 or later.
 
+## 0.1.4
+
+The guard daemon is on demand by default. `nanomind-analyst install`
+writes a LaunchAgent whose `RunAtLoad` is false: the daemon does not
+start at login, and it exits on its own after 15 minutes with no
+request, releasing the ~3.4 GB model. `nanomind-analyst install
+--resident` is the one opt-in that keeps the previous behaviour (start
+at login, stay loaded between requests). Run `nanomind-analyst install`
+after upgrading to regenerate the plist.
+
+- `install` without `--resident` now starts the daemon once, through the
+  same kickstart `nanomind-analyst start` uses, and waits up to 60
+  seconds for its healthz probe, then prints the seconds the boot took
+  on this machine. A daemon that does not answer makes `install` exit
+  non-zero. `--skip-healthz-wait` neither starts the daemon nor probes
+  it. `install --resident` lets launchd start the daemon at load and
+  only waits on the probe.
+- New daemon environment variable `NANOMIND_GUARD_IDLE_EXIT_SEC`
+  (default `900`): the daemon exits cleanly, and unlinks its socket,
+  once no request has arrived for that many seconds. `0` disables the
+  idle exit; the resident plist sets it to `0` so launchd's crash-only
+  KeepAlive never sees a clean exit it would not restart. A value that
+  is not a number is a configuration error at boot.
+- `install --help` lists `--resident` and states its effect in user
+  terms before naming the plist key. There is no `--on-demand` flag.
+- README: the "~30 seconds" cold-boot figure is gone (boot time varies
+  by machine; `install` reports what it measured), and hackmyagent is
+  named as the socket's consumer.
+
 ## 0.1.3
 
 Gate operating point: the wheel-embedded input-classifier meta.json now

@@ -9,6 +9,12 @@ EnvironmentVariables include the SHA256 hashes of the input-classifier
 artifacts. The daemon refuses to start without these (joblib.load is pickle =
 ACE at deserialization). We bake the hashes into the plist so the daemon sees
 them on every relaunch.
+
+Two modes. On-demand (the default) does not launch at load: `install` and
+`start` kickstart the daemon, and it exits on its own after the idle window
+(NANOMIND_GUARD_IDLE_EXIT_SEC, daemon default 900 s), releasing the model.
+Resident (`install --resident`) launches at load, is restarted by launchd
+after a non-zero exit, and never exits for being idle.
 """
 from __future__ import annotations
 
@@ -32,9 +38,10 @@ class PlistSpec:
     classifier_meta_sha256: str
     log_path: str
     sock_path: str
+    resident: bool = False  # True: launch at load and never idle out
 
 
-def build_plist_spec() -> PlistSpec:
+def build_plist_spec(*, resident: bool = False) -> PlistSpec:
     """Resolve a PlistSpec from the current install state.
 
     Caller invokes this AFTER fetch_nlm + install_classifier so the target
@@ -50,6 +57,7 @@ def build_plist_spec() -> PlistSpec:
         classifier_meta_sha256=artifacts.EXPECTED_CLASSIFIER_META_SHA256,
         log_path=str(paths.log_path()),
         sock_path=paths.SOCK_PATH,
+        resident=resident,
     )
 
 
@@ -63,26 +71,36 @@ def render_plist(spec: PlistSpec) -> bytes:
         "-m",
         "nanomind_analyst.daemon.nanomind_guard_daemon",
     ]
+    env = {
+        "NANOMIND_GUARD_SOCK": spec.sock_path,
+        "NANOMIND_GUARD_MODEL_DIR": spec.model_dir,
+        "NANOMIND_GUARD_CLASSIFIER_DIR": spec.classifier_dir,
+        "INPUT_CLASSIFIER_JOBLIB_SHA256": spec.classifier_joblib_sha256,
+        "INPUT_CLASSIFIER_META_SHA256": spec.classifier_meta_sha256,
+        # PYTHONUNBUFFERED makes the daemon's stdout telemetry lines flush
+        # promptly into the launchd-managed log file. Without this, lines
+        # buffer for tens of seconds and `logs` looks frozen.
+        "PYTHONUNBUFFERED": "1",
+    }
+    if spec.resident:
+        # KeepAlive on crash and on a non-zero exit, but not on a clean exit:
+        # a clean exit means the user ran `nanomind-analyst stop` and we
+        # should respect that. launchd.plist(5): SuccessfulExit implies
+        # RunAtLoad true, so only the resident mode may carry it.
+        keep_alive = {"SuccessfulExit": False, "Crashed": True}
+        # The idle exit is a clean exit, which this KeepAlive does not
+        # restart; a resident daemon must therefore never idle out.
+        env["NANOMIND_GUARD_IDLE_EXIT_SEC"] = "0"
+    else:
+        keep_alive = {"Crashed": True}
     body = {
         "Label": spec.label,
         "ProgramArguments": program_args,
-        "RunAtLoad": True,
-        # KeepAlive on crash but not on clean exit. A clean exit means the user
-        # ran `nanomind-analyst stop` and we should respect that.
-        "KeepAlive": {"SuccessfulExit": False, "Crashed": True},
+        "RunAtLoad": spec.resident,
+        "KeepAlive": keep_alive,
         "StandardOutPath": spec.log_path,
         "StandardErrorPath": spec.log_path,
-        "EnvironmentVariables": {
-            "NANOMIND_GUARD_SOCK": spec.sock_path,
-            "NANOMIND_GUARD_MODEL_DIR": spec.model_dir,
-            "NANOMIND_GUARD_CLASSIFIER_DIR": spec.classifier_dir,
-            "INPUT_CLASSIFIER_JOBLIB_SHA256": spec.classifier_joblib_sha256,
-            "INPUT_CLASSIFIER_META_SHA256": spec.classifier_meta_sha256,
-            # PYTHONUNBUFFERED makes the daemon's stdout telemetry lines flush
-            # promptly into the launchd-managed log file. Without this, lines
-            # buffer for tens of seconds and `logs` looks frozen.
-            "PYTHONUNBUFFERED": "1",
-        },
+        "EnvironmentVariables": env,
         # Use the user's home as working directory. The daemon reads no
         # relative paths, but launchd needs a valid cwd.
         "WorkingDirectory": str(paths.home()),

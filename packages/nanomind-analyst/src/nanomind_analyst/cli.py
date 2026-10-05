@@ -1,7 +1,7 @@
 """Command-line entrypoint for `nanomind-analyst`.
 
 Subcommands:
-  install      Fetch artifacts, write the plist, bootstrap the daemon, wait for healthz.
+  install      Fetch artifacts, write the plist, start the daemon once, wait for healthz.
   uninstall    Stop and unload the daemon. Removes the plist; keeps artifacts by default.
   start        Kickstart the loaded LaunchAgent.
   stop         Send the daemon SIGTERM. The agent stays loaded.
@@ -44,12 +44,29 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_install = subparsers.add_parser(
         "install",
-        help="Fetch artifacts, write the plist, bootstrap the daemon, wait for healthz.",
+        help="Fetch artifacts, write the plist, start the daemon once, wait for healthz.",
+        description=(
+            "By default the daemon runs on demand: `install` and "
+            "`nanomind-analyst start` start it, and it exits on its own after "
+            "15 minutes with no request, releasing the model's memory."
+        ),
+    )
+    p_install.add_argument(
+        "--resident",
+        action="store_true",
+        help=(
+            "Keep the analyst running at all times: start it at every login "
+            "and never stop it for being idle, so the model stays in memory. "
+            "Writes RunAtLoad true into the LaunchAgent plist."
+        ),
     )
     p_install.add_argument(
         "--skip-healthz-wait",
         action="store_true",
-        help="Skip the post-bootstrap healthz probe (CI / scripting use).",
+        help=(
+            "Do not start the daemon or wait for its healthz probe (CI / "
+            "scripting use). With --resident, launchd still starts it at load."
+        ),
     )
     _add_version_flag(p_install)
 
@@ -112,7 +129,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "install":
             return install.run_install(
-                skip_healthz_wait=args.skip_healthz_wait
+                skip_healthz_wait=args.skip_healthz_wait,
+                resident=args.resident,
             )
         if args.command == "uninstall":
             return install.run_uninstall(

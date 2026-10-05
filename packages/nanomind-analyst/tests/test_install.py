@@ -60,10 +60,10 @@ class TestPlistAuthoring:
             "-m",
             "nanomind_analyst.daemon.nanomind_guard_daemon",
         ]
-        assert body["RunAtLoad"] is True
-        # KeepAlive on crash, not on clean exit.
-        assert body["KeepAlive"]["SuccessfulExit"] is False
-        assert body["KeepAlive"]["Crashed"] is True
+        # On-demand by default: not launched at load, restarted only after
+        # a crash (test_on_demand.py covers the resident mode).
+        assert body["RunAtLoad"] is False
+        assert body["KeepAlive"] == {"Crashed": True}
         env = body["EnvironmentVariables"]
         assert env["NANOMIND_GUARD_SOCK"] == "/tmp/nanomind-guard.sock"
         assert env["INPUT_CLASSIFIER_JOBLIB_SHA256"] == "a" * 64
