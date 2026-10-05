@@ -72,6 +72,18 @@ def _assert_socket_owned_by_user(sock_path: str) -> None:
         )
 
 
+def _decode_healthz_line(line: bytes) -> tuple[object, str | None]:
+    """Decode one healthz reply line; on failure return (None, why)."""
+    import json
+
+    if not line:
+        return None, "empty response"
+    try:
+        return json.loads(line.decode("utf-8")), None
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        return None, f"bad json: {exc}"
+
+
 def _healthz_probe(timeout_sec: float = 60.0) -> bool:
     """Connect to the daemon's Unix socket and ask for healthz.
 
@@ -82,8 +94,6 @@ def _healthz_probe(timeout_sec: float = 60.0) -> bool:
     connect if the socket is a symlink or owned by a different uid — see
     _assert_socket_owned_by_user.
     """
-    import json
-
     deadline = time.monotonic() + timeout_sec
     last_err: str | None = None
     while time.monotonic() < deadline:
@@ -121,39 +131,35 @@ def _healthz_probe(timeout_sec: float = 60.0) -> bool:
                     break
                 buf.extend(chunk)
             line, _, _ = buf.partition(b"\n")
-            if not line:
-                last_err = "empty response"
-                continue
-            try:
-                payload = json.loads(line.decode("utf-8"))
-            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-                last_err = f"bad json: {exc}"
-                continue
-            if protocol.healthz_is_ready(payload):
-                return True
-            if not isinstance(payload, dict):
-                # No later poll can turn a non-object reply into one this
-                # client reads, so it ends the wait like an unknown version.
-                sys.stderr.write(
-                    "healthz reply is not a JSON object, so the wait "
-                    "stopped at the first reply\n"
-                )
-                return False
-            elif protocol.reply_protocol_version(payload) is None:
-                # The daemon's announced version cannot change between
-                # polls, so waiting out the timeout cannot succeed.
-                sys.stderr.write(
-                    f"healthz reply announced protocolVersion="
-                    f"{payload.get('protocolVersion')!r:.64}; this "
-                    f"nanomind-analyst reads version "
-                    f"{protocol.PROTOCOL_VERSION}, so the wait stopped at "
-                    f"the first reply\n"
-                )
-                return False
-            else:
-                last_err = f"daemonState={payload.get('daemonState')!r}"
+            payload, last_err = _decode_healthz_line(line)
+            if last_err is None:
+                if protocol.healthz_is_ready(payload):
+                    return True
+                if not isinstance(payload, dict):
+                    # No later poll can turn a non-object reply into one this
+                    # client reads, so it ends the wait like an unknown version.
+                    sys.stderr.write(
+                        "healthz reply is not a JSON object, so the wait "
+                        "stopped at the first reply\n"
+                    )
+                    return False
+                elif protocol.reply_protocol_version(payload) is None:
+                    # The daemon's announced version cannot change between
+                    # polls, so waiting out the timeout cannot succeed.
+                    sys.stderr.write(
+                        f"healthz reply announced protocolVersion="
+                        f"{payload.get('protocolVersion')!r:.64}; this "
+                        f"nanomind-analyst reads version "
+                        f"{protocol.PROTOCOL_VERSION}, so the wait stopped at "
+                        f"the first reply\n"
+                    )
+                    return False
+                else:
+                    last_err = f"daemonState={payload.get('daemonState')!r}"
         finally:
             sock.close()
+        # A reply that is not ready, including an empty or unparseable one,
+        # waits here so a misbehaving daemon is not hammered.
         time.sleep(1.0)
     sys.stderr.write(
         f"healthz did not return ready within {timeout_sec:.0f}s "

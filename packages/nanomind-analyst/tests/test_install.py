@@ -7,6 +7,10 @@ network is required. Platform guard is exercised directly.
 from __future__ import annotations
 
 import plistlib
+import secrets
+import socket
+import threading
+from pathlib import Path
 
 import pytest
 
@@ -381,3 +385,79 @@ class TestHealthzProbeSocketGuard:
         sock_path.write_bytes(b"")
         # Real lstat works since we own tmp_path. Should not raise.
         install._assert_socket_owned_by_user(str(sock_path))
+
+
+@pytest.fixture
+def raw_daemon(monkeypatch):
+    """Answer every healthz connection with fixed bytes and count connections.
+
+    Darwin's sun_path is 104 bytes; pytest's tmp_path is too deep for AF_UNIX.
+    """
+    sock_path = Path(f"/tmp/nm-analyst-raw-{secrets.token_hex(4)}.sock")
+    monkeypatch.setattr(paths, "SOCK_PATH", str(sock_path))
+    server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    server.bind(str(sock_path))
+    server.listen(64)
+    server.settimeout(0.2)
+    stop = threading.Event()
+    state = {"reply": b"", "connections": 0}
+
+    def serve():
+        while not stop.is_set():
+            try:
+                conn, _ = server.accept()
+            except (socket.timeout, OSError):
+                continue
+            state["connections"] += 1
+            with conn:
+                try:
+                    conn.recv(4096)
+                    if state["reply"]:
+                        conn.sendall(state["reply"])
+                except OSError:
+                    pass
+
+    t = threading.Thread(target=serve, daemon=True)
+
+    def start(reply: bytes) -> dict:
+        state["reply"] = reply
+        t.start()
+        return state
+
+    yield start
+    stop.set()
+    t.join(timeout=2.0)
+    server.close()
+    if sock_path.exists():
+        sock_path.unlink()
+
+
+class TestHealthzProbePacing:
+    """Every reply that is not ready waits a second before the next attempt.
+
+    An empty or non-JSON reply used to skip the pause and reconnect in a tight
+    loop until the deadline, opening over 100,000 connections a second.
+    """
+
+    @pytest.mark.parametrize(
+        "reply, reason",
+        [
+            (b"\n", "empty response"),
+            (b"", "empty response"),
+            (b"not json\n", "bad json"),
+            (b"\xff\n", "bad json"),
+        ],
+    )
+    def test_unusable_reply_waits_before_retrying(
+        self, raw_daemon, capsys, reply, reason
+    ):
+        state = raw_daemon(reply)
+        assert install._healthz_probe(timeout_sec=1.5) is False
+        # Attempts at ~0s and ~1s; a third allows for scheduling slack.
+        assert state["connections"] <= 3
+        assert reason in capsys.readouterr().err
+
+    def test_not_ready_reply_waits_before_retrying(self, raw_daemon):
+        state = raw_daemon(b'{"daemonState":"loading","protocolVersion":1}\n')
+        assert install._healthz_probe(timeout_sec=1.5) is False
+        assert state["connections"] <= 3
