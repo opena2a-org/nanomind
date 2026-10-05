@@ -16,7 +16,7 @@ import stat
 import sys
 import time
 
-from . import artifacts, launchd, paths
+from . import artifacts, launchd, paths, protocol
 
 
 class InstallError(Exception):
@@ -127,9 +127,20 @@ def _healthz_probe(timeout_sec: float = 60.0) -> bool:
             except (UnicodeDecodeError, json.JSONDecodeError) as exc:
                 last_err = f"bad json: {exc}"
                 continue
-            if payload.get("daemonState") == "ready":
+            if protocol.healthz_is_ready(payload):
                 return True
-            last_err = f"daemonState={payload.get('daemonState')!r}"
+            if protocol.reply_protocol_version(payload) is None:
+                announced = (
+                    payload.get("protocolVersion")
+                    if isinstance(payload, dict)
+                    else None
+                )
+                last_err = (
+                    f"protocolVersion={announced!r:.64} is not one this "
+                    f"nanomind-analyst reads"
+                )
+            else:
+                last_err = f"daemonState={payload.get('daemonState')!r}"
         finally:
             sock.close()
         time.sleep(1.0)

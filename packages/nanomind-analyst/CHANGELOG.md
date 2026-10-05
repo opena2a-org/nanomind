@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- The daemon's `healthz` reply now carries `protocolVersion: 1`. Version
+  1 is the existing `classify`/`healthz` op set; a reply without the
+  field comes from an earlier daemon and is read as version 1, so an
+  older daemon and a newer client still work together. The version is
+  stated in `healthz` only; `classify` replies are unchanged.
+- `nanomind-analyst status` and the `install` healthz wait no longer
+  report a daemon as ready when its reply announces a protocol version
+  this release does not read. `status` reports `degraded` and exits 1,
+  names the version, and says to upgrade or rerun `nanomind-analyst
+  install`; `status --json` carries the daemon's value as
+  `healthz.protocolVersion` on that path only.
+
 ## 0.1.3
 
 Gate operating point: the wheel-embedded input-classifier meta.json now

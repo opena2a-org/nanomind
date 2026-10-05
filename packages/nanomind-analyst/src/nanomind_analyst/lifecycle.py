@@ -12,7 +12,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import artifacts, launchd, paths
+from . import artifacts, launchd, paths, protocol
 
 
 def _emit(line: str) -> None:
@@ -174,7 +174,10 @@ def run_status(*, json_output: bool = False) -> int:
             _emit(f"  check `nanomind-analyst logs` (tail {paths.log_path()})")
             _emit_drift_human(drifted, daemon_down=True)
         return 1
-    if health.get("daemonState") == "ready":
+    # A reply in a protocol version this client does not read is never
+    # reported as ready, whatever daemonState it claims; it degrades.
+    unknown_protocol = protocol.reply_protocol_version(health) is None
+    if protocol.healthz_is_ready(health):
         uptime = health.get("uptimeSec")
         # Artifact drift: a pip upgrade leaves the installed classifier (and
         # the plist's SHA pins) untouched, so a daemon can be "ready" while
@@ -215,8 +218,13 @@ def run_status(*, json_output: bool = False) -> int:
     # carries the artifact block — a drifted artifact (e.g. an old gate
     # operating point) can be why the probe is failing.
     artifact_block, drifted = _artifact_block()
+    state = "degraded" if unknown_protocol else health.get("daemonState")
     if json_output:
-        healthz_block = {"state": health.get("daemonState")}
+        healthz_block = {"state": state}
+        if unknown_protocol:
+            # Re-export of the daemon's own field, so a reader can see why
+            # the state degraded; not a version of this JSON.
+            healthz_block["protocolVersion"] = health.get("protocolVersion")
         probe = health.get("gateProbe") or {}
         if probe:
             healthz_block["gateProbe"] = {
@@ -233,7 +241,18 @@ def run_status(*, json_output: bool = False) -> int:
             }
         )
         return 1
-    _emit(f"healthz: {health.get('daemonState')!r}")
+    _emit(f"healthz: {state!r}")
+    if unknown_protocol:
+        _emit(
+            f"  daemon answers in protocolVersion="
+            f"{health.get('protocolVersion')!r:.64}; this nanomind-analyst "
+            f"reads version {protocol.PROTOCOL_VERSION}"
+        )
+        _emit(
+            "  upgrade (`pip install -U nanomind-analyst`), or run "
+            "`nanomind-analyst install` so the daemon runs from this install; "
+            "then rerun `nanomind-analyst status`"
+        )
     probe = health.get("gateProbe") or {}
     if probe:
         _emit(
