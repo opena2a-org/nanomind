@@ -251,13 +251,43 @@ class TestInstallProbeReadsVersion:
         assert "did not return ready within" in capsys.readouterr().err
 
 
+class _ProbeClock:
+    """Stands in for `install.time`. It moves only when the probe pauses, so
+    the pause lengths and the end of the wait are exact, and a CI runner that
+    stalls the test process cannot change them."""
+
+    def __init__(self) -> None:
+        self.now = 1000.0
+        self.pauses: list[float] = []
+        self._reads = 0
+
+    def monotonic(self) -> float:
+        # A retry path that skips the pause never moves this clock; fail
+        # instead of spinning.
+        self._reads += 1
+        assert self._reads < 1000, "the probe kept polling without a pause"
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.pauses.append(seconds)
+        self.now += seconds
+        self._reads = 0
+
+
 class TestInstallProbeStopsOnTime:
     """Every retry pause is bounded by the deadline, so the wait ends at
     `timeout_sec` instead of up to a second after it."""
 
     TIMEOUT = 1.5
-    # A full one-second pause after the poll at ~1.0s ends the wait at ~2.0s.
-    LATEST = TIMEOUT + 0.3
+    # Polls at 0s and 1s, then the last pause is cut to the 0.5s left. A full
+    # one-second pause there ([1.0, 1.0]) ended the wait at 2.0s.
+    PAUSES = [1.0, 0.5]
+
+    @pytest.fixture
+    def clock(self, monkeypatch) -> _ProbeClock:
+        clock = _ProbeClock()
+        monkeypatch.setattr(install, "time", clock)
+        return clock
 
     @pytest.mark.parametrize(
         "body",
@@ -268,20 +298,22 @@ class TestInstallProbeStopsOnTime:
         ],
         ids=["not-ready", "non-json", "empty"],
     )
-    def test_reply_retries_end_at_the_timeout(self, fake_daemon, capsys, body):
+    def test_reply_retries_end_at_the_timeout(self, fake_daemon, clock, capsys, body):
         served = fake_daemon(body)
-        started = time.monotonic()
+        started = clock.now
         assert install._healthz_probe(timeout_sec=self.TIMEOUT) is False
-        assert time.monotonic() - started < self.LATEST
-        # Polls at ~0s and ~1s, then the bounded pause ends the wait: retries
-        # are paced, never a tight reconnect loop.
-        assert len(served) <= 3
+        assert clock.pauses == pytest.approx(self.PAUSES)
+        assert clock.now - started == pytest.approx(self.TIMEOUT)
+        # One poll per pause window: retries are paced, never a tight
+        # reconnect loop.
+        assert len(served) <= 2
         assert "did not return ready within" in capsys.readouterr().err
 
-    def test_connect_retries_end_at_the_timeout(self, monkeypatch, capsys):
+    def test_connect_retries_end_at_the_timeout(self, monkeypatch, clock, capsys):
         sock_path = f"/tmp/nm-analyst-pv-{secrets.token_hex(4)}.sock"
         monkeypatch.setattr(paths, "SOCK_PATH", sock_path)
-        started = time.monotonic()
+        started = clock.now
         assert install._healthz_probe(timeout_sec=self.TIMEOUT) is False
-        assert time.monotonic() - started < self.LATEST
+        assert clock.pauses == pytest.approx(self.PAUSES)
+        assert clock.now - started == pytest.approx(self.TIMEOUT)
         assert "FileNotFoundError" in capsys.readouterr().err
