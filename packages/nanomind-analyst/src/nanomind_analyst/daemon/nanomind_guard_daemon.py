@@ -648,7 +648,7 @@ def serve(
         while not _should_stop():
             try:
                 conn, _ = server.accept()
-            except socket.timeout:
+            except TimeoutError:
                 continue
             except OSError:
                 if _should_stop():
@@ -662,7 +662,7 @@ def serve(
                 conn.settimeout(cfg.conn_timeout_sec)
                 try:
                     line = _read_one_line(conn, hard_cap=hard_cap)
-                except socket.timeout:
+                except TimeoutError:
                     response = _error(
                         "ERR_TIMEOUT",
                         f"peer did not send a complete request within "
@@ -676,7 +676,7 @@ def serve(
                     response = dispatch(state, line)
                 try:
                     conn.sendall(json.dumps(response).encode("utf-8") + b"\n")
-                except (BrokenPipeError, ConnectionResetError, socket.timeout) as exc:
+                except (BrokenPipeError, ConnectionResetError, TimeoutError) as exc:
                     log.warning(
                         "send failed (%s): %s", type(exc).__name__, exc
                     )

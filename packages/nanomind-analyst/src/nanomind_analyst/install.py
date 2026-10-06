@@ -138,7 +138,7 @@ def _healthz_probe(timeout_sec: float = 60.0) -> bool:
             while b"\n" not in buf and time.monotonic() < deadline:
                 try:
                     chunk = sock.recv(64 * 1024)
-                except socket.timeout:
+                except TimeoutError:
                     chunk = b""
                 if not chunk:
                     break

@@ -406,7 +406,7 @@ def raw_daemon(monkeypatch):
         while not stop.is_set():
             try:
                 conn, _ = server.accept()
-            except (socket.timeout, OSError):
+            except OSError:
                 continue
             state["connections"] += 1
             with conn:
