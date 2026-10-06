@@ -25,6 +25,12 @@
   JSON but not an object (for example `[1]`) and says so, instead of
   polling until its 60-second timeout. `nanomind-analyst status`
   already reported such a reply as degraded straight away.
+- The `install` healthz wait now ends at its 60-second timeout. Before,
+  each retry slept a full second without checking how much time was
+  left, so a failed connect or a not-ready reply near the deadline let
+  the wait run up to a second past it. An empty or non-JSON reply also
+  skipped the pause and reconnected in a tight loop; it now waits like
+  every other retry.
 - `NANOMIND_GUARD_DEVICE` now places the input-classifier embedder as
   well as the NLM. Before, the embedder always let sentence-transformers
   choose and took MPS whenever torch reported it, so on a Mac whose

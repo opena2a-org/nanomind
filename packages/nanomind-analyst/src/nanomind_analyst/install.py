@@ -84,6 +84,15 @@ def _decode_healthz_line(line: bytes) -> tuple[object, str | None]:
         return None, f"bad json: {exc}"
 
 
+def _pause_before_retry(deadline: float) -> bool:
+    """Wait up to one second before the next healthz poll, never past
+    `deadline`. Returns True while time is left for another poll."""
+    remaining = deadline - time.monotonic()
+    if remaining > 0:
+        time.sleep(min(1.0, remaining))
+    return time.monotonic() < deadline
+
+
 def _healthz_probe(timeout_sec: float = 60.0) -> bool:
     """Connect to the daemon's Unix socket and ask for healthz.
 
@@ -96,7 +105,14 @@ def _healthz_probe(timeout_sec: float = 60.0) -> bool:
     """
     deadline = time.monotonic() + timeout_sec
     last_err: str | None = None
+    polled = False
     while time.monotonic() < deadline:
+        # Every retry path (a failed connect, an empty, non-JSON or not-ready
+        # reply) comes back here, so this one pause paces them all and never
+        # sleeps past the deadline.
+        if polled and not _pause_before_retry(deadline):
+            break
+        polled = True
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         sock.settimeout(2.0)
         try:
@@ -107,17 +123,14 @@ def _healthz_probe(timeout_sec: float = 60.0) -> bool:
         except FileNotFoundError as exc:
             last_err = f"{type(exc).__name__}: {exc}"
             sock.close()
-            time.sleep(1.0)
             continue
         except ConnectionRefusedError as exc:
             last_err = f"{type(exc).__name__}: {exc}"
             sock.close()
-            time.sleep(1.0)
             continue
         except OSError as exc:
             last_err = f"OSError: {exc}"
             sock.close()
-            time.sleep(1.0)
             continue
         try:
             sock.sendall(b'{"op":"healthz"}\n')
@@ -158,9 +171,6 @@ def _healthz_probe(timeout_sec: float = 60.0) -> bool:
                     last_err = f"daemonState={payload.get('daemonState')!r}"
         finally:
             sock.close()
-        # A reply that is not ready, including an empty or unparseable one,
-        # waits here so a misbehaving daemon is not hammered.
-        time.sleep(1.0)
     sys.stderr.write(
         f"healthz did not return ready within {timeout_sec:.0f}s "
         f"(last: {last_err})\n"

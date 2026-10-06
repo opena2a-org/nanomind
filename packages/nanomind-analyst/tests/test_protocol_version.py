@@ -100,6 +100,7 @@ def fake_daemon(monkeypatch):
     """Answer every healthz connection on a short /tmp socket with `body`.
 
     `start(body)` returns the list of requests served, one per connection.
+    A `bytes` body is sent as-is; anything else as one JSON line.
     Darwin's sun_path is 104 bytes; pytest's tmp_path is too deep for AF_UNIX.
     """
     sock_path = Path(f"/tmp/nm-analyst-pv-{secrets.token_hex(4)}.sock")
@@ -122,7 +123,10 @@ def fake_daemon(monkeypatch):
                 continue
             with conn:
                 served.append(conn.recv(4096))
-                conn.sendall(json.dumps(reply["body"]).encode() + b"\n")
+                body = reply["body"]
+                if not isinstance(body, bytes):
+                    body = json.dumps(body).encode() + b"\n"
+                conn.sendall(body)
 
     t = threading.Thread(target=serve, daemon=True)
 
@@ -245,3 +249,39 @@ class TestInstallProbeReadsVersion:
         assert install._healthz_probe(timeout_sec=2.2) is False
         assert len(served) >= 2
         assert "did not return ready within" in capsys.readouterr().err
+
+
+class TestInstallProbeStopsOnTime:
+    """Every retry pause is bounded by the deadline, so the wait ends at
+    `timeout_sec` instead of up to a second after it."""
+
+    TIMEOUT = 1.5
+    # A full one-second pause after the poll at ~1.0s ends the wait at ~2.0s.
+    LATEST = TIMEOUT + 0.3
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            {"daemonState": "loading", "protocolVersion": 1},
+            b"not json\n",
+            b"\n",
+        ],
+        ids=["not-ready", "non-json", "empty"],
+    )
+    def test_reply_retries_end_at_the_timeout(self, fake_daemon, capsys, body):
+        served = fake_daemon(body)
+        started = time.monotonic()
+        assert install._healthz_probe(timeout_sec=self.TIMEOUT) is False
+        assert time.monotonic() - started < self.LATEST
+        # Polls at ~0s and ~1s, then the bounded pause ends the wait: retries
+        # are paced, never a tight reconnect loop.
+        assert len(served) <= 3
+        assert "did not return ready within" in capsys.readouterr().err
+
+    def test_connect_retries_end_at_the_timeout(self, monkeypatch, capsys):
+        sock_path = f"/tmp/nm-analyst-pv-{secrets.token_hex(4)}.sock"
+        monkeypatch.setattr(paths, "SOCK_PATH", sock_path)
+        started = time.monotonic()
+        assert install._healthz_probe(timeout_sec=self.TIMEOUT) is False
+        assert time.monotonic() - started < self.LATEST
+        assert "FileNotFoundError" in capsys.readouterr().err
