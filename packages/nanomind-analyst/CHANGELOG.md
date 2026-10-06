@@ -50,7 +50,7 @@
   network waited on those requests before it fell back to the cache.
   The first boot on a machine still downloads the embedder, and a copy
   already in the cache is used as is. The minimum sentence-transformers
-  version is now 3.0.
+  version is now 3.4.1.
 
 ## 0.1.3
 
