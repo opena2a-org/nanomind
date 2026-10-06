@@ -1,5 +1,8 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
+import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { ATCIntentHandler } from './index.ts';
 
 const REGISTRY = 'https://registry.test';
@@ -156,5 +159,20 @@ describe('ATCIntentHandler', () => {
     assert.strictEqual(explanation.projectedLevel, 1);
     assert.ok(explanation.factors.every(f => f.status === 'missing'));
     assert.ok(explanation.summary.startsWith('No ATC found for agent acme/new. To get started:'));
+  });
+});
+
+describe('test script', () => {
+  it('loads the TypeScript sources on a Node release that leaves type stripping off', () => {
+    const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+    const nodeFlags = pkg.scripts.test.split(' ').filter((arg: string) => arg.startsWith('--') && arg !== '--test');
+
+    // Node 22 before 22.18 does not strip types by default; a flag in the script overrides NODE_OPTIONS.
+    const run = spawnSync(process.execPath, [...nodeFlags, fileURLToPath(new URL('./index.ts', import.meta.url))], {
+      env: { ...process.env, NODE_OPTIONS: '--no-experimental-strip-types' },
+      encoding: 'utf8',
+    });
+
+    assert.strictEqual(run.status, 0, run.stderr);
   });
 });
