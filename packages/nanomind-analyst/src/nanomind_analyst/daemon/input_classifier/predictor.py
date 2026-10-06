@@ -133,7 +133,19 @@ class InputClassifier:
         # reports it). The daemon passes NANOMIND_GUARD_DEVICE here, the
         # same value the NLM gets, so a host whose Metal device cannot
         # allocate can boot both models on CPU.
-        embedder = SentenceTransformer(meta["embedder"], device=device)
+        #
+        # meta.json names the embedder by hub id. Loaded by that id alone,
+        # every boot asks huggingface.co for files that are already cached,
+        # and a boot with no network waits on those requests before it falls
+        # back to the cache. Load from the local cache first; only a cache
+        # miss (OSError, the first boot on a machine) goes to the hub. Any
+        # other error, such as an MPS allocation failure, is raised as is.
+        try:
+            embedder = SentenceTransformer(
+                meta["embedder"], device=device, local_files_only=True
+            )
+        except OSError:
+            embedder = SentenceTransformer(meta["embedder"], device=device)
         # Operator override via env var, with hard floor at 0.5.
         # A threshold below 0.5 would mean "predict off-topic on any input
         # the LR head is uncertain about," which makes the gate bypass-on-
