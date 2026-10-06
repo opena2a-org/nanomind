@@ -11,6 +11,9 @@
     "build": "npm run build --workspace=@nanomind/engine --workspace=@nanomind/router && npm run build --workspaces --if-present",
     "test": "node --test test/*.test.mjs && npm test --workspaces --if-present"
   },
+  "engines": {
+    "node": ">=22.6.0"
+  },
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^25.5.0",
