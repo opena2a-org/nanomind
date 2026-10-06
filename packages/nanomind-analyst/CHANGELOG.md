@@ -43,6 +43,14 @@
   not ready yet. Before, those two replies made it reconnect in a tight loop
   until the deadline, opening tens of thousands of connections a second
   against the daemon.
+- The daemon loads the input-classifier embedder from the local Hugging
+  Face cache when it is there, so a boot after the first makes no
+  network request. Before, every boot asked huggingface.co for the
+  embedder's files even when they were cached, and a boot with no
+  network waited on those requests before it fell back to the cache.
+  The first boot on a machine still downloads the embedder, and a copy
+  already in the cache is used as is. The minimum sentence-transformers
+  version is now 3.0.
 
 ## 0.1.3
 
