@@ -163,9 +163,25 @@ describe('ATCIntentHandler', () => {
 });
 
 describe('test script', () => {
+  // The options Node reads from a `node ...` script: every token after `node` up to
+  // the first argument that is not an option. Node does not read later tokens as options.
+  function nodeOptions(script: string): string[] {
+    const [, ...args] = script.split(' ');
+    const end = args.findIndex(arg => !arg.startsWith('-') || arg === '--');
+    return end === -1 ? args : args.slice(0, end);
+  }
+
+  it('counts only the options that come before the test file pattern', () => {
+    assert.deepStrictEqual(nodeOptions('node --test src/**/*.test.ts --experimental-strip-types'), ['--test']);
+    assert.deepStrictEqual(
+      nodeOptions('node --test --experimental-strip-types src/**/*.test.ts'),
+      ['--test', '--experimental-strip-types'],
+    );
+  });
+
   it('loads the TypeScript sources on a Node release that leaves type stripping off', () => {
     const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
-    const nodeFlags = pkg.scripts.test.split(' ').filter((arg: string) => arg.startsWith('--') && arg !== '--test');
+    const nodeFlags = nodeOptions(pkg.scripts.test).filter(arg => arg !== '--test');
 
     // Node 22 before 22.18 does not strip types by default; a flag in the script overrides NODE_OPTIONS.
     const run = spawnSync(process.execPath, [...nodeFlags, fileURLToPath(new URL('./index.ts', import.meta.url))], {
