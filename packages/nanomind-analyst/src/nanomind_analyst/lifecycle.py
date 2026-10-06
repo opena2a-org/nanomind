@@ -34,7 +34,7 @@ def _healthz_once(timeout_sec: float = 2.0) -> dict | None:
         while b"\n" not in buf and time.monotonic() < deadline:
             try:
                 chunk = sock.recv(64 * 1024)
-            except socket.timeout:
+            except TimeoutError:
                 break
             if not chunk:
                 break
