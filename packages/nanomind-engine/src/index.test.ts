@@ -1,9 +1,12 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { NanoMindEngine } from './index.ts';
 
 describe('NanoMindEngine', () => {
@@ -102,5 +105,20 @@ describe('NanoMindEngine', () => {
     const expected = createHash('sha256').update('not a real model').digest('hex');
 
     assert.strictEqual(await NanoMindEngine.computeFileHash(modelPath), expected);
+  });
+});
+
+describe('test script', () => {
+  it('loads the TypeScript sources on a Node release that leaves type stripping off', () => {
+    const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+    const nodeFlags = pkg.scripts.test.split(' ').filter((arg: string) => arg.startsWith('--') && arg !== '--test');
+
+    // Node 22 before 22.18 does not strip types by default; a flag in the script overrides NODE_OPTIONS.
+    const run = spawnSync(process.execPath, [...nodeFlags, fileURLToPath(new URL('./index.ts', import.meta.url))], {
+      env: { ...process.env, NODE_OPTIONS: '--no-experimental-strip-types' },
+      encoding: 'utf8',
+    });
+
+    assert.strictEqual(run.status, 0, run.stderr);
   });
 });
