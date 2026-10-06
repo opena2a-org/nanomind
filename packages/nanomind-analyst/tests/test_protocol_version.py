@@ -122,11 +122,16 @@ def fake_daemon(monkeypatch):
             except OSError:
                 continue
             with conn:
-                served.append(conn.recv(4096))
-                body = reply["body"]
-                if not isinstance(body, bytes):
-                    body = json.dumps(body).encode() + b"\n"
-                conn.sendall(body)
+                # A client that closes before the reply ends only its own
+                # connection, not the thread that answers the later ones.
+                try:
+                    served.append(conn.recv(4096))
+                    body = reply["body"]
+                    if not isinstance(body, bytes):
+                        body = json.dumps(body).encode() + b"\n"
+                    conn.sendall(body)
+                except OSError:
+                    pass
 
     t = threading.Thread(target=serve, daemon=True)
 
@@ -144,6 +149,16 @@ def fake_daemon(monkeypatch):
 
 
 READY_V1 = {"ok": True, "daemonState": "ready", "requestsServed": 3, "uptimeSec": 9.0}
+
+
+class TestFakeDaemon:
+    def test_keeps_serving_after_a_client_closes_early(self, fake_daemon):
+        served = fake_daemon(READY_V1)
+        early = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        early.connect(paths.SOCK_PATH)
+        early.close()
+        assert install._healthz_probe(timeout_sec=3.0) is True
+        assert served[-1] == b'{"op":"healthz"}\n'
 
 
 class TestStatusReadsVersion:
@@ -340,8 +355,20 @@ class TestInstallProbeStopsOnTime:
     def test_connect_retries_end_at_the_timeout(self, monkeypatch, clock, capsys):
         sock_path = f"/tmp/nm-analyst-pv-{secrets.token_hex(4)}.sock"
         monkeypatch.setattr(paths, "SOCK_PATH", sock_path)
+        # No connect is reached here, so count the attempts on the probe's
+        # side by the owner check each one runs first.
+        attempts: list[str] = []
+        check_owner = install._assert_socket_owned_by_user
+
+        def _counted_check(path: str) -> None:
+            attempts.append(path)
+            check_owner(path)
+
+        monkeypatch.setattr(install, "_assert_socket_owned_by_user", _counted_check)
         started = clock.now
         assert install._healthz_probe(timeout_sec=self.TIMEOUT) is False
         assert clock.pauses == pytest.approx(self.PAUSES)
         assert clock.now - started == pytest.approx(self.TIMEOUT)
+        # One attempt before each pause and none after the last.
+        assert len(attempts) == len(self.PAUSES)
         assert "FileNotFoundError" in capsys.readouterr().err
