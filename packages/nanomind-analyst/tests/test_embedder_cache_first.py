@@ -10,16 +10,22 @@ OSError, which is what a cache miss (the first boot on a machine) raises.
 sentence-transformers is replaced with a recorder, so these tests run in the
 regular `--no-deps` CI job without torch. tests/test_install_smoke.py boots
 the real models with every outbound connect refused.
+
+The cache-only load is network-free only from sentence-transformers 3.4.1 on,
+so the last class here checks the minimum version the package declares.
 """
 from __future__ import annotations
 
 import json
 import sys
 import types
+from importlib.metadata import requires
 from pathlib import Path
 
 import joblib
 import pytest
+from packaging.requirements import Requirement
+from packaging.utils import canonicalize_name
 
 from nanomind_analyst.daemon.input_classifier.predictor import InputClassifier
 
@@ -126,3 +132,35 @@ class TestEmbedderCacheFirst:
             InputClassifier.from_artifact_dir(artifact_dir)
 
         assert len(library.built) == 1
+
+
+class TestDeclaredSentenceTransformersMinimum:
+    """The declared minimum admits no release that goes to the hub on a
+    cache-only load.
+
+    sentence-transformers 3.0.0 to 3.4.0 accept local_files_only but still
+    ask huggingface.co for the model's metadata on every load, so a warm boot
+    on one of them makes a network request. 3.4.1 is the first release that
+    skips that lookup.
+    """
+
+    @pytest.fixture
+    def declared(self):
+        found = [
+            req
+            for req in map(Requirement, requires("nanomind-analyst") or [])
+            if canonicalize_name(req.name) == "sentence-transformers"
+        ]
+        assert len(found) == 1, found
+        return found[0].specifier
+
+    @pytest.mark.parametrize(
+        "version", ["3.0.0", "3.0.1", "3.1.1", "3.2.1", "3.3.1", "3.4.0"]
+    )
+    def test_a_release_that_asks_the_hub_on_a_cache_only_load_is_excluded(
+        self, declared, version
+    ):
+        assert not declared.contains(version)
+
+    def test_the_first_release_that_skips_the_lookup_is_admitted(self, declared):
+        assert declared.contains("3.4.1")
