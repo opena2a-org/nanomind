@@ -44,13 +44,17 @@
   until the deadline, opening tens of thousands of connections a second
   against the daemon.
 - The daemon loads the input-classifier embedder from the local Hugging
-  Face cache when it is there, so a boot after the first makes no
-  network request. Before, every boot asked huggingface.co for the
-  embedder's files even when they were cached, and a boot with no
-  network waited on those requests before it fell back to the cache.
-  The first boot on a machine still downloads the embedder, and a copy
-  already in the cache is used as is. The minimum sentence-transformers
-  version is now 3.4.1.
+  Face cache when it is there. With the dependency versions a fresh
+  install resolves, a boot after the first makes no network request.
+  Before, every boot asked huggingface.co for the embedder's files even
+  when they were cached, and a boot with no network waited on those
+  requests before it fell back to the cache. The first boot on a machine
+  still downloads the embedder, and a copy already in the cache is used
+  as is. The minimum sentence-transformers version is now 3.4.1. With
+  some older transformers releases a warm boot still makes a network
+  request, and a boot with no network still waits: transformers 4.57.2;
+  transformers 4.50 to 4.57 with sentence-transformers 5.4 to 5.7;
+  transformers 5.0 to 5.3 with sentence-transformers 5.4 or later.
 
 ## 0.1.3
 

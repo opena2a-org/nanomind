@@ -135,13 +135,14 @@ class TestEmbedderCacheFirst:
 
 
 class TestDeclaredSentenceTransformersMinimum:
-    """The declared minimum admits no release that goes to the hub on a
-    cache-only load.
+    """The declared minimum admits no sentence-transformers release whose
+    cache-only load still looks up the model card on huggingface.co.
 
     sentence-transformers 3.0.0 to 3.4.0 accept local_files_only but still
     ask huggingface.co for the model's metadata on every load, so a warm boot
     on one of them makes a network request. 3.4.1 is the first release that
-    skips that lookup.
+    skips that lookup. The minimum removes that lookup, not every hub
+    request: with some transformers releases a warm boot still makes one.
     """
 
     @pytest.fixture
