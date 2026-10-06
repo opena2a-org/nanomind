@@ -289,6 +289,32 @@ class TestInstallProbeStopsOnTime:
         monkeypatch.setattr(install, "time", clock)
         return clock
 
+    @pytest.fixture
+    def connections(self, monkeypatch) -> list[str]:
+        """Every connection the probe opens, logged on the probe's own thread.
+
+        The fake daemon logs a request only when its serving thread gets to
+        it, so a connection the probe opens at the deadline and closes at once
+        may not be in that log yet when the probe returns.
+        """
+        opened: list[str] = []
+
+        class _LoggedSocket(socket.socket):
+            def connect(self, address):
+                super().connect(address)
+                opened.append(address)
+
+        monkeypatch.setattr(
+            install,
+            "socket",
+            SimpleNamespace(
+                socket=_LoggedSocket,
+                AF_UNIX=socket.AF_UNIX,
+                SOCK_STREAM=socket.SOCK_STREAM,
+            ),
+        )
+        return opened
+
     @pytest.mark.parametrize(
         "body",
         [
@@ -298,15 +324,17 @@ class TestInstallProbeStopsOnTime:
         ],
         ids=["not-ready", "non-json", "empty"],
     )
-    def test_reply_retries_end_at_the_timeout(self, fake_daemon, clock, capsys, body):
-        served = fake_daemon(body)
+    def test_reply_retries_end_at_the_timeout(
+        self, fake_daemon, clock, connections, capsys, body
+    ):
+        fake_daemon(body)
         started = clock.now
         assert install._healthz_probe(timeout_sec=self.TIMEOUT) is False
         assert clock.pauses == pytest.approx(self.PAUSES)
         assert clock.now - started == pytest.approx(self.TIMEOUT)
-        # One poll per pause window: retries are paced, never a tight
-        # reconnect loop.
-        assert len(served) <= 2
+        # One poll before each pause and none after the last: retries are
+        # paced, and no connection is opened once the deadline is reached.
+        assert len(connections) == len(self.PAUSES)
         assert "did not return ready within" in capsys.readouterr().err
 
     def test_connect_retries_end_at_the_timeout(self, monkeypatch, clock, capsys):
