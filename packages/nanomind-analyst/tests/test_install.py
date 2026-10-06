@@ -457,7 +457,10 @@ class TestHealthzProbePacing:
         assert state["connections"] <= 3
         assert reason in capsys.readouterr().err
 
-    def test_not_ready_reply_waits_before_retrying(self, raw_daemon):
+    def test_not_ready_reply_waits_before_retrying(self, raw_daemon, capsys):
         state = raw_daemon(b'{"daemonState":"loading","protocolVersion":1}\n')
         assert install._healthz_probe(timeout_sec=1.5) is False
-        assert state["connections"] <= 3
+        # At least one attempt must reach the socket, or the pacing of a
+        # not-ready reply is never exercised.
+        assert 1 <= state["connections"] <= 3
+        assert "daemonState='loading'" in capsys.readouterr().err
