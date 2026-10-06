@@ -221,6 +221,8 @@ See [NANOMIND-SPEC.md](spec/NANOMIND-SPEC.md) for the full specification.
 
 ## Testing
 
+The package test scripts need Node.js 22.6.0 or later, the first release with `--experimental-strip-types`; `engines` in the root `package.json` declares this minimum.
+
 ```bash
 # All tests (56 total)
 npx tsx --test packages/nanomind-guard/src/guard.test.ts \
