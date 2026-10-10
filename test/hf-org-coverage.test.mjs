@@ -30,6 +30,12 @@ function hfJson(url) {
   return responses.get(url);
 }
 
+async function hfText(url) {
+  const response = await fetch(url, { signal: AbortSignal.timeout(30_000) });
+  assert.equal(response.status, 200, `GET ${url} returned HTTP ${response.status}`);
+  return response.text();
+}
+
 // Every place the manifest names a Hugging Face repository: one per model line,
 // plus each format of a version that is published in a repository of its own.
 function repoEntries() {
@@ -93,6 +99,34 @@ test('a format published in its own repository matches the files in that reposit
       entry.bytes,
       Object.fromEntries(large.map((file) => [file.rfilename, file.lfs.size])),
       `${where}.bytes differs from the LFS sizes in ${entry.repoId}`,
+    );
+  }
+});
+
+test('a quantized format states the bits and group size of its repository', { skip }, async () => {
+  for (const { where, entry } of repoEntries().filter(({ isFormat }) => isFormat)) {
+    assert.ok(entry.hfRevision, `${where} has a repoId and no hfRevision`);
+    const repo = await hfJson(`${HF_API}/${entry.repoId}/revision/${entry.hfRevision}`);
+    const bits = repo.config?.quantization_config?.bits;
+    if (bits === undefined) continue;
+
+    const stated = /^(\d+)-bit, group size (\d+)$/.exec(entry.quantization ?? '');
+    assert.ok(
+      stated,
+      `${where}.quantization is ${JSON.stringify(entry.quantization)}; ` +
+        `${entry.repoId} is quantized, so it needs "<bits>-bit, group size <n>"`,
+    );
+    assert.equal(Number(stated[1]), bits, `${where}.quantization states ${stated[1]} bits, ${entry.repoId} reports ${bits}`);
+
+    // The API reports the bits but not the group size, and config.json is behind
+    // the access gate. The model card stays readable and names the conversion flags.
+    const card = await hfText(`https://huggingface.co/${entry.repoId}/resolve/${entry.hfRevision}/README.md`);
+    const groupSize = /--q-group-size (\d+)/.exec(card)?.[1];
+    assert.ok(groupSize, `the ${entry.repoId} model card at ${entry.hfRevision} names no --q-group-size`);
+    assert.equal(
+      stated[2],
+      groupSize,
+      `${where}.quantization states group size ${stated[2]}, the ${entry.repoId} model card states ${groupSize}`,
     );
   }
 });

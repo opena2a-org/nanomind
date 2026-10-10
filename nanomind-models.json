@@ -284,7 +284,7 @@
             "mlx-8bit": {
               "repoId": "opena2a/nanomind-security-analyst-mlx",
               "sourceVersion": "3.0.0",
-              "quantization": "8-bit",
+              "quantization": "8-bit, group size 64",
               "hfRevision": "a49011d19db54a3fd5c63bb1ba7a44df8aea8e61",
               "publishedAt": "2026-07-04T15:55:31.000Z",
               "gated": "manual",
