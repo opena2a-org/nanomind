@@ -240,7 +240,7 @@
             "oracleCanon10Way": "PASS \u2014 70.0% vs \u226570%",
             "oracleBinary": "PASS \u2014 97.8% vs \u226597%",
             "oracleAttackOnly9Way": "PASS \u2014 67.3% vs \u226565%",
-            "internalMixedTask": "report \u2014 92.88% (274/295); not a release gate, no threshold of record (CDS 2026-08-27)",
+            "internalMixedTask": "report \u2014 92.88% (274/295); not a release gate, no threshold of record (as of 2026-08-27)",
             "refusalOffTopicNlmStandalone": "FAIL \u2014 34.0% vs \u226590% (specialist NLM; addressed e2e by v3.1 input-classifier gate)",
             "refusalOffTopicE2eWithGate": "PASS \u2014 92.0% measured at gate threshold 0.65 (2026-05-11). SUPERSEDED as an operating-point claim: at the deployed threshold 0.90 most off-topic input reaches the NLM (gate bypass rate on genuine off-topic drops 86% -> 2%), so e2e off-topic refusal at 0.90 has NOT been re-measured and the 92.0% figure must not be cited for the current deployment. This trade was accepted for +29 pts attack recall; off-topic discrimination deferred (reports/nanomind-phase-c-gate-fix.md).",
             "refusalInDomain": "PASS \u2014 100.0%",

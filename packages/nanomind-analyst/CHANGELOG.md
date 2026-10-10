@@ -59,7 +59,7 @@
 ## 0.1.3
 
 Gate operating point: the wheel-embedded input-classifier meta.json now
-ships threshold **0.90** (CDS-029) with a `thresholdHistory` audit trail,
+ships threshold **0.90** with a `thresholdHistory` audit trail,
 mirroring the canonical artifact in nanomind-training.
 
 - At 0.65 the gate false-bypassed 30% of external prose attacks (deployed
@@ -113,7 +113,7 @@ mirroring the canonical artifact in nanomind-training.
 P1 fix: the boot/healthz gate probe is now threshold-independent.
 
 - The probe asserted the bypass LABEL for `# README\n\nProject Setup`, which
-  encodes the gate's 0.65 operating point. Deploying the CDS-029 threshold
+  encodes the gate's 0.65 operating point. Deploying the raised threshold
   (`INPUT_CLASSIFIER_THRESHOLD=0.90`, zero attack false-bypass on the Phase B
   clean corpus) made the gate correctly decline to bypass that input — the
   daemon then refused to bind and launchd crash-looped, so the threshold fix

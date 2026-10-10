@@ -2,7 +2,7 @@
 
 Regression for the 2026-06-10 launchd crash loop: the probe asserted the
 bypass LABEL for "# README\n\nProject Setup", which encodes the gate's
-operating point. Raising the threshold to 0.90 (CDS-029) made the gate
+operating point. Raising the threshold to 0.90 made the gate
 correctly decline to BYPASS that input — the embedder was healthy, but boot
 refused to bind and launchd looped. The probe now asserts the LR head ranks
 the input as more-likely-off-topic (proba_off_topic >= 0.5), which catches a
