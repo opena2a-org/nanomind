@@ -5,8 +5,11 @@
  * Target model: SmolLM2-135M (Q4_K_M quantization, ~80MB)
  *
  * Inference tiers:
- *   - Local Fast: SmolLM2-135M via llamafile (~50ms, intent classification)
- *   - Local Full: SmolLM2-135M via llamafile (~200ms, code generation)
+ *   - Local Fast and Local Full: SmolLM2-135M via llamafile. infer() times each
+ *     call, returns the time as latencyMs and labels the result local-fast or
+ *     local-full from it, so the label says how long the call took on this
+ *     machine, not a mode the caller selects. No duration is stated here: it
+ *     depends on the host and the llamafile build.
  *   - Cloud Fallback: Anthropic API (only when local model unavailable)
  */
 

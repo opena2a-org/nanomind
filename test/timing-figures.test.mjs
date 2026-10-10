@@ -114,6 +114,25 @@ test('the card of the classifier version the daemon serves names latencyMs as th
   assert.ok(card.includes('`latencyMs`'), `${path} does not name latencyMs`);
 });
 
+// @nanomind/engine runs a model through llamafile on the reader's machine, so
+// the time a call takes is that machine's, and infer() measures it per call.
+const ENGINE_FILES = ['packages/nanomind-engine/README.md', 'packages/nanomind-engine/src/index.ts'];
+
+test('the engine README and source state no timing figure', () => {
+  assert.deepEqual(ENGINE_FILES.flatMap(timingHits), []);
+});
+
+test('the engine README names latencyMs as the time infer measures for each call', () => {
+  const readme = read('packages/nanomind-engine/README.md');
+  assert.ok(readme.includes('`latencyMs`'), 'the engine README does not name latencyMs');
+
+  const source = read('packages/nanomind-engine/src/index.ts');
+  const result = source.match(/export interface InferenceResult \{[\s\S]*?\n\}/);
+  assert.ok(result, 'index.ts declares no InferenceResult');
+  assert.match(result[0], /\n\s*latencyMs: number;/);
+  assert.match(source, /const latencyMs = Date\.now\(\) - start;/);
+});
+
 // A metric in the manifest reads as a measurement, and the manifest has no
 // place beside it for the host, backend, date and run, so it records no timing
 // metric (a latency, a per-token time or a rate) for any model version.
