@@ -106,7 +106,7 @@ def render_plist(spec: PlistSpec) -> bytes:
         "WorkingDirectory": str(paths.home()),
         # ProcessType=Interactive so launchd doesn't aggressively throttle the
         # bf16-MPS NLM during sleep/wake transitions. Background would suspend
-        # in the middle of a 6-second generation.
+        # it in the middle of a generation.
         "ProcessType": "Interactive",
     }
     return plistlib.dumps(body, fmt=plistlib.FMT_XML)

@@ -76,7 +76,7 @@ Not supported in v0.1. The daemon is bf16 on Apple MPS; fp16 yields 0% accuracy 
 ## Known limitations
 
 - **Start-up time.** An on-demand daemon loads the NLM each time it is started. `install` reports the boot time it measured on your machine and waits up to 60 seconds for it. `install --resident` keeps the model loaded between requests instead.
-- **NLM latency floor.** The Analyst NLM emits ~400 tokens of structured output per request at ~15 ms/token on bf16 MPS. Floor is ~6 seconds per finding. hackmyagent batches or filters findings before invoking. The input-classifier gate bypasses the NLM on off-topic inputs (~92% bypass rate on benign user input).
+- **NLM time per finding.** Each finding the input-classifier gate passes on is one NLM generation of up to 512 tokens of structured output, and how long that takes depends on the machine. The daemon times each generation on your machine and returns it in the `classify` reply as `nlmLatencyMs`, with the number of tokens written as `nlmTokenCount`. hackmyagent batches or filters findings before invoking. Inputs the gate ranks as off-topic are answered without running the NLM; those replies carry `nlmInvoked: false`.
 - **Single-instance.** The daemon binds a single Unix socket. Multiple `nanomind-analyst install` runs on the same machine share the same socket; the LaunchAgent label is unique to the user.
 
 ## Companion package
