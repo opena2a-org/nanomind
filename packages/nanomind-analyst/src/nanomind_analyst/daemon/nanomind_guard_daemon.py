@@ -77,7 +77,7 @@ HEALTHZ_PROBE_INPUT = "# README\n\nProject Setup"
 # NOT the deployed operating point: the head must rank this trivially
 # non-security input as more-likely-off-topic than security-artifact
 # (proba_off_topic >= 0.5). Asserting the bypass LABEL would couple boot to
-# the gate threshold — at threshold 0.90 (CDS-029) the gate correctly declines
+# the gate threshold — at threshold 0.90 the gate correctly declines
 # to bypass this input, which is not an embedder failure. That coupling put
 # the daemon in a launchd crash loop on the 0.90 rollout (2026-06-10).
 HEALTHZ_PROBE_MIN_PROBA = 0.5

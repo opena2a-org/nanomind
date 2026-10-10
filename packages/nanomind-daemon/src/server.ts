@@ -101,7 +101,7 @@ export interface InferResponse {
 }
 
 /**
- * Stage-1 abstain floor (issue #131, [CHIEF-CDS]). When the predicted class's
+ * Stage-1 abstain floor (issue #131). When the predicted class's
  * softmax probability is below this, `/v1/infer` emits classification:"abstain"
  * + attackClass:"" instead of a verdict, so a low-confidence guess can never
  * masquerade as a confident benign downstream.

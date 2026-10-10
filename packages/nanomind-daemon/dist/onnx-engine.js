@@ -109,7 +109,7 @@ const ID2LABEL = Object.freeze([
 ]);
 // Raw model label → canonical attackClass enum.
 // `evidence` carries the raw label separately so audit fidelity is preserved.
-// See README §"attackClass mapping" for the rationale (CHIEF-CDS-032 hybrid).
+// See README §"attackClass mapping" for the rationale.
 const RAW_TO_CANONICAL = Object.freeze({
     benign: '',
     injection: 'prompt_injection',
