@@ -32,7 +32,7 @@ The path to 99.999% is primarily a data problem, not an architecture problem. Th
 
 ### 2.2 Non-Goals
 
-- NanoMind does NOT replace LLM-based analysis. It is the fast first pass (sub-10ms) that catches obvious threats. Complex analysis is escalated to Claude or other LLMs.
+- NanoMind does NOT replace LLM-based analysis. It is the local first pass that catches obvious threats. Complex analysis is escalated to Claude or other LLMs.
 - NanoMind does NOT do content generation. It classifies, scores, and routes.
 - NanoMind does NOT phone home. All inference is local. Only differentially-private gradients are submitted to the Registry for federated improvement.
 
@@ -53,7 +53,7 @@ Input text
   -> Softmax -> class probabilities
 ```
 
-**Why Mamba over Transformers:** Mamba is O(n) in sequence length vs O(n^2) for attention. For security classification on short texts (<128 tokens), Mamba gives comparable accuracy at 10x lower latency and 5x smaller model size.
+**Why Mamba over Transformers:** Mamba is O(n) in sequence length vs O(n^2) for attention. For security classification on short texts (<128 tokens), Mamba gives comparable accuracy at 5x smaller model size. How long one inference takes depends on the machine and the backend it runs on; `@nanomind/daemon` times each request and returns that time as `latencyMs`.
 
 **Why not just an MLP:** MLPs treat input as bag-of-words. Word ORDER matters for security classification. "Forward token to external endpoint" (exfiltration) vs "External endpoint token forwarding service" (potentially benign) are distinguishable only with sequence understanding.
 
@@ -64,7 +64,7 @@ NanoMind is NOT a standalone train-and-ship pipeline. It is a **closed-loop inte
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │  1. CONSUMER TOOLS (HMA, ai-trust, OASB, aibrowserguard)       │
-│     Run NanoMind inference locally (on-device, sub-10ms)        │
+│     Run NanoMind inference locally (on-device)                  │
 │     Produce: findings, classifications, confidence scores       │
 └────────────────────────┬────────────────────────────────────────┘
                          │
@@ -221,7 +221,7 @@ NanoMind-Runtime implements federated learning for fleet-wide behavioral model i
 | Tier | Layer | Implementation | Latency |
 |------|-------|---------------|---------|
 | L0 | Rule-based enforcement | ARP capability checks | Microseconds |
-| L1 | NanoMind-Runtime anomaly | 6-factor statistical scoring | < 2ms |
+| L1 | NanoMind-Runtime anomaly | 6-factor statistical scoring | Milliseconds |
 | L2 | Fleet intelligence | Federated gradient aggregation | Continuous |
 
 **Gradient Submission Flow:**
@@ -467,7 +467,7 @@ NanoMind models run on user machines -- laptops, CI runners, Raspberry Pis. They
 
 Every model version MUST record in its model card:
 - ONNX file sizes
-- Inference latency (p50, p95, p99) on reference hardware (M4 Max, Intel i7, ARM64)
+- Inference latency (p50, p95, p99) on reference hardware (M4 Max, Intel i7, ARM64), each with the host, backend, date and run it was measured on
 - Peak memory during inference
 - Tokenizer vocabulary size and its impact on embedding layer size
 
