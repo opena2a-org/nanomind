@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -87,6 +87,31 @@ test('the analyst model card names the reply fields that carry the measured time
       assert.ok(nlm.includes(`"${field}":`), `the analyst daemon reply carries no ${field}`);
     }
   }
+});
+
+// The manifest records no model card for the classifier; its cards are the
+// files under docs/model-cards, one per version, so a new card is checked too.
+function classifierModelCards() {
+  return readdirSync(join(root, 'docs/model-cards'))
+    .filter((name) => name.endsWith('.md'))
+    .map((name) => `docs/model-cards/${name}`);
+}
+
+test('no classifier model card states a timing figure', () => {
+  const cards = classifierModelCards();
+  assert.ok(cards.length > 0, 'docs/model-cards holds no model card');
+  assert.deepEqual(cards.flatMap(timingHits), []);
+});
+
+test('the card of the classifier version the daemon serves names latencyMs as the measured time', () => {
+  const engine = read('packages/nanomind-daemon/src/onnx-engine.ts');
+  const served = engine.match(/readonly modelVersion = 'nanomind-tme-v(\d+\.\d+\.\d+)';/);
+  assert.ok(served, 'onnx-engine.ts declares no modelVersion');
+  const path = `docs/model-cards/v${served[1]}.md`;
+  const card = read(path);
+  const name = JSON.parse(read('packages/nanomind-daemon/package.json')).name;
+  assert.ok(card.includes(`\`${name}\``), `${path} does not name ${name}`);
+  assert.ok(card.includes('`latencyMs`'), `${path} does not name latencyMs`);
 });
 
 // A metric in the manifest reads as a measurement, and the manifest has no
