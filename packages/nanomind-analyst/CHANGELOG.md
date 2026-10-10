@@ -84,6 +84,13 @@ after upgrading to regenerate the plist.
 - README: the "~30 seconds" cold-boot figure is gone (boot time varies
   by machine; `install` reports what it measured), and hackmyagent is
   named as the socket's consumer.
+- README: the per-token, per-request and per-finding timing figures and
+  the gate's bypass rate under Known limitations are gone. Nothing in the
+  package recorded where they were measured, and a per-token time does
+  not carry from one machine to another. The section now states the
+  generation cap of 512 tokens and names the `nlmLatencyMs` and
+  `nlmTokenCount` fields in which the daemon reports each generation as
+  measured on your machine.
 
 ## 0.1.3
 
