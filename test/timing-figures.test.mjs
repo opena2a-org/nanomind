@@ -13,7 +13,8 @@ const manifest = JSON.parse(read('nanomind-models.json'));
 // (host, backend, date and the run it came from) that would make a fixed
 // figure in the README, a model card or the model manifest true on a reader's
 // machine. These are the shapes such a figure takes in prose: a duration, a
-// per-token time, a token or inference rate, and "sub-millisecond".
+// per-token time, a token or inference rate, "sub-millisecond", and a speed-up
+// ratio.
 const TIMING_PATTERNS = [
   /\d[\d,.]*\s*(?:ms|µs|μs|milliseconds?|microseconds?)\b/gi,
   /ms\s*(?:\/|per)\s*token/gi,
@@ -21,19 +22,26 @@ const TIMING_PATTERNS = [
   /\binf(?:erences?)?\s*(?:\/|per)\s*s(?:ec(?:ond)?)?\b/gi,
   /\bsub-?\s*milli(?:second)?/gi,
   /\d[\d.]*\s*(?:s|sec|seconds?)\s+(?:per|\/)\s*(?:finding|request|token|event|inference)\b/gi,
+  /\d[\d.]*\s*(?:[x×]|times)\s+(?:lower\s+latency|faster|slower|quicker)\b/gi,
 ];
 
 // Every figure on every line, so a line that states two is reported twice.
-function timingHits(path) {
-  const hits = [];
+function timingMatches(path) {
+  const matches = [];
   read(path).split('\n').forEach((line, index) => {
     for (const pattern of TIMING_PATTERNS) {
       for (const match of line.matchAll(pattern)) {
-        hits.push(`${path}:${index + 1}: ${JSON.stringify(match[0])}`);
+        matches.push({ path, index, line, at: match.index, figure: match[0] });
       }
     }
   });
-  return hits;
+  return matches;
+}
+
+const formatHit = ({ path, index, figure }) => `${path}:${index + 1}: ${JSON.stringify(figure)}`;
+
+function timingHits(path) {
+  return timingMatches(path).map(formatHit);
 }
 
 test('the README states no timing figure for a model or the runtime scorer', () => {
@@ -148,4 +156,67 @@ test('no model version in the manifest records a timing metric', () => {
     }
   }
   assert.deepEqual(hits, []);
+});
+
+test('the protocol spec states no timing figure', () => {
+  assert.deepEqual(timingHits('spec/NANOMIND-SPEC.md'), []);
+});
+
+// Teach mode prints this text to a user learning what an ATC is; nothing in
+// this repository measures how long a platform takes to verify one.
+test('teach mode states no timing figure', () => {
+  assert.deepEqual(timingHits('packages/nanomind-cli/src/teach.ts'), []);
+});
+
+// The specification sets a latency budget for each deployment mode: the most
+// time one inference there may take, which the latency benchmark of a release
+// is held to (sections 3.8, 7.1 and 9.1). A budget is a requirement, not a
+// measurement, so a figure may stand in a table column whose header names it a
+// target or a maximum. The decision log keeps each rationale as it was given
+// when the decision was taken. Anywhere else a figure reads as how long
+// NanoMind takes, and nothing records that measurement.
+function specificationContext(path) {
+  const context = [];
+  let section = '';
+  let header = null;
+  let fenced = false;
+  for (const line of read(path).split('\n')) {
+    if (line.startsWith('```')) fenced = !fenced;
+    else if (!fenced && /^#{1,6} /.test(line)) section = line;
+    const row = !fenced && line.startsWith('|');
+    if (!row) header = null;
+    else if (header === null) header = line.split('|').slice(1, -1).map((cell) => cell.trim());
+    context.push({ section, header: row ? header : null });
+  }
+  return context;
+}
+
+function unbudgetedTimingHits(path) {
+  const context = specificationContext(path);
+  return timingMatches(path)
+    .filter(({ index, line, at }) => {
+      const { section, header } = context[index];
+      if (/^## \d+\. Decision Log$/.test(section)) return false;
+      if (!header) return true;
+      const column = line.slice(0, at).split('|').length - 2;
+      return !/\b(?:target|max)\b/i.test(header[column] ?? '');
+    })
+    .map(formatHit);
+}
+
+test('the specification states a timing figure only as a budget', () => {
+  assert.deepEqual(unbudgetedTimingHits('docs/SPECIFICATION.md'), []);
+});
+
+// A latency figure holds only on the host and backend it was measured on, so
+// the model card template asks for both beside it, with the run and date it
+// came from.
+test('the model card template asks for the host, backend, run and date of its latency figure', () => {
+  const rows = read('docs/MODEL-CARD-TEMPLATE.md')
+    .split('\n')
+    .filter((line) => line.startsWith('| Latency'));
+  assert.equal(rows.length, 1, 'the template does not have exactly one Latency row');
+  for (const field of ['{HOST}', '{BACKEND}', '{RUN}', '{YYYY-MM-DD}']) {
+    assert.ok(rows[0].includes(field), `the Latency row does not ask for ${field}`);
+  }
 });

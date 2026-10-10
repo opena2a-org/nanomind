@@ -104,7 +104,7 @@ export async function runTeachMode(ctx: TeachContext): Promise<void> {
   print('  Step 6/7: What is an Agent Trust Credential (ATC)?');
   print(`
   An ATC is a signed certificate that proves your AI agent's security posture.
-  It travels with your agent — any platform can verify it locally in under 1ms,
+  It travels with your agent — any platform can verify it locally,
   without calling the registry.
 
   Trust Levels:

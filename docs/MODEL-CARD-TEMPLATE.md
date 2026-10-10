@@ -92,7 +92,7 @@ Example:
 | Accuracy | {X}% | PASS/FAIL | |
 | Regression | max drop {X} | PASS/FAIL | |
 | Holdout | {X}% | PASS/FAIL/N/A | |
-| Latency (p99) | {X}ms | PASS/FAIL/N/A | |
+| Latency (p99) | {X}ms on {HOST}, {BACKEND} | PASS/FAIL/N/A | Run {RUN} on {YYYY-MM-DD}; with no recorded run, write "Not measured" and N/A |
 | Size | {X} MB | PASS/FAIL | |
 | False positive | {N} false CRITICAL | PASS/FAIL/N/A | |
 | Robustness | {X}% drop | PASS/FAIL/N/A | |

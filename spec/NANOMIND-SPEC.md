@@ -11,7 +11,7 @@
 NanoMind is an open protocol for embedding intelligence into CLI security tools and runtime protection systems. Any tool can implement the NanoMind adapter interfaces to gain:
 
 - **CLI Mode:** Natural language intent routing, 16 intent types, cross-product command mapping
-- **Runtime Mode:** Behavioral anomaly detection, sub-2ms inference, federated learning
+- **Runtime Mode:** Behavioral anomaly detection by statistical scoring in the calling process, federated learning
 
 ## 2. CLI Adapter Contract
 
