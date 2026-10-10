@@ -46,7 +46,7 @@ a GitHub repo snippet — and it returns a structured security assessment:
 block carries a `classification`, an `attackClass`, a `confidence`, and a
 `severity`. It is the reasoning tier of NanoMind. Its companion,
 [nanomind-security-classifier](https://huggingface.co/opena2a/nanomind-security-classifier),
-is a sub-millisecond Mamba classifier for fast inline labelling; this model does
+is a small Mamba classifier for inline labelling; this model does
 the slower, explained analysis.
 
 Part of the [OpenA2A](https://github.com/opena2a-org) security ecosystem. It powers
@@ -162,7 +162,7 @@ The repo ships `nanomind-security-analyst.Q4_K_M.gguf` (~1.05 GB).
 > is a llama.cpp Metal quantized-kernel issue specific to this Qwen3-1.7B
 > architecture, **not** a bit-width or fidelity problem: the full-precision
 > `bf16` GGUF runs correctly on Metal, and every quant runs correctly on CPU
-> (`n_gpu_layers=0`, ~118 tok/s on an M4 Max). On CUDA, GPU offload is fine.
+> (`n_gpu_layers=0`). On CUDA, GPU offload is fine.
 > **For GPU inference on Apple Silicon, use the [MLX build](https://huggingface.co/opena2a/nanomind-security-analyst-mlx)
 > (recommended) — see below.**
 
@@ -270,7 +270,7 @@ not been changed.
 | Macro F1 (10-class) | **0.7146** |
 | Structure adherence | **98.9%** oracle, **93.8%** internal |
 | Model size | 3.44 GB (bf16 safetensors), 1.05 GB (Q4_K_M GGUF, CPU-only on Metal), 1.7 GB ([MLX 8-bit](https://huggingface.co/opena2a/nanomind-security-analyst-mlx), Apple Silicon GPU) |
-| Latency | ~18 ms/token, ~55 tok/s (Qwen3-1.7B bf16 on Apple MPS) |
+| Latency | No figure is given: time per token depends on the host and the backend, and no measurement of this model records its host, backend, date and run. The [`nanomind-analyst`](https://github.com/opena2a-org/nanomind) daemon times each request on the machine it runs on and returns `nlmLatencyMs` and `nlmTokenCount` on every reply the model generated. |
 
 Per-class F1 ranges from 0.895 (`none`) down to 0.479 (`injection`, the weakest
 class). Full per-class table in the Appendix.
