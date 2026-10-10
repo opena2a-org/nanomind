@@ -187,9 +187,9 @@ def fetch_nlm(
 def verify_wheel_classifier(source_dir: Path) -> None:
     """Verify the wheel-embedded classifier files against the baked SHA pins.
 
-    Called as an install pre-flight BEFORE the multi-minute NLM fetch (a
-    corrupt wheel should fail in the first second, not after 3.4 GB of
-    transfer) and again by install_classifier immediately before the copy.
+    Called as an install pre-flight BEFORE the NLM fetch (a corrupt wheel
+    should fail before the transfer starts, not after 3.4 GB of it) and
+    again by install_classifier immediately before the copy.
     """
     _verify(
         source_dir / "classifier.joblib",

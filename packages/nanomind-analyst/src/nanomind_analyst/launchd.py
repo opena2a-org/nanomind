@@ -78,8 +78,9 @@ def render_plist(spec: PlistSpec) -> bytes:
         "INPUT_CLASSIFIER_JOBLIB_SHA256": spec.classifier_joblib_sha256,
         "INPUT_CLASSIFIER_META_SHA256": spec.classifier_meta_sha256,
         # PYTHONUNBUFFERED makes the daemon's stdout telemetry lines flush
-        # promptly into the launchd-managed log file. Without this, lines
-        # buffer for tens of seconds and `logs` looks frozen.
+        # promptly into the launchd-managed log file. Without this, stdout to
+        # a file is block-buffered: lines wait until the buffer fills, and
+        # `logs` looks frozen.
         "PYTHONUNBUFFERED": "1",
     }
     if spec.resident:

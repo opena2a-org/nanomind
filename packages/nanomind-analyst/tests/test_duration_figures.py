@@ -8,7 +8,9 @@ with no request, and how long one `status` probe waits. A figure that is none
 of these reads as a measurement that nothing in the package records. This test
 censuses every duration figure in the README, the changelog and the package
 source, including one wrapped across two lines, and holds each to one of those
-configured values.
+configured values. A duration with no number ("a few" seconds, "several"
+minutes) makes the same claim with less to check, so the census refuses those
+outright.
 """
 from __future__ import annotations
 
@@ -29,6 +31,16 @@ CENSUS = (
 DURATION = re.compile(
     r"(\d[\d,]*(?:\.\d+)?)(?:\s+|-)?"
     r"(ms|milliseconds?|s|secs?|seconds?|mins?|minutes?|hours?)\b",
+    re.IGNORECASE,
+)
+
+# A quantity word in place of a number: how long something takes, stated so
+# that no reader can check it. "that many seconds" refers to a configured
+# value and is not one.
+UNNUMBERED_DURATION = re.compile(
+    r"\b(?:several|(?:a\s+)?few|(?:a\s+)?couple\s+of|tens\s+of|hundreds\s+of|"
+    r"(?<!that\s)many|multi-?|first)\s*"
+    r"(?:ms|milliseconds?|secs?|seconds?|mins?|minutes?|hours?)\b",
     re.IGNORECASE,
 )
 
@@ -66,6 +78,17 @@ def test_every_duration_figure_is_a_configured_value():
             where = path.relative_to(PACKAGE_ROOT)
             unsourced.append(f"{where}:{lineno}: {match.group(0)!r}")
     assert unsourced == []
+
+
+def test_no_duration_is_stated_without_a_number():
+    unnumbered = []
+    for path in CENSUS:
+        text = path.read_text(encoding="utf-8")
+        for match in UNNUMBERED_DURATION.finditer(text):
+            lineno = text.count("\n", 0, match.start()) + 1
+            where = path.relative_to(PACKAGE_ROOT)
+            unnumbered.append(f"{where}:{lineno}: {match.group(0)!r}")
+    assert unnumbered == []
 
 
 def test_the_healthz_probe_waits_the_configured_window_by_default():
