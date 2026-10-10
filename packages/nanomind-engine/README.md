@@ -16,8 +16,10 @@ import { NanoMindEngine } from '@nanomind/engine';
 const engine = new NanoMindEngine();
 const result = await engine.infer('Classify: scan this project');
 console.log(result.text); // "SCAN"
-console.log(result.latencyMs); // ~200ms
+console.log(result.latencyMs); // how long this call took, in milliseconds
 ```
+
+No timing figure is given here. How long a call takes depends on the machine and the llamafile build it runs on, and no measurement is recorded that would hold on yours. `infer()` times each call itself and returns that time in `latencyMs`, measured on the machine the call ran on. It labels the result's `tier` as `local-fast` or `local-full` from that same measured time.
 
 ## Model
 
