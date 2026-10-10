@@ -67,7 +67,7 @@ nanomind-daemon stop
 | nanomind-trust-scorer | Internal | Planned | -- | Planned |
 | nanomind-runtime-guard | Internal | Planned | -- | Planned |
 
-> **Two production model lines.** The Mamba TME **classifier** (v0.5.0) handles fast inline classification at the NLM tier (~2M params, ONNX, <1ms inference). The Qwen3-1.7B **analyst** (v3.0.0) handles generative threat reasoning at the SLM tier (~1.7B params, MPS bf16, ~18ms/token, structured Analysis/Verdict/Evidence/Remediation output). Both are public on HuggingFace under Apache-2.0 (analyst inherits Qwen3 license on base weights).
+> **Two production model lines.** The Mamba TME **classifier** (v0.5.0) handles inline classification at the NLM tier (~2M params, ONNX). The Qwen3-1.7B **analyst** (v3.0.0) handles generative threat reasoning at the SLM tier (~1.7B params, MPS bf16, structured Analysis/Verdict/Evidence/Remediation output). Both are public on HuggingFace under Apache-2.0 (analyst inherits Qwen3 license on base weights). How long a request takes depends on the machine and the backend, so this README gives no timing figure for either line. Each daemon times every request on your machine and returns what it measured: `@nanomind/daemon` as `latencyMs` on each classifier reply, and the `nanomind-analyst` daemon as `nlmLatencyMs` and `nlmTokenCount` on each reply the analyst generated.
 >
 > **v3.0.0 — FP-suppression on benign security code (corrected 2026-06-03).** The analyst can over-classify legitimate JWT validators, RBAC middleware, parameterized queries, rate limiters, and OAuth/crypto code as threats. On a repaired 82-sample gate of *real* security-library source it correctly clears **77%** (63/82) as benign; the originally documented 57% / 43%-FP figure was measured on a gate later found to be 41% placeholder filler, which understated reliability. On ordinary benign artifacts the false-positive rate is ~1%; the over-flagging is concentrated on dual-use security code, where roughly 1 in 4 may still be over-flagged, so spot-checking findings on dedicated security libraries remains advisable. A corpus retrain (v3.1) was a no-go; the scoped fix is a benign-security pre-pass, not corpus expansion. See model card §Known Limitations §2.
 >
@@ -136,7 +136,7 @@ Detects: instruction override, role switching, permission escalation, zero-width
 
 ## Runtime Mode
 
-NanoMind-Runtime is the L1 behavioral anomaly detection layer for ARP. It does not use a language model — it uses a lightweight statistical model for sub-2ms inference.
+NanoMind-Runtime is the L1 behavioral anomaly detection layer for ARP. It does not use a language model: it scores each event with a lightweight statistical model, in the calling process.
 
 ### Three-Tier ARP Model
 
@@ -172,7 +172,7 @@ const result = runtime.processEvent({
 1. **Baseline learning**: First 100 events build a behavioral baseline using Welford's online algorithm
 2. **6-factor anomaly scoring**: unknown capability, timing anomaly, burst detection, L0 escalation, rare event type, error spike
 3. **5-tier response**: allow → alert → throttle → suspend → kill
-4. **Sub-2ms latency**: Statistical model, no LLM
+4. **No LLM call**: Statistical scoring only, run synchronously by `processEvent`
 
 ### Federated Learning
 
