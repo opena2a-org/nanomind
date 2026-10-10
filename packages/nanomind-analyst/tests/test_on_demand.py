@@ -7,7 +7,9 @@ window that releases the model when nothing has asked for it.
 """
 from __future__ import annotations
 
+import logging
 import plistlib
+import re
 import shutil
 import socket
 import tempfile
@@ -113,8 +115,16 @@ class TestInstallModes:
         assert kick == ["kickstart", f"gui/{paths.uid()}/{paths.LABEL}"]
         assert stubbed_install.probes == 1
         out = capsys.readouterr().out
-        assert "daemon ready at" in out
-        assert "s on this machine" in out
+        assert re.search(r"daemon ready at .+ after \d+\.\ds on this machine", out)
+
+    def test_install_prints_the_fetch_time_it_measured(
+        self, stubbed_install, capsys
+    ):
+        assert install.run_install() == 0
+        out = capsys.readouterr().out
+        assert re.search(
+            r"^  fetched and verified in \d+\.\ds on this machine$", out, re.M
+        )
 
     def test_on_demand_install_exits_nonzero_when_probe_fails(
         self, stubbed_install
@@ -273,3 +283,17 @@ class TestIdleExit:
             stop.set()
             t.join(5.0)
         assert not t.is_alive()
+
+
+def test_the_daemon_logs_the_line_status_says_to_wait_for(
+    short_sock, monkeypatch, caplog
+):
+    # `status` on a missing socket tells the user the daemon serves once its
+    # log shows `listening on`, instead of naming a time to wait.
+    caplog.set_level(logging.INFO, logger=daemon.log.name)
+    t, stop = _start_serve(short_sock, "0", monkeypatch)
+    try:
+        assert f"listening on {short_sock}" in caplog.text
+    finally:
+        stop.set()
+        t.join(5.0)

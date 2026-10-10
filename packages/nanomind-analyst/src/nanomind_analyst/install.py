@@ -10,9 +10,9 @@ daemon at bootstrap, and install only waits. `--skip-healthz-wait` neither
 starts nor probes.
 
 Each step prints a one-line update to stdout so a human watching the install
-sees forward progress (the NLM fetch is the long step, several minutes on a
-warm HF cache, longer cold). Errors abort the install but leave already-fetched
-state on disk so a re-run picks up where it left off.
+sees forward progress (the NLM fetch is the long step, and install prints the
+seconds it took on this machine). Errors abort the install but leave
+already-fetched state on disk so a re-run picks up where it left off.
 """
 from __future__ import annotations
 
@@ -206,12 +206,12 @@ def run_install(
     paths.logs_dir().mkdir(parents=True, exist_ok=True)
 
     # Pre-flight: verify the wheel-embedded classifier against the baked SHA
-    # pins BEFORE the 3.4 GB fetch. A corrupt or tampered wheel fails in the
-    # first second instead of after a multi-minute transfer.
+    # pins BEFORE the 3.4 GB fetch. A corrupt or tampered wheel fails before
+    # the transfer starts instead of after it.
     _emit("verifying wheel-embedded classifier artifacts")
     artifacts.verify_wheel_classifier(artifacts.wheel_classifier_source_dir())
 
-    # Fetch the NLM FIRST. It is the long, interruptible step (multi-minute
+    # Fetch the NLM FIRST. It is the long, interruptible step (a 3.4 GB
     # network transfer), and it must not sit between the two writes that have
     # to stay consistent: the classifier copy and the plist (which bakes the
     # expected classifier SHAs). If the classifier dir were updated before a
@@ -223,10 +223,15 @@ def run_install(
         f"fetching NLM weights (~3.4 GB) from {artifacts.HF_REPO_ID}"
         f"@{artifacts.HF_REVISION[:7]}"
     )
-    _emit("  this takes several minutes on first run; the cache speeds reruns")
+    _emit("  the time depends on the network; reruns use the cached files")
+    fetch_started = time.monotonic()
     artifacts.fetch_nlm(
         target_dir=paths.nlm_dir(),
         progress=lambda p: _emit(f"  {p.stage}: {p.detail}"),
+    )
+    _emit(
+        f"  fetched and verified in {time.monotonic() - fetch_started:.1f}s "
+        f"on this machine"
     )
 
     # bootout BEFORE mutating the artifact dir + plist, not after. With the
@@ -305,7 +310,7 @@ def run_uninstall(*, remove_artifacts: bool = False) -> int:
     """Stop, unload, and remove the plist. Optionally remove artifacts.
 
     Artifacts (the 3.4 GB NLM) are not removed by default; re-installing then
-    skips the multi-minute fetch.
+    reuses them instead of transferring 3.4 GB again.
     """
     launchd.bootout()
     plist = paths.plist_path()

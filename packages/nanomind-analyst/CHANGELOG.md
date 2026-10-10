@@ -55,6 +55,15 @@
   request, and a boot with no network still waits: transformers 4.57.2;
   transformers 4.50 to 4.57 with sentence-transformers 5.4 to 5.7;
   transformers 5.0 to 5.3 with sentence-transformers 5.4 or later.
+- `install` prints the seconds the NLM fetch and its SHA256 verify took
+  on this machine. The README and the install output no longer give the
+  fetch a duration with no number, since its time depends on the network.
+- `status`, when the agent is loaded and the socket is missing, no longer
+  says to rerun after an unstated wait: it says the daemon serves once
+  its log shows `listening on`, and to rerun status after checking
+  `nanomind-analyst logs`. The daemon's log line for loading the NLM no
+  longer states how long the load takes; the `boot ok` line still
+  reports the boot time measured on this machine.
 
 ## 0.1.4
 
@@ -125,8 +134,7 @@ mirroring the canonical artifact in nanomind-training.
   serving.
 - `install` now verifies the wheel-embedded classifier against the baked
   SHA pins as a pre-flight, BEFORE the 3.4 GB NLM fetch — a corrupt or
-  tampered wheel fails in the first second instead of after a
-  multi-minute transfer.
+  tampered wheel fails before the transfer starts instead of after it.
 - `install` now fetches the NLM weights BEFORE touching the classifier
   artifact dir and the plist, boots the daemon out BEFORE that mutation
   window (so an interrupt between the classifier copy and the plist

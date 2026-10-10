@@ -20,7 +20,7 @@ The install step:
 5. Bootstraps the LaunchAgent into the user's gui session. By default the daemon runs on demand: it does not start at login, and it exits on its own after 15 minutes with no request, releasing the model's memory. `nanomind-analyst install --resident` keeps it running instead: it starts at every login and never exits for being idle.
 6. Starts the daemon once, waits up to 60 seconds for it to bind the socket and pass its healthz probe, and prints the seconds that took on this machine. `--skip-healthz-wait` skips both the start and the wait.
 
-The fetch step is the long one (several minutes on first run; cached on subsequent runs).
+The fetch step is the long one. How long it takes depends on the network, so `install` prints the seconds the fetch and its SHA256 verify took on this machine. Subsequent runs use the cached files.
 
 ## Commands
 

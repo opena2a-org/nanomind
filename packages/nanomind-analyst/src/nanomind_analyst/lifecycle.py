@@ -148,8 +148,14 @@ def run_status(*, json_output: bool = False) -> int:
             )
         else:
             _emit(f"socket: missing at {paths.SOCK_PATH}")
-            _emit("  daemon may still be booting; rerun in a few seconds")
-            _emit(f"  or check `nanomind-analyst logs` (tail {paths.log_path()})")
+            _emit(
+                "  daemon may still be booting: it serves once its log "
+                "shows `listening on`"
+            )
+            _emit(
+                f"  check `nanomind-analyst logs` (tail {paths.log_path()}), "
+                "then rerun status"
+            )
             _emit_drift_human(drifted, daemon_down=True)
         return 1
     if not json_output:

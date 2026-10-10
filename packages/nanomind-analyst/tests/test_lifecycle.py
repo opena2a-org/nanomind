@@ -57,6 +57,9 @@ class TestStatus:
         out = capsys.readouterr().out
         assert "agent: loaded" in out
         assert "socket: missing" in out
+        # Points at the log line the daemon writes once it serves, not at a
+        # time to wait.
+        assert "its log shows `listening on`" in out
 
     def test_agent_loaded_socket_ready(
         self, monkeypatch, capsys, fake_sock, no_drift

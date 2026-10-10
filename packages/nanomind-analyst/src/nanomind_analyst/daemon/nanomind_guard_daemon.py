@@ -756,8 +756,7 @@ def boot(cfg: Config) -> DaemonState:
         classifier.threshold,
     )
 
-    log.info("loading NanoMind v3 NLM from %s (this takes a few seconds)",
-             cfg.model_dir)
+    log.info("loading NanoMind v3 NLM from %s", cfg.model_dir)
     # Lazy import: torch + transformers are heavy and we want config errors
     # to surface before the import cost is paid.
     from ._nlm import NanoMindNLM
