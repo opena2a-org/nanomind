@@ -2,10 +2,14 @@
 
 [![Status: beta](https://img.shields.io/badge/status-beta-yellow)](./STATUS.md)
 
+> **[OpenA2A](https://github.com/opena2a-org/opena2a)**: [CLI](https://github.com/opena2a-org/opena2a) · [HackMyAgent](https://github.com/opena2a-org/hackmyagent) · [Secretless](https://github.com/opena2a-org/secretless-ai) · [AIM](https://github.com/opena2a-org/agent-identity-management) · [Browser Guard](https://github.com/opena2a-org/AI-BrowserGuard) · [DVAA](https://github.com/opena2a-org/damn-vulnerable-ai-agent)
+
 Embedded intelligence layer for AI security tools. Two deployment modes, one package:
 
 - **CLI Mode**: Natural language intent routing for security CLIs (HackMyAgent, secretless-ai, OpenA2A)
 - **Runtime Mode**: Behavioral anomaly detection for AI agent runtime protection (ARP)
+
+[![npm version](https://img.shields.io/npm/v/@nanomind/cli.svg)](https://www.npmjs.com/package/@nanomind/cli) [![License](https://img.shields.io/github/license/opena2a-org/nanomind)](LICENSE)
 
 ```bash
 npm install @nanomind/cli
