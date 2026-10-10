@@ -6,13 +6,14 @@ import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (path) => readFileSync(join(root, path), 'utf8');
+const manifest = JSON.parse(read('nanomind-models.json'));
 
 // How long a model or a scorer takes on one request depends on the machine and
 // the backend it runs on, and nothing in this repository records a measurement
 // (host, backend, date and the run it came from) that would make a fixed
-// figure in the README true on a reader's machine. These are the shapes such a
-// figure takes: a duration, a per-token time, a token or inference rate, and
-// "sub-millisecond".
+// figure in the README, a model card or the model manifest true on a reader's
+// machine. These are the shapes such a figure takes in prose: a duration, a
+// per-token time, a token or inference rate, and "sub-millisecond".
 const TIMING_PATTERNS = [
   /\d[\d,.]*\s*(?:ms|µs|μs|milliseconds?|microseconds?)\b/gi,
   /ms\s*(?:\/|per)\s*token/gi,
@@ -62,4 +63,45 @@ test('the analyst daemon the README names reports nlmLatencyMs and nlmTokenCount
     assert.ok(readme.includes(`\`${field}\``), `README does not name ${field}`);
     assert.ok(nlm.includes(`"${field}":`), `the analyst daemon reply carries no ${field}`);
   }
+});
+
+// Read from the manifest, so the card of a new analyst version is checked too.
+function analystModelCards() {
+  const versions = manifest.models['nanomind-security-analyst'].versions;
+  return [...new Set(Object.values(versions).map((record) => record.modelCard).filter(Boolean))];
+}
+
+test('the analyst model card states no timing figure', () => {
+  const cards = analystModelCards();
+  assert.ok(cards.length > 0, 'the manifest lists no model card for the analyst');
+  assert.deepEqual(cards.flatMap(timingHits), []);
+});
+
+test('the analyst model card names the reply fields that carry the measured time', () => {
+  const nlm = read('packages/nanomind-analyst/src/nanomind_analyst/daemon/_nlm.py');
+  for (const path of analystModelCards()) {
+    const card = read(path);
+    assert.ok(card.includes('`nanomind-analyst`'), `${path} does not name nanomind-analyst`);
+    for (const field of ['nlmLatencyMs', 'nlmTokenCount']) {
+      assert.ok(card.includes(`\`${field}\``), `${path} does not name ${field}`);
+      assert.ok(nlm.includes(`"${field}":`), `the analyst daemon reply carries no ${field}`);
+    }
+  }
+});
+
+// A metric in the manifest reads as a measurement, and the manifest has no
+// place beside it for the host, backend, date and run, so it records no timing
+// metric (a latency, a per-token time or a rate) for any model version.
+const TIMING_METRIC = /[Ll]atenc|PerSec|PerToken|Ms(?:[A-Z]|$)|Seconds?(?:[A-Z]|$)/;
+
+test('no model version in the manifest records a timing metric', () => {
+  const hits = [];
+  for (const [model, entry] of Object.entries(manifest.models)) {
+    for (const [version, record] of Object.entries(entry.versions ?? {})) {
+      for (const key of Object.keys(record.metrics ?? {})) {
+        if (TIMING_METRIC.test(key)) hits.push(`${model} ${version} metrics.${key}`);
+      }
+    }
+  }
+  assert.deepEqual(hits, []);
 });

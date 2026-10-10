@@ -9,7 +9,8 @@
   ],
   "scripts": {
     "build": "npm run build --workspace=@nanomind/engine --workspace=@nanomind/router && npm run build --workspaces --if-present",
-    "test": "node --test test/*.test.mjs && npm test --workspaces --if-present"
+    "test": "node --test test/*.test.mjs && npm test --workspaces --if-present",
+    "test:root": "node --test test/*.test.mjs"
   },
   "engines": {
     "node": ">=22.6.0"
