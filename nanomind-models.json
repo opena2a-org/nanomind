@@ -166,7 +166,9 @@
               "filename": "nanomind-security-analyst.Q4_K_M.gguf",
               "quantization": "Q4_K_M",
               "size": "544MB",
-              "backend": "llama.cpp (cross-platform)"
+              "backend": "llama.cpp (cross-platform)",
+              "hfRevision": null,
+              "hfRevisionNote": "Uploaded to opena2a/nanomind-security-analyst on 2026-04-13 in a commit after the 0.1.0 revision, which does not hold it; the path now holds the 3.0.0 file. The repository's commit history is not readable without signing in, so that commit and the digest of this file are not recorded."
             }
           },
           "metrics": {

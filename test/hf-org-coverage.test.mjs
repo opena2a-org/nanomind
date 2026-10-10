@@ -144,6 +144,57 @@ test('every repository entry states the access gate the repository has', { skip 
   }
 });
 
+test('a version with a recorded revision has its files and digests in that revision', { skip }, async (t) => {
+  for (const [modelName, model] of Object.entries(manifest.models)) {
+    const repoId = model.huggingface?.repoId;
+    for (const [version, sha] of Object.entries(model.huggingface?.revisions ?? {})) {
+      const where = `${modelName}.versions["${version}"]`;
+      const release = model.versions?.[version];
+      assert.ok(release, `${modelName}.huggingface.revisions names ${version}, which is not in versions`);
+
+      // A format stored in this repository names its own hfRevision when the version's
+      // revision does not hold its file. null states that the commit is not recorded.
+      const own = new Map();
+      for (const [formatName, format] of Object.entries(release.formats ?? {})) {
+        if (format.repoId || !format.filename || !Object.hasOwn(format, 'hfRevision')) continue;
+        own.set(format.filename, { field: `${where}.formats["${formatName}"].hfRevision`, revision: format.hfRevision });
+      }
+
+      const filesAt = async (revision) => {
+        const repo = await hfJson(`${HF_API}/${repoId}/revision/${revision}?blobs=true`);
+        return new Map(repo.siblings.map((file) => [file.rfilename, file]));
+      };
+      const atVersion = await filesAt(sha);
+
+      for (const file of new Set([...(release.files ?? []), ...Object.keys(release.sha256 ?? {})])) {
+        const pinned = own.get(file);
+        if (pinned?.revision === null) {
+          assert.ok(
+            !atVersion.has(file),
+            `${pinned.field} is null, yet ${file} is in ${repoId} at ${sha}; remove the null`,
+          );
+          assert.ok(!release.sha256?.[file], `${where}.sha256 states a digest for ${file}, which no recorded revision holds`);
+          t.diagnostic(`${where}: ${file} is in no recorded revision of ${repoId}`);
+          continue;
+        }
+
+        const revision = pinned?.revision ?? sha;
+        const held = pinned ? await filesAt(revision) : atVersion;
+        assert.ok(held.has(file), `${where} names ${file}, which is not in ${repoId} at ${revision}`);
+
+        const digest = release.sha256?.[file];
+        if (digest !== undefined) {
+          assert.equal(
+            digest,
+            held.get(file).lfs?.sha256,
+            `${where}.sha256["${file}"] differs from the LFS digest in ${repoId} at ${revision}`,
+          );
+        }
+      }
+    }
+  }
+});
+
 test('every recorded revision is a commit of its repository', { skip }, async () => {
   for (const { where, entry } of repoEntries()) {
     const recorded = Object.entries(entry.revisions ?? {}).map(([version, sha]) => [`revisions["${version}"]`, sha]);
