@@ -146,12 +146,14 @@ A persistent inference server that keeps the model loaded in memory. Called by t
 
 ```
 POST /v1/infer          — Classification endpoint
-  Request:  { intent, artifactType, content, packageName, version }
+  Request:  { intent, input, context?, priority? }
   Response: { intent, result, confidence, attackClass, classification, evidence?, remediation?, latencyMs, modelVersion }
 
 GET  /v1/status          — Model status and health
 GET  /health             — Daemon health check
 ```
+
+`input` is the text to classify. It must be a non-empty, non-whitespace string; any other value is rejected with HTTP 400 `invalid_request`. When `intent` is absent or empty, the daemon routes one from `input`. `context` (`agentId`, `driftScore`, `declaredPurpose`) and `priority` (`high`, `medium`, `low`) are optional; the daemon accepts them and the classifier does not read them.
 
 **FabricAdapter** provides a standardized interface for all products:
 

@@ -305,6 +305,29 @@ describe('spec conformance', () => {
     );
   });
 
+  it('§3.4 Request line is the real InferRequest field set', () => {
+    assert.ok(sec34.length > 0, 'docs/SPECIFICATION.md: cannot find the `### 3.4` heading');
+    const line = sec34.match(/^\s*Request:\s*\{([^}]*)\}/m);
+    assert.ok(line, 'docs/SPECIFICATION.md §3.4 carries a `Request: { ... }` line for /v1/infer');
+    const specFields = line[1].split(',').map(f => f.trim()).filter(Boolean);
+
+    const requestFields = tsInterfaceFields(SERVER_TS, SERVER_TS_PATH, 'InferRequest');
+    assert.deepStrictEqual(specFields, requestFields);
+
+    // The README's curl example sends only InferRequest fields.
+    const post = section('### POST /v1/infer', DAEMON_README);
+    assert.ok(post.length > 0, `${DAEMON_README_PATH}: cannot find the \`### POST /v1/infer\` heading`);
+    const body = post.match(/-d '(\{[\s\S]*?\})'/);
+    assert.ok(body, `${DAEMON_README_PATH}: \`### POST /v1/infer\` carries a curl \`-d '{ ... }'\` body`);
+    const known = new Set(requestFields.map(f => f.replace(/\?$/, '')));
+    for (const key of Object.keys(JSON.parse(body[1]))) {
+      assert.ok(
+        known.has(key),
+        `${DAEMON_README_PATH}: curl example sends \`${key}\`, which is not an InferRequest field`
+      );
+    }
+  });
+
   it('NMD-03.AC2 §3.4 Response line is the real InferResponse field set', () => {
     assert.ok(sec34.length > 0, 'docs/SPECIFICATION.md: cannot find the `### 3.4` heading');
     const line = sec34.match(/^\s*Response:\s*\{([^}]*)\}/m);
