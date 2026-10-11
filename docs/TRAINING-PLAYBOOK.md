@@ -167,10 +167,10 @@ python3 training/scripts/train-tme-mlx.py \
 **Training Output:**
 
 The script produces in `training/models-tme-v{N}/`:
-- `nanomind-tme-classifier.npz` -- Best checkpoint (MLX weights)
-- `nanomind-tme-classifier-final.npz` -- Final epoch checkpoint
-- `tokenizer.json` -- Vocabulary mapping
-- `eval-report.json` -- Full evaluation metrics
+- `nanomind-tme-classifier.npz`: Best checkpoint (MLX weights)
+- `nanomind-tme-classifier-final.npz`: Final epoch checkpoint
+- `tokenizer.json`: Vocabulary mapping
+- `eval-report.json`: Full evaluation metrics
 
 ### Step 3: Evaluate Results
 
@@ -178,8 +178,8 @@ Read `eval-report.json` and check:
 
 1. **Overall accuracy** >= threshold (currently 95%)
 2. **Per-class F1** >= 0.90 for all classes
-3. **Confusion matrix** -- are there systematic misclassifications?
-4. **All targets met?** -- If not, see troubleshooting below
+3. **Confusion matrix**: are there systematic misclassifications?
+4. **All targets met?** If not, see troubleshooting below
 
 ### Step 4: Export to ONNX
 
@@ -203,7 +203,7 @@ for f in tokenizer.json nanomind-tme.onnx nanomind-tme.onnx.data; do
 done
 ```
 
-Record these hashes -- they go in `nanomind-models.json` and in consumer code.
+Record these hashes. They go in `nanomind-models.json` and in consumer code.
 
 ### Step 6: Update Model Catalog
 
@@ -289,7 +289,7 @@ hackmyagent/src/nanomind-core/inference/tme-classifier.ts
 1. Check confusion matrix: what is it being confused with?
 2. Add more examples that distinguish the confused classes
 3. If class has < 300 training samples, augment from previous corpus or generate synthetic
-4. Check if eval samples for that class are too few (< 30) -- metrics may be noise
+4. Check if eval samples for that class are too few (< 30): metrics may be noise
 
 ### Problem: New class causes regression in existing classes
 
@@ -315,8 +315,8 @@ hackmyagent/src/nanomind-core/inference/tme-classifier.ts
 **Root cause:** PyTorch/ONNX version incompatibility or unsupported ops.
 
 **Solutions:**
-1. Check for opset version warnings -- newer PyTorch may export at opset 18+ while script requests 14
-2. The export script will auto-upgrade opset if needed -- check the warning output
+1. Check for opset version warnings: newer PyTorch may export at opset 18+ while script requests 14
+2. The export script will auto-upgrade opset if needed. Check the warning output
 3. Verify with onnxruntime: the script includes a verification step
 4. If verification fails, check that `num_classes` in the export script matches training
 

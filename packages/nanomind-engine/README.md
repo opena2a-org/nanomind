@@ -1,6 +1,6 @@
 # @nanomind/engine
 
-Core inference backend for NanoMind — wraps llamafile for local LLM inference.
+Core inference backend for NanoMind. It wraps llamafile for local LLM inference.
 
 ## Install
 

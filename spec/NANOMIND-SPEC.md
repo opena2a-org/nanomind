@@ -132,7 +132,7 @@ All non-direct input (piped, file, agent output) is screened for injection befor
 - Encoded payload patterns
 - Zero-width character injection
 
-Detected critical injections are blocked. Guard cannot be disabled via config — only `--no-guard` flag (which displays a visible warning).
+Detected critical injections are blocked. Guard cannot be disabled via config, only by the `--no-guard` flag (which displays a visible warning).
 
 ## 6. Conformance
 

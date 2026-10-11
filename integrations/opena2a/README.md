@@ -1,6 +1,6 @@
 # @nanomind/opena2a-adapter
 
-NanoMind adapter for the [opena2a](https://www.npmjs.com/package/opena2a-cli) umbrella CLI — the cross-product interactive router.
+NanoMind adapter for the [opena2a](https://www.npmjs.com/package/opena2a-cli) umbrella CLI, the cross-product interactive router.
 
 Users can ask natural-language questions about HackMyAgent, AIM, Secretless, OASB, and ATC from a single prompt. The adapter classifies intent and hands off to the appropriate subcommand.
 
@@ -10,7 +10,7 @@ Users can ask natural-language questions about HackMyAgent, AIM, Secretless, OAS
 npm install @nanomind/opena2a-adapter
 ```
 
-Normally consumed transitively by `opena2a-cli` — direct install is only needed when embedding the router in a custom surface.
+Normally consumed transitively by `opena2a-cli`. Direct install is only needed when embedding the router in a custom surface.
 
 ## Usage
 
