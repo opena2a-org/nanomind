@@ -100,12 +100,36 @@ describe('nanomind command', () => {
     assert.ok(run.stdout.includes('fake-hackmyagent secure .'), run.stdout);
   });
 
-  it('lists --no-guard in the help and rejects any other argument beside it', () => {
+  it('lists --no-guard in the help and rejects an unknown argument beside it', () => {
     assert.match(nanomind(['--help']).stdout, /nanomind --no-guard/);
     const run = nanomind(['--no-guard', 'setup']);
     assert.strictEqual(run.status, 1);
     assert.match(run.stderr, /Unknown command: setup/);
+    const option = nanomind(['--no-guard', '--frobnicate']);
+    assert.strictEqual(option.status, 1);
+    assert.match(option.stderr, /Unknown option: --frobnicate/);
   });
+
+  // --help and --version are answered before the argument check, so they win
+  // over --no-guard and no session starts.
+  for (const flag of ['--help', '-h']) {
+    it(`prints the help instead of starting a session for --no-guard ${flag}`, () => {
+      const run = nanomind(['--no-guard', flag]);
+      assert.strictEqual(run.status, 0, run.stderr);
+      assert.match(run.stdout, /Usage:/);
+      assert.ok(!run.stdout.includes('nanomind > '), 'help must not start a session');
+      assert.doesNotMatch(run.stderr, /WARNING: --no-guard is set\./);
+    });
+  }
+
+  for (const flag of ['--version', '-v']) {
+    it(`prints the version instead of starting a session for --no-guard ${flag}`, () => {
+      const run = nanomind(['--no-guard', flag]);
+      assert.strictEqual(run.status, 0, run.stderr);
+      assert.strictEqual(run.stdout.trim(), manifest.version);
+      assert.doesNotMatch(run.stderr, /WARNING: --no-guard is set\./);
+    });
+  }
 
   it('runs the command a request maps to and prints its output', { skip: process.platform === 'win32' }, () => {
     const run = nanomind([], { input: 'scan this project\n', path: fakeToolPath });
