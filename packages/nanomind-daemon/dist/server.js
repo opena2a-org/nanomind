@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.NanoMindDaemon = exports.DEFAULT_CONFIG = exports.ABSTAIN_CONFIDENCE_FLOOR = void 0;
+exports.NanoMindDaemon = exports.DEFAULT_CONFIG = exports.MAX_REQUEST_BODY_BYTES = exports.ABSTAIN_CONFIDENCE_FLOOR = void 0;
 const node_http_1 = require("node:http");
 const node_net_1 = require("node:net");
 const node_fs_1 = require("node:fs");
@@ -26,6 +26,18 @@ const SERVICE_COMMIT = typeof manifest_mts_1.manifest.gitHead === 'string' && /^
  * calibration) replaces this constant with a tuned floor.
  */
 exports.ABSTAIN_CONFIDENCE_FLOOR = 0.5;
+/**
+ * Largest request body `/v1/infer` reads: 1 MB (1,048,576 bytes). A body that
+ * declares a larger Content-Length, or that streams more bytes than this, is
+ * answered 413 before any of it is parsed; the bytes past the cap are
+ * discarded, never buffered.
+ */
+exports.MAX_REQUEST_BODY_BYTES = 1_048_576;
+class RequestTooLargeError extends Error {
+    constructor() {
+        super('request_too_large');
+    }
+}
 exports.DEFAULT_CONFIG = {
     httpPort: 47200,
     ipcPath: process.platform === 'win32'
@@ -223,7 +235,19 @@ class NanoMindDaemon extends node_events_1.EventEmitter {
         try {
             body = await parseJSON(req);
         }
-        catch {
+        catch (err) {
+            if (err instanceof RequestTooLargeError) {
+                // The connection stays open while the client finishes sending, and
+                // the rest of the body is discarded unread. Closing the socket here
+                // resets a connection that still has unread bytes, and the client
+                // then sees EPIPE or ECONNRESET instead of this 413.
+                res.writeHead(413);
+                res.end(JSON.stringify({
+                    error: 'request_too_large',
+                    message: `Request body exceeds ${exports.MAX_REQUEST_BODY_BYTES} bytes`,
+                }));
+                return;
+            }
             res.writeHead(400);
             res.end(JSON.stringify({ error: 'invalid_request', message: 'Invalid JSON body' }));
             return;
@@ -393,12 +417,33 @@ async function removeStaleSocket(path) {
     }
     (0, node_fs_1.unlinkSync)(path);
 }
-// Parse JSON body from IncomingMessage
+// Parse JSON body from IncomingMessage. Rejects with RequestTooLargeError,
+// and stops buffering, once the declared or received size passes
+// MAX_REQUEST_BODY_BYTES.
 function parseJSON(req) {
     return new Promise((resolve, reject) => {
+        if (Number(req.headers['content-length']) > exports.MAX_REQUEST_BODY_BYTES) {
+            reject(new RequestTooLargeError());
+            return;
+        }
         const chunks = [];
-        req.on('data', (chunk) => chunks.push(chunk));
+        let received = 0;
+        let tooLarge = false;
+        req.on('data', (chunk) => {
+            if (tooLarge)
+                return;
+            received += chunk.length;
+            if (received > exports.MAX_REQUEST_BODY_BYTES) {
+                tooLarge = true;
+                chunks.length = 0;
+                reject(new RequestTooLargeError());
+                return;
+            }
+            chunks.push(chunk);
+        });
         req.on('end', () => {
+            if (tooLarge)
+                return;
             try {
                 const body = JSON.parse(Buffer.concat(chunks).toString('utf-8'));
                 resolve(body);

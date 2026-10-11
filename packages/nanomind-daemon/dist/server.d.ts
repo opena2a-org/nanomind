@@ -98,6 +98,13 @@ export interface InferResponse {
  * calibration) replaces this constant with a tuned floor.
  */
 export declare const ABSTAIN_CONFIDENCE_FLOOR = 0.5;
+/**
+ * Largest request body `/v1/infer` reads: 1 MB (1,048,576 bytes). A body that
+ * declares a larger Content-Length, or that streams more bytes than this, is
+ * answered 413 before any of it is parsed; the bytes past the cap are
+ * discarded, never buffered.
+ */
+export declare const MAX_REQUEST_BODY_BYTES = 1048576;
 export declare const DEFAULT_CONFIG: DaemonConfig;
 export declare class NanoMindDaemon extends EventEmitter {
     private config;
