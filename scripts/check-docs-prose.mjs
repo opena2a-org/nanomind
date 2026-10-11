@@ -383,8 +383,9 @@ function filesOnDisk(cwd, dir = '') {
 }
 
 // The variables with which git names a repository to its child processes. A
-// git hook sets them for the checkout it runs in, and a git command that
-// inherits them reads that checkout whatever its working directory is.
+// git hook can inherit them (git sets GIT_DIR for a hook in a linked
+// worktree), and a git command that inherits them reads that repository
+// whatever its working directory is.
 const REPOSITORY_VARIABLE =
   /^GIT_(DIR|WORK_TREE|INDEX_FILE|PREFIX|COMMON_DIR|OBJECT_DIRECTORY|ALTERNATE_OBJECT_DIRECTORIES)$/;
 
