@@ -72,4 +72,4 @@ The classifier returns a confidence score between 0 and 1:
 
 ## License
 
-MIT
+Apache-2.0

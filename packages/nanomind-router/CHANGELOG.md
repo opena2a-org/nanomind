@@ -31,6 +31,8 @@
   SECRETS_EXPOSE. The pattern is tried before SCAN, which also matches
   "check", and accepts plural nouns and the verb before the noun.
   "detect" classifies as SCAN.
+- The `license` field in `package.json` reads `Apache-2.0`, the license in
+  the repository's LICENSE file. Earlier releases declared `MIT`.
 
 ## 0.1.3 — 2026-04-28
 

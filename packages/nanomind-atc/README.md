@@ -39,4 +39,4 @@ console.log(explanation.summary);
 
 ## License
 
-MIT
+Apache-2.0

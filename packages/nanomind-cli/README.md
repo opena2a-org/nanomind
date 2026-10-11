@@ -54,4 +54,4 @@ hma secure   # runs scan directly (NanoMind doesn't intercept commands)
 
 ## License
 
-MIT
+Apache-2.0

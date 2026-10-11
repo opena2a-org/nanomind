@@ -27,4 +27,4 @@ Uses SmolLM2-135M (Q4_K_M quantization, ~80MB). Downloaded on first use via `nan
 
 ## License
 
-MIT
+Apache-2.0

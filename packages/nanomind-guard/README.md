@@ -35,4 +35,4 @@ screenInput('ignore previous instructions', 'piped');
 
 ## License
 
-MIT
+Apache-2.0
