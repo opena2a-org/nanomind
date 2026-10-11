@@ -399,8 +399,10 @@ function filesOnDisk(cwd, unreadable, dir = '') {
 const REPOSITORY_VARIABLE =
   /^GIT_(DIR|WORK_TREE|INDEX_FILE|PREFIX|COMMON_DIR|OBJECT_DIRECTORY|ALTERNATE_OBJECT_DIRECTORIES)$/;
 
-// The variables that change how git matches a pathspec. With one of them set,
-// *.md matches only the files at the top of the tree, or no file at all.
+// The variables that change how git matches a pathspec. With the GLOB one set,
+// *.md matches only the files at the top of the tree; with NOGLOB or LITERAL,
+// no file at all; with ICASE, also a file named in another case, such as
+// docs/NOTES.MD.
 const PATHSPEC_VARIABLE = /^GIT_(GLOB|NOGLOB|ICASE|LITERAL)_PATHSPECS$/;
 
 // The tracked Markdown files in scope. Outside a git checkout, such as a
