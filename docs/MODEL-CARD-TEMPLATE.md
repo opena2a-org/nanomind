@@ -110,7 +110,7 @@ Example:
 {List specific weaknesses, failure modes, and data gaps.}
 
 Example:
-- Exfiltration F1 at 0.840 (below 0.90 target). Only 24 eval samples -- metrics are noisy.
+- Exfiltration F1 at 0.840 (below 0.90 target). Only 24 eval samples, so the metrics are noisy.
   Root cause: exfiltration overlaps semantically with credential_abuse and lateral_movement.
   Fix: add 100+ diverse exfiltration examples in next corpus.
 - No adversarial robustness testing (adversarial dataset not yet created).
