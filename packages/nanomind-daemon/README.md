@@ -317,7 +317,7 @@ interface OnnxEngineConfig {
 - Binds to `127.0.0.1` only (no external access).
 - The Unix socket at `ipcPath` is created with mode 0600: only the user running the daemon can connect to it.
 - Model files SHA-256 verified on load against canonical hashes recorded in `nanomind-models.json` (v0.5.0). Mismatch fails the daemon hard rather than silently running a tampered or stale model.
-- Request size capped at 1MB.
+- Request size capped at 1MB (1,048,576 bytes). A larger `/v1/infer` body gets HTTP 413 with `error: "request_too_large"` and is never parsed.
 - Rate limited to 100 requests/second.
 - No credentials in memory after model load.
 

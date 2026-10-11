@@ -723,6 +723,107 @@ describe('NanoMindDaemon Unix socket at ipcPath', {
   });
 });
 
+describe('NanoMindDaemon /v1/infer request body cap', () => {
+  let daemon: NanoMindDaemon;
+  const CAP_PORT = 47297; // distinct from the other suites' ports
+  const DOCUMENTED_CAP_BYTES = 1_048_576; // README: "Request size capped at 1MB."
+
+  let inferCalls = 0;
+  const stubEngine = {
+    ensureReady: async () => {},
+    infer: async () => {
+      inferCalls++;
+      return { text: 'stub-result' };
+    },
+  };
+
+  // POST a raw body with node:http so the test controls framing: with
+  // `chunked` set the body goes out in 64 KB writes and no Content-Length,
+  // so the server only learns the size by counting what it reads.
+  function postInfer(body: Buffer, chunked = false): Promise<{ status: number; body: string }> {
+    return new Promise((resolve) => {
+      let responded = false;
+      const headers: Record<string, string | number> = { 'Content-Type': 'application/json' };
+      if (!chunked) headers['Content-Length'] = body.length;
+      const req = request(
+        { host: '127.0.0.1', port: CAP_PORT, path: '/v1/infer', method: 'POST', headers },
+        (res) => {
+          responded = true;
+          let text = '';
+          res.setEncoding('utf-8');
+          res.on('data', (c: string) => { text += c; });
+          res.on('end', () => resolve({ status: res.statusCode ?? 0, body: text }));
+          res.on('error', () => resolve({ status: res.statusCode ?? 0, body: text }));
+        },
+      );
+      // An error before any response (EPIPE, ECONNRESET) means the client
+      // never got to read the status, which is itself a failure.
+      req.on('error', (err: NodeJS.ErrnoException) => {
+        if (!responded) resolve({ status: 0, body: `client error ${err.code ?? err.message}` });
+      });
+      if (chunked) {
+        for (let off = 0; off < body.length; off += 65536) {
+          req.write(body.subarray(off, off + 65536));
+        }
+        req.end();
+      } else {
+        req.end(body);
+      }
+    });
+  }
+
+  // A valid infer request whose serialized size is exactly `size` bytes.
+  function inferBodyOfSize(size: number): Buffer {
+    const prefix = '{"intent":"INTENT_CHECK","input":"';
+    const suffix = '"}';
+    return Buffer.from(prefix + 'a'.repeat(size - prefix.length - suffix.length) + suffix);
+  }
+
+  before(async () => {
+    daemon = new NanoMindDaemon({
+      httpPort: CAP_PORT,
+      idleUnloadSeconds: 60,
+      engine: stubEngine,
+    });
+    await daemon.start();
+    await new Promise(resolve => setTimeout(resolve, 100));
+  });
+
+  after(async () => {
+    await daemon.stop();
+  });
+
+  it('answers 413 to a body over the cap that declares its Content-Length', async () => {
+    inferCalls = 0;
+    const body = Buffer.from(JSON.stringify({ intent: 'X', input: 'a '.repeat(1048576) }));
+    assert.strictEqual(body.length, 2097177);
+
+    const resp = await postInfer(body);
+    assert.strictEqual(resp.status, 413, `expected 413, got ${resp.status} ${resp.body.slice(0, 80)}`);
+    const parsed = JSON.parse(resp.body) as { error: string; message: string };
+    assert.strictEqual(parsed.error, 'request_too_large');
+    assert.ok(parsed.message.includes(String(DOCUMENTED_CAP_BYTES)), 'message names the byte cap');
+    assert.strictEqual(inferCalls, 0, 'an oversized body must never reach the engine');
+  });
+
+  it('answers 413 to a chunked body once the bytes read pass the cap', async () => {
+    inferCalls = 0;
+    const resp = await postInfer(inferBodyOfSize(DOCUMENTED_CAP_BYTES + 1), true);
+    assert.strictEqual(resp.status, 413, `expected 413, got ${resp.status} ${resp.body.slice(0, 80)}`);
+    assert.strictEqual((JSON.parse(resp.body) as { error: string }).error, 'request_too_large');
+    assert.strictEqual(inferCalls, 0, 'an oversized body must never reach the engine');
+  });
+
+  it('accepts a body of exactly the cap and keeps serving after a rejection', async () => {
+    inferCalls = 0;
+    for (const chunked of [false, true]) {
+      const resp = await postInfer(inferBodyOfSize(DOCUMENTED_CAP_BYTES), chunked);
+      assert.strictEqual(resp.status, 200, `chunked=${chunked}: expected 200, got ${resp.status} ${resp.body.slice(0, 80)}`);
+    }
+    assert.strictEqual(inferCalls, 2);
+  });
+});
+
 /**
  * Acceptance test for Bug 2 (ONNX swap). Runs the real OnnxEngine against
  * 10 deterministically-sampled `injection`-labeled strings from the local

@@ -123,6 +123,20 @@ export interface InferResponse {
  */
 export const ABSTAIN_CONFIDENCE_FLOOR = 0.5;
 
+/**
+ * Largest request body `/v1/infer` reads: 1 MB (1,048,576 bytes). A body that
+ * declares a larger Content-Length, or that streams more bytes than this, is
+ * answered 413 before any of it is parsed; the bytes past the cap are
+ * discarded, never buffered.
+ */
+export const MAX_REQUEST_BODY_BYTES = 1_048_576;
+
+class RequestTooLargeError extends Error {
+  constructor() {
+    super('request_too_large');
+  }
+}
+
 export const DEFAULT_CONFIG: DaemonConfig = {
   httpPort: 47200,
   ipcPath: process.platform === 'win32'
@@ -333,7 +347,19 @@ export class NanoMindDaemon extends EventEmitter {
     let body: InferRequest;
     try {
       body = await parseJSON<InferRequest>(req);
-    } catch {
+    } catch (err) {
+      if (err instanceof RequestTooLargeError) {
+        // The connection stays open while the client finishes sending, and
+        // the rest of the body is discarded unread. Closing the socket here
+        // resets a connection that still has unread bytes, and the client
+        // then sees EPIPE or ECONNRESET instead of this 413.
+        res.writeHead(413);
+        res.end(JSON.stringify({
+          error: 'request_too_large',
+          message: `Request body exceeds ${MAX_REQUEST_BODY_BYTES} bytes`,
+        }));
+        return;
+      }
       res.writeHead(400);
       res.end(JSON.stringify({ error: 'invalid_request', message: 'Invalid JSON body' }));
       return;
@@ -510,12 +536,31 @@ async function removeStaleSocket(path: string): Promise<void> {
   unlinkSync(path);
 }
 
-// Parse JSON body from IncomingMessage
+// Parse JSON body from IncomingMessage. Rejects with RequestTooLargeError,
+// and stops buffering, once the declared or received size passes
+// MAX_REQUEST_BODY_BYTES.
 function parseJSON<T>(req: IncomingMessage): Promise<T> {
   return new Promise((resolve, reject) => {
+    if (Number(req.headers['content-length']) > MAX_REQUEST_BODY_BYTES) {
+      reject(new RequestTooLargeError());
+      return;
+    }
     const chunks: Buffer[] = [];
-    req.on('data', (chunk: Buffer) => chunks.push(chunk));
+    let received = 0;
+    let tooLarge = false;
+    req.on('data', (chunk: Buffer) => {
+      if (tooLarge) return;
+      received += chunk.length;
+      if (received > MAX_REQUEST_BODY_BYTES) {
+        tooLarge = true;
+        chunks.length = 0;
+        reject(new RequestTooLargeError());
+        return;
+      }
+      chunks.push(chunk);
+    });
     req.on('end', () => {
+      if (tooLarge) return;
       try {
         const body = JSON.parse(Buffer.concat(chunks).toString('utf-8'));
         resolve(body as T);
