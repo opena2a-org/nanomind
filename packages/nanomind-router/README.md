@@ -43,6 +43,8 @@ isScanIntent('EXPLAIN');     // false
 | ATTEST | "add trust attestation to my CI" | `opena2a attest` | `opena2a attest` | `opena2a attest` |
 | HELP | "help" | `hma --help` | `secretless-ai --help` | `opena2a --help` |
 
+A package name or agent id taken from the input is appended to the command only when it is a plain argument (`isPlainArgument`: ASCII letters, digits and `@ . : / + - _`, starting with a letter, digit or `@`). Otherwise that route is skipped and the next route for the intent applies, or the intent maps to `null` when there is none, so "check package: x;echo" runs `hma secure .` in `hma`.
+
 EXPLAIN, GENERATE, COMPARE, CONFIG, NAVIGATE, RISK_SCORE, REVOCATION and EXPOSURE are classified but have no route in these tables, and UNKNOWN never has one. A CLI without a table gets `<cli> secure .` for SCAN and SECRETS_EXPOSE, `<cli> secure --fix` for FIX, `<cli> secure --summary` for STATUS, and the ATC and HELP routes above.
 
 ### Security Scanning Intents (SCAN_*)

@@ -6,6 +6,7 @@ import {
   mapToCommand,
   commandTableFor,
   isATCIntent,
+  isPlainArgument,
   isScanIntent,
   COMMAND_TABLES,
   type IntentClassification,
@@ -212,6 +213,50 @@ describe('Per-CLI command tables', () => {
     assert.ok(cmd);
     assert.strictEqual(cmd.command, 'hma check');
     assert.deepStrictEqual(cmd.args, ['express']);
+  });
+
+  it('passes a scoped package name to hma check', () => {
+    assert.deepStrictEqual(route('check package: @scope/name', 'hma')?.args, ['@scope/name']);
+  });
+
+  // Entity values come from the request text and adapters run the mapped
+  // command through a shell, so a value a shell would interpret never
+  // becomes an argument: the route is skipped and the next one applies.
+  it('skips hma check when the package name holds shell characters', () => {
+    const secure = { command: 'hma secure', args: ['.'], description: 'Run security scan' };
+    assert.deepStrictEqual(route('check package: x;echo', 'hma'), secure);
+    assert.deepStrictEqual(route('check package: x;echo${IFS}INJECTED>out', 'hma'), secure);
+    assert.deepStrictEqual(route('check package: $(id)', 'hma'), secure);
+    assert.deepStrictEqual(route('check package: "a', 'hma'), secure);
+  });
+
+  it('skips hma check when the package name starts with a hyphen', () => {
+    assert.deepStrictEqual(route('check package: --fix', 'hma'), {
+      command: 'hma secure',
+      args: ['.'],
+      description: 'Run security scan',
+    });
+  });
+
+  it('maps to null when an optional entity value is not a plain argument and no other route applies', () => {
+    assert.strictEqual(mapToCommand(intent('TRUST_QUERY', { agentId: 'my-agent;id' }), 'opena2a'), null);
+    assert.strictEqual(mapToCommand(intent('TRUST_QUERY', { agentId: '--help' }), 'hma'), null);
+    assert.deepStrictEqual(mapToCommand(intent('TRUST_QUERY', { agentId: 'did:web:example.org' }), 'hma')?.args, ['did:web:example.org']);
+  });
+
+  it('isPlainArgument accepts identifiers and refuses shell syntax', () => {
+    for (const value of ['express', '@scope/name', 'my-agent', 'my_agent', 'v1.2.3', 'a:b', 'c++']) {
+      assert.strictEqual(isPlainArgument(value), true, value);
+    }
+    for (const value of ['', '-x', 'a;b', 'a b', 'a|b', 'a&b', '$HOME', '`id`', 'a>b', 'a<b', "a'b", 'a"b', '*', '~u', 'a\\b', 'a=b', '(a)', '{a}', '#a', '!a', 'aé']) {
+      assert.strictEqual(isPlainArgument(value), false, JSON.stringify(value));
+    }
+  });
+
+  it('isPlainArgument refuses a value that starts with anything but a letter, digit or @', () => {
+    for (const value of ['_x', '.x', '/x', ':x', '+x', 'éa']) {
+      assert.strictEqual(isPlainArgument(value), false, JSON.stringify(value));
+    }
   });
 
   it('keeps the hma scan, fix, status and help routes', () => {
