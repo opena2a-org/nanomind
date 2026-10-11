@@ -58,6 +58,7 @@ async function startDaemon(): Promise<void> {
   }
 
   const port = parseInt(process.env['NANOMIND_PORT'] ?? String(DEFAULT_CONFIG.httpPort), 10);
+  const ipcPath = process.env['NANOMIND_IPC_PATH'] || DEFAULT_CONFIG.ipcPath;
   const idleSeconds = parseInt(process.env['MODEL_IDLE_UNLOAD_SECONDS'] ?? String(DEFAULT_CONFIG.idleUnloadSeconds), 10);
 
   // Auto-download is enabled by default. Operators in air-gapped or
@@ -71,16 +72,18 @@ async function startDaemon(): Promise<void> {
 
   const daemon = new NanoMindDaemon({
     httpPort: port,
+    ipcPath,
     idleUnloadSeconds: idleSeconds,
     engine: new OnnxEngine({ noAutoDownload }),
   });
 
-  daemon.on('started', ({ port }: { port: number }) => {
+  daemon.on('started', ({ port, ipcPath }: { port: number; ipcPath: string }) => {
     // Write PID file
     mkdirSync(STATE_DIR, { recursive: true });
     writeFileSync(PID_FILE, String(process.pid));
 
     console.log(`NanoMind daemon started on http://127.0.0.1:${port}`);
+    console.log(`Unix socket: ${ipcPath}`);
     console.log(`PID: ${process.pid}`);
     console.log(`Model idle unload: ${idleSeconds}s`);
     console.log(`Max concurrent: ${DEFAULT_CONFIG.maxConcurrent}`);
@@ -169,6 +172,7 @@ Options:
 
 Environment:
   NANOMIND_PORT                HTTP port (default: 47200)
+  NANOMIND_IPC_PATH            Unix socket path (default: ${DEFAULT_CONFIG.ipcPath})
   MODEL_IDLE_UNLOAD_SECONDS    Unload model after N seconds idle (default: 300)
   NANOMIND_NO_AUTO_DOWNLOAD    Set to "1" to disable auto-download
                                (equivalent to --no-download)
@@ -186,6 +190,9 @@ API:
 
   GET  http://127.0.0.1:47200/v1/status
   GET  http://127.0.0.1:47200/health
+
+  The same routes are served over the Unix socket (mode 0600, owner only):
+    curl --unix-socket ${DEFAULT_CONFIG.ipcPath} http://localhost/v1/status
 `.trim());
 }
 
