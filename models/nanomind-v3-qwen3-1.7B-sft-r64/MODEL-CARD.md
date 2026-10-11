@@ -40,8 +40,8 @@ model-index:
 
 **v3.0.0** · Qwen3-1.7B fine-tuned (LoRA r=64 SFT) for structured AI-agent security analysis · Apache-2.0
 
-Give it an AI agent artifact — an npm package, an MCP server config, a SKILL.md,
-a GitHub repo snippet — and it returns a structured security assessment:
+Give it an AI agent artifact (an npm package, an MCP server config, a SKILL.md,
+a GitHub repo snippet) and it returns a structured security assessment:
 `Analysis` / `Verdict` / `Evidence` / `Remediation` sections, where the Verdict
 block carries a `classification`, an `attackClass`, a `confidence`, and a
 `severity`. It is the reasoning tier of NanoMind. Its companion,
@@ -95,8 +95,8 @@ severity: critical
 
 The scored fields (`classification` / `attackClass` / `confidence` / `severity`)
 are emitted **inside the `## Verdict` block**, not at the top. Each generation
-also begins with an empty `<think></think>` block (a Qwen3 base artifact) —
-parse for the `##` section headers and the `classification:` / `attackClass:` /
+also begins with an empty `<think></think>` block (a Qwen3 base artifact).
+Parse for the `##` section headers and the `classification:` / `attackClass:` /
 `severity:` lines, which follow it. See the reference parser in
 [`nanomind-analyst`](https://github.com/opena2a-org/nanomind).
 
@@ -104,7 +104,7 @@ parse for the `##` section headers and the `classification:` / `attackClass:` /
 
 This is a specialist model. It expects the exact prompt framing below (a fixed
 system message plus the artifact wrapped in `<artifact>` tags) and **greedy
-decoding**. That framing is how it was trained and evaluated — the numbers on
+decoding**. That framing is how it was trained and evaluated. The numbers on
 this card assume it. Note that `generation_config.json` carries the Qwen3 base
 sampling defaults (`temperature 0.6`); override them with `do_sample=False` to
 reproduce the evaluated behaviour.
@@ -152,19 +152,19 @@ the bundled template is the stock Qwen3 template with `<think>` reasoning mode.
 The SFT model emits only an *empty* `<think></think>` block before the answer,
 so parse for the `##` sections that follow it.
 
-### llama.cpp (quantized GGUF) — CPU only on Apple Silicon
+### llama.cpp (quantized GGUF): CPU only on Apple Silicon
 
 The repo ships `nanomind-security-analyst.Q4_K_M.gguf` (~1.05 GB).
 
 > **Quantized GGUFs run on CPU only on Apple Silicon.** Under Metal / GPU
-> offload (`n_gpu_layers != 0`) every quantized GGUF for this model — `Q4_K_M`,
-> `Q5_K_M`, `Q6_K`, `Q8_0` — produces broken output (a run of `!` tokens). This
+> offload (`n_gpu_layers != 0`) every quantized GGUF for this model (`Q4_K_M`,
+> `Q5_K_M`, `Q6_K`, `Q8_0`) produces broken output (a run of `!` tokens). This
 > is a llama.cpp Metal quantized-kernel issue specific to this Qwen3-1.7B
 > architecture, **not** a bit-width or fidelity problem: the full-precision
 > `bf16` GGUF runs correctly on Metal, and every quant runs correctly on CPU
 > (`n_gpu_layers=0`). On CUDA, GPU offload is fine.
 > **For GPU inference on Apple Silicon, use the [MLX build](https://huggingface.co/opena2a/nanomind-security-analyst-mlx)
-> (recommended) — see below.**
+> (recommended). See below.**
 
 ```python
 from llama_cpp import Llama
@@ -192,12 +192,12 @@ print(out["choices"][0]["message"]["content"])
 > the MLX build below (fast GPU) or run the GGUF on CPU; the Transformers + MPS
 > path also works.
 
-### MLX (Apple Silicon GPU — recommended)
+### MLX (Apple Silicon GPU, recommended)
 
 For correct, fast GPU inference on a Mac, use the native MLX build:
 [`opena2a/nanomind-security-analyst-mlx`](https://huggingface.co/opena2a/nanomind-security-analyst-mlx)
 (8-bit, ~1.7 GB). MLX uses Apple's own Metal kernels, which are not affected by
-the llama.cpp quantized-Metal issue above — verified 0% garbage on Metal, with
+the llama.cpp quantized-Metal issue above: verified 0% garbage on Metal, with
 malicious recall matching the bf16 reference (0.98 vs 0.96, n=100).
 
 ```bash
@@ -281,7 +281,7 @@ Built for **AI-agent security artifacts**: npm packages, MCP server configs,
 SKILL.md / SOUL.md governance docs, tool definitions, and agent-bearing repos.
 
 Not built for general text analysis, arbitrary code review outside the agent
-context, or security-advisory generation. See Limitation 1 — on off-topic input
+context, or security-advisory generation. See Limitation 1: on off-topic input
 the model hallucinates attack classes rather than refusing.
 
 ## Known limitations
@@ -310,7 +310,7 @@ deployment. Off-topic discrimination is a v4 corpus item.
 The false-positive rate is low on ordinary benign artifacts (~1% on a 600-sample
 benign corpus) but high on **dual-use security code**: legitimate JWT validators,
 RBAC, rate limiters, parameterized queries, and crypto libraries. On a repaired
-82-sample benign-security gate, v3.0.0 correctly suppresses 63/82 (~77%) — it
+82-sample benign-security gate, v3.0.0 correctly suppresses 63/82 (~77%). It
 over-flags roughly one in four security-library artifacts. (An earlier 57% figure
 was depressed by a gate later found to be 41% placeholder filler; ~77% is the rate
 on the all-real repaired gate.)
@@ -318,10 +318,10 @@ on the all-real repaired gate.)
 The failure can be self-contradictory: on a benign governance doc, v3.0.0 has
 emitted `classification: malicious` **while its own Analysis text says the label
 is unjustified**, with `confidence: 0.15`, `severity: none`, and an empty
-`attackClass`. So treat `classification` alone as unreliable on benign input —
-read `confidence` and `severity` together, and human-review findings on packages
+`attackClass`. So treat `classification` alone as unreliable on benign input.
+Read `confidence` and `severity` together, and human-review findings on packages
 whose primary purpose is security. A corpus retrain to close this (v3.1) was a
-no-go — it regressed attack detection — so v3.0.0 remains production and the
+no-go (it regressed attack detection), so v3.0.0 remains production and the
 scoped fix is a benign-security pre-pass in front of the analyst, not a retrain.
 
 ### 3. Injection recall is low (F1 0.479)
@@ -355,7 +355,7 @@ In the OpenA2A stack the model does not run bare. It sits behind the
 integrity (SHA-256), and serves classification over a local socket. In front of
 it runs an **input-classifier gate** (MiniLM-L6 + logistic regression at
 threshold 0.90, plus a byte-level BIDI/steganography pre-filter). Neither the
-daemon nor the gate is part of this repo — if you run the weights directly, you
+daemon nor the gate is part of this repo. If you run the weights directly, you
 get the raw specialist model and its Limitation 1 behaviour. For scanning real
 projects, use HMA.
 
@@ -385,14 +385,14 @@ For maintainers. Not needed to use the model.
 
 ### Version / decision history
 
-- **v3.0.0** (2026-05-11) — stable. Promoted from `v3.0.0-beta` (2026-04-16),
+- **v3.0.0** (2026-05-11): stable. Promoted from `v3.0.0-beta` (2026-04-16),
   same artifact, shipped with the documented FP-suppression limitation. Base swap
   SmolLM2-12L → Qwen3-1.7B; oracle 10-way +34.4 pp, binary +19.6 pp vs the
   SmolLM2 predecessor.
-- **2026-06-03** — FP-suppression caveat corrected 57% → ~77% after the
+- **2026-06-03**: FP-suppression caveat corrected 57% → ~77% after the
   benign-security gate was found to be 41% placeholder filler and repaired
   (see Limitation 2).
-- **2026-06-07** — input-classifier gate threshold 0.65 → 0.90,
+- **2026-06-07**: input-classifier gate threshold 0.65 → 0.90,
   trading off-topic discrimination for +29 pts attack recall. Supersedes the 92%
   e2e off-topic-refusal operating-point claim (see Limitation 1).
 - The classifier line ends at v0.5.0 (Mamba TME); the analyst (this model and
@@ -407,10 +407,10 @@ For maintainers. Not needed to use the model.
 | Oracle canonicalized 10-way | ≥70.0% | 70.0% (350/500) | PASS |
 | Oracle binary | beat SmolLM2 78.2% | 97.8% | PASS (+19.6 pp) |
 | Oracle attack-only 9-way | beat SmolLM2 29.8% | 67.3% | PASS (+37.6 pp) |
-| Structure adherence | — | 98.9% | report |
-| Refusal — off-topic (standalone) | ≥90% | 34.0% | FAIL — Limitation 1 |
-| Refusal — in-domain | ≥90% | 100.0% | PASS |
-| FP-suppression — benign security code | ≥95% | 77% (63/82, repaired v2 gate; the shipped 57% was on a gate later found 41% placeholder filler) | LIMITATION 2 |
+| Structure adherence | N/A | 98.9% | report |
+| Refusal (off-topic, standalone) | ≥90% | 34.0% | FAIL (Limitation 1) |
+| Refusal (in-domain) | ≥90% | 100.0% | PASS |
+| FP-suppression (benign security code) | ≥95% | 77% (63/82, repaired v2 gate; the shipped 57% was on a gate later found 41% placeholder filler) | LIMITATION 2 |
 
 ### Per-class metrics (oracle, 500 samples, canonicalized)
 

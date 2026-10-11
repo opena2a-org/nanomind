@@ -185,7 +185,7 @@ If the eval set has < 30 samples per class:
 
 1. **Merge holdout** into eval. Document this in the model card.
 2. **Report confidence intervals** on per-class F1 (bootstrap or Wilson).
-3. **Flag metrics as provisional** -- they will be recalculated when more data is available.
+3. **Flag metrics as provisional**: they will be recalculated when more data is available.
 4. **Prioritize data collection** for the next corpus version.
 
 This is exactly what happened with v0.4.0: the sft-v9 eval set had only 11-16 samples for some classes. Holdout was merged into eval (194 + 204 = 398 total), and the exfiltration class still has only 24 eval samples (below the 30 minimum).

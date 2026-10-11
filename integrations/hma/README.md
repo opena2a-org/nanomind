@@ -2,7 +2,7 @@
 
 NanoMind adapter for [HackMyAgent](https://www.npmjs.com/package/hackmyagent).
 
-When `hma` is invoked with no arguments, this adapter launches NanoMind's interactive mode — natural-language routing into HMA scan / detect / secure / check workflows.
+When `hma` is invoked with no arguments, this adapter launches NanoMind's interactive mode: natural-language routing into HMA scan / detect / secure / check workflows.
 
 ## Install
 
@@ -10,7 +10,7 @@ When `hma` is invoked with no arguments, this adapter launches NanoMind's intera
 npm install @nanomind/hma-adapter
 ```
 
-Normally consumed transitively by `hackmyagent` — direct install is only needed when wiring a custom launcher.
+Normally consumed transitively by `hackmyagent`. Direct install is only needed when wiring a custom launcher.
 
 ## Usage
 

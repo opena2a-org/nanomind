@@ -1,6 +1,6 @@
 # @nanomind/cli
 
-NanoMind interactive CLI — AI-powered security assistant for HackMyAgent, secretless-ai, and OpenA2A tools.
+NanoMind interactive CLI: AI-powered security assistant for HackMyAgent, secretless-ai, and OpenA2A tools.
 
 ## Install
 

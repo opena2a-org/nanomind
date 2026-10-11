@@ -10,7 +10,7 @@ When `secretless-ai` is invoked with no arguments, this adapter launches NanoMin
 npm install @nanomind/secretless-adapter
 ```
 
-Normally consumed transitively by `secretless-ai` — direct install is only needed when wiring a custom launcher.
+Normally consumed transitively by `secretless-ai`. Direct install is only needed when wiring a custom launcher.
 
 ## Usage
 

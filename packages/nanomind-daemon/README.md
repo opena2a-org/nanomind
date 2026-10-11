@@ -75,7 +75,7 @@ Response (benign):
 }
 ```
 
-Response (abstain — model could not produce a usable verdict):
+Response (abstain: model could not produce a usable verdict):
 
 ```json
 {
@@ -95,7 +95,7 @@ Response (abstain — model could not produce a usable verdict):
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `intent` | string | yes | Echoes the request intent (or routed intent if not provided). |
-| `result` | string | yes | Raw model label (e.g. `"injection"`, `"benign"`) — convenience for human-readable logs. |
+| `result` | string | yes | Raw model label (e.g. `"injection"`, `"benign"`). Convenience for human-readable logs. |
 | `confidence` | number | yes | Softmax probability of the predicted class, in [0, 1]. |
 | `attackClass` | string | yes | Canonical attack-class label, or empty string. See enum + mapping below. On `abstain` it is forced to `""`. |
 | `classification` | string | yes | `"classified"` or `"abstain"`. See "classification (abstain signal)" below. |
@@ -108,7 +108,7 @@ Response (abstain — model could not produce a usable verdict):
 
 §3.4.1 of [`docs/SPECIFICATION.md`](../../docs/SPECIFICATION.md) is the normative definition of this namespace; the three tables below are a derived copy, kept honest by `src/spec-conformance.test.ts`.
 
-The field is always emitted. An empty string means "no confident attack verdict" — read `classification` to tell a confident benign from an abstain. Non-empty values are produced by the v0.5.0 production classifier:
+The field is always emitted. An empty string means "no confident attack verdict". Read `classification` to tell a confident benign from an abstain. Non-empty values are produced by the v0.5.0 production classifier:
 
 | Value | Meaning |
 |---|---|
@@ -137,14 +137,14 @@ The model emits 10 raw labels (matching the 10-class training corpus). The daemo
 
 ### `classification` (abstain signal)
 
-Added in 0.4.0 (FGA Step 5 Stage 1, issue #131). `classification` tells the consumer whether `attackClass` is a usable verdict or a deterministic fallback, so a confident benign is distinguishable from "the model couldn't answer" — both of which carry `attackClass: ""`.
+Added in 0.4.0 (FGA Step 5 Stage 1, issue #131). `classification` tells the consumer whether `attackClass` is a usable verdict or a deterministic fallback, so a confident benign is distinguishable from "the model couldn't answer", both of which carry `attackClass: ""`.
 
 | Value | Meaning |
 |---|---|
 | `"classified"` | The model produced a usable verdict (benign OR an attack class) at or above `ABSTAIN_CONFIDENCE_FLOOR` (0.5). `attackClass` is authoritative. |
-| `"abstain"` | The model could not produce a usable verdict — inference threw (the HTTP 500 path), the engine reported no usable confidence (a missing or `NaN` score), or the predicted-class confidence was below the floor. `attackClass` is forced to `""` so a low-confidence guess is never actionable; the raw guess is preserved in `evidence`. A non-classifying engine abstains rather than reporting a confident benign. |
+| `"abstain"` | The model could not produce a usable verdict: inference threw (the HTTP 500 path), the engine reported no usable confidence (a missing or `NaN` score), or the predicted-class confidence was below the floor. `attackClass` is forced to `""` so a low-confidence guess is never actionable; the raw guess is preserved in `evidence`. A non-classifying engine abstains rather than reporting a confident benign. |
 
-The daemon never emits a transport-level `"fail_open"` — that is the consumer's status for "couldn't reach / couldn't decode the daemon". The HTTP 500 error body also carries `classification: "abstain"` so a consumer that reads the body without checking the status code still sees an explicit abstain.
+The daemon never emits a transport-level `"fail_open"`. That is the consumer's status for "couldn't reach / couldn't decode the daemon". The HTTP 500 error body also carries `classification: "abstain"` so a consumer that reads the body without checking the status code still sees an explicit abstain.
 
 `ABSTAIN_CONFIDENCE_FLOOR` (0.5) is a conservative Stage-1 heuristic, not a calibrated value. Because the v0.5.0 classifier saturates confidence near 1.0 on most inputs, it rarely trips today; Stage 2 (selective-risk calibration) replaces it.
 
@@ -188,7 +188,7 @@ The v0.5.0 Mamba-TME classifier ships with documented limitations on inputs outs
 **Recommended consumer mitigations until v0.6.0:**
 
 - Set `confidence > 0.95` (not `0.8`) before treating a non-empty `attackClass` as actionable.
-- Combine the classifier signal with a corroborating signal (rule-based detectors, telemetry, capability checks) before blocking — do not rely on the classifier alone for high-stakes decisions.
+- Combine the classifier signal with a corroborating signal (rule-based detectors, telemetry, capability checks) before blocking. Do not rely on the classifier alone for high-stakes decisions.
 - Log every `(input, attackClass, confidence)` triple. Out-of-distribution behavior is the input source for the v0.6.0 retrain corpus.
 
 A retrain to v0.6.0 with broader corpus coverage is tracked separately. The 5-value canonical `attackClass` enum will not change between v0.5.0 and v0.6.0; only model accuracy improves.
@@ -224,7 +224,7 @@ The daemon loads the v0.5.0 production NanoMind classifier (Mamba-TME, 8 blocks,
 
 | File | Purpose |
 |---|---|
-| `nanomind-tme.onnx` | ONNX graph (architecture only — small). |
+| `nanomind-tme.onnx` | ONNX graph (architecture only, small). |
 | `nanomind-tme.onnx.data` | External weights data file (~8MB). |
 | `tokenizer.json` | Word-level vocabulary (6000 entries). |
 
@@ -256,7 +256,7 @@ NANOMIND_NO_AUTO_DOWNLOAD=1 nanomind-daemon start
 
 ### Programmatic API
 
-The `OnnxEngineConfig` surface is additive — defaults preserve the new
+The `OnnxEngineConfig` surface is additive: defaults preserve the new
 auto-download:
 
 ```ts

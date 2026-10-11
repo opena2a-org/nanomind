@@ -9,13 +9,13 @@
 
 ## 1. What NanoMind Is
 
-NanoMind is the embedded machine learning layer for the OpenA2A security ecosystem. It provides on-device neural inference for threat classification, behavioral anomaly detection, and intent routing -- without requiring cloud API calls.
+NanoMind is the embedded machine learning layer for the OpenA2A security ecosystem. It provides on-device neural inference for threat classification, behavioral anomaly detection, and intent routing, without requiring cloud API calls.
 
 NanoMind is NOT a product. It is infrastructure. It runs inside other tools (HMA, ai-trust, OASB, AIM, aibrowserguard, ARP) as a dependency. End users never interact with NanoMind directly.
 
 ## 2. Mission
 
-Achieve **99.999% accuracy** in classifying AI agent security threats. Every false positive erodes trust in the tools that depend on NanoMind. Every false negative is a missed attack. The accuracy target is not aspirational -- it is the engineering standard.
+Achieve **99.999% accuracy** in classifying AI agent security threats. Every false positive erodes trust in the tools that depend on NanoMind. Every false negative is a missed attack. The accuracy target is not aspirational. It is the engineering standard.
 
 ### 2.1 Current Reality vs Target
 
@@ -28,7 +28,7 @@ Achieve **99.999% accuracy** in classifying AI agent security threats. Every fal
 | Training samples | 3,337 | 50,000+ | ~47,000 |
 | Eval samples | 398 | 5,000+ | ~4,600 |
 
-The path to 99.999% is primarily a data problem, not an architecture problem. The Mamba TME architecture learns well -- it hits 100% training accuracy. The gap is generalization, which requires more diverse, high-quality training data.
+The path to 99.999% is primarily a data problem, not an architecture problem. The Mamba TME architecture learns well: it hits 100% training accuracy. The gap is generalization, which requires more diverse, high-quality training data.
 
 ### 2.2 Non-Goals
 
@@ -130,7 +130,7 @@ When the Registry processes incoming intelligence (Shodan sweeps, advisory feeds
 | **Tier 1: NanoMind Heuristic** | >= 0.70 | Pass (relevant to OpenA2A) | Free |
 | **Tier 1: NanoMind Heuristic** | 0.35 - 0.70 | Escalate to Claude for semantic analysis | ~$0.01/item |
 | **Tier 1: NanoMind Heuristic** | < 0.35 | Discard (not relevant) | Free |
-| **Tier 2: Claude Escalation** | -- | Full semantic classification + remediation | ~$0.05/item |
+| **Tier 2: Claude Escalation** | N/A | Full semantic classification + remediation | ~$0.05/item |
 
 Heuristic signals scored (0-1):
 - Attack category keywords: +0.15 per match, +0.10 bonus for 2+ categories
@@ -188,7 +188,7 @@ The empty string is this namespace's not-applicable marker, exactly as `none` is
 
 | Value | Meaning |
 |-------|---------|
-| `classified` | The model produced a usable verdict — benign or an attack class — at or above the abstain confidence floor. `attackClass` is authoritative, and `""` is a confident benign. |
+| `classified` | The model produced a usable verdict (benign or an attack class) at or above the abstain confidence floor. `attackClass` is authoritative, and `""` is a confident benign. |
 | `abstain` | The model could not produce a usable verdict: inference threw, the engine reported no usable confidence, or the predicted class's confidence was below the floor. `attackClass` is forced to `""` and MUST NOT be read as benign; the raw guess, where there was one, is preserved in `evidence`. |
 
 The abstain confidence floor is `0.5`. It is a conservative Stage-1 heuristic, not a calibrated value.
@@ -210,11 +210,11 @@ A consumer MUST read `classification` before treating `attackClass: ""` as a ver
 | `lateral_movement` | `tool_misuse` |
 | `policy_violation` | `tool_misuse` |
 
-The mapping is total over §4.2 — each of the ten classes appears exactly once — and onto the enum: every non-empty enum value is reached by at least one row. This specification is the normative definition of this namespace; the daemon package README carries a derived copy, and the daemon package holds the conformance test that keeps the copy honest.
+The mapping is total over §4.2 (each of the ten classes appears exactly once) and onto the enum: every non-empty enum value is reached by at least one row. This specification is the normative definition of this namespace; the daemon package README carries a derived copy, and the daemon package holds the conformance test that keeps the copy honest.
 
 ### 3.5 Federated Learning Protocol (L2 Fleet Intelligence)
 
-NanoMind-Runtime implements federated learning for fleet-wide behavioral model improvement. Raw behavioral events NEVER leave endpoints -- only differentially-private gradients are submitted.
+NanoMind-Runtime implements federated learning for fleet-wide behavioral model improvement. Raw behavioral events NEVER leave endpoints. Only differentially-private gradients are submitted.
 
 **Three-Tier ARP Model:**
 
@@ -340,7 +340,7 @@ Every tool that uses NanoMind MUST:
 3. **Handle all classes** in the current taxonomy (unknown classes logged, not crashed), and the emitted-token vocabulary of §4.3: `attackClass: none` is the benign case, never an unknown class
 4. **Graceful degradation** if model download fails or ONNX runtime unavailable
 5. **Report inference latency** if it exceeds the target for that mode
-6. **Never trust a single signal** -- NanoMind classification is one input to the decision, not the decision itself (defense-in-depth)
+6. **Never trust a single signal**: NanoMind classification is one input to the decision, not the decision itself (defense-in-depth)
 
 ### 5.1 Current Consumers
 
@@ -350,7 +350,7 @@ Every tool that uses NanoMind MUST:
 | HMA | `src/nanomind-core/analyzers/` | security-classifier | Semantic analysis |
 | HMA | `src/semantic/nanomind-enhancer.ts` | security-classifier | Finding enrichment |
 | OpenA2A CLI | Via adapter | security-classifier | Delegated to HMA |
-| ai-trust | Planned | trust-scorer | -- |
+| ai-trust | Planned | trust-scorer | N/A |
 | OASB | Planned | security-classifier | Benchmark validation |
 | aibrowserguard | Planned | security-classifier | Browser-level detection |
 | ARP | Planned | runtime-guard | Behavioral anomaly |
@@ -430,9 +430,9 @@ The Registry collects two tiers of feedback that feed directly into retraining:
 
 1. **Real data >= 50%** of every training corpus. Synthetic data fills gaps but must never be the majority.
 2. **Every synthetic sample must be reviewed** before inclusion in a "stable" or "latest" model.
-3. **Benign samples must include realistic diversity** -- emoji, CJK, Cyrillic, Arabic, Indic scripts. A model trained only on ASCII benign data will false-positive on internationalized content.
+3. **Benign samples must include realistic diversity**: emoji, CJK, Cyrillic, Arabic, Indic scripts. A model trained only on ASCII benign data will false-positive on internationalized content.
 4. **No data leakage** between train/eval/holdout splits. Deduplication by content hash is mandatory.
-5. **Class balance within 20%** -- no class should have more than 1.2x or less than 0.8x the median class count.
+5. **Class balance within 20%**: no class should have more than 1.2x or less than 0.8x the median class count.
 6. **Eval set minimum: 30 samples per class.** Below this, per-class F1 is too noisy to be meaningful. If the eval set is too small, merge holdout into eval (document this in the model card).
 
 ### 6.3 Known Data Gaps (as of v0.4.0)
@@ -444,7 +444,7 @@ The Registry collects two tiers of feedback that feed directly into retraining:
 
 ## 7. Speed and Size Budgets
 
-NanoMind models run on user machines -- laptops, CI runners, Raspberry Pis. They must be small and fast.
+NanoMind models run on user machines: laptops, CI runners, Raspberry Pis. They must be small and fast.
 
 ### 7.1 Budgets by Deployment Mode
 
@@ -543,7 +543,7 @@ Benchmark datasets are stored in `nanomind-training/benchmarks/` and MUST NOT ov
 
 ## 10. Roadmap to 99.999%
 
-The path to 99.999% is not manual curation. It is the **Registry intelligence pipeline** -- 477K+ real-world package scans, AgentPwn confirmed attacks, ARIA research findings, and continuous feedback corrections. The data exists. The pipeline exists. The work is connecting them to the training loop.
+The path to 99.999% is not manual curation. It is the **Registry intelligence pipeline**: 477K+ real-world package scans, AgentPwn confirmed attacks, ARIA research findings, and continuous feedback corrections. The data exists. The pipeline exists. The work is connecting them to the training loop.
 
 ### 10.1 Data Scale (highest impact)
 
@@ -606,13 +606,13 @@ As the model scales to handle more nuance, the class taxonomy will expand toward
 
 | Endpoint | Method | Rate | Purpose |
 |----------|--------|------|---------|
-| `/api/v1/nanomind/latest` | GET | -- | Auto-update: latest model version, SHA-256, download URL |
+| `/api/v1/nanomind/latest` | GET | N/A | Auto-update: latest model version, SHA-256, download URL |
 | `/api/v1/nanomind/telemetry` | POST | 60/min | Tier 1: anonymous classification stats (no content) |
 | `/api/v1/nanomind/feedback` | POST | 30/min | Tier 2: labeled feedback with content for retraining |
-| `/api/v1/nanomind/stats` | GET | -- | 7-day aggregate: classifications by tool, correction rates |
-| `/api/v1/trust/publish` | POST | -- | Unified scan ingestion (all tools → Registry) |
-| `/api/v1/atc/{agentId}` | GET | -- | Trust level query (cached 5 min) |
-| `/api/v1/threat-matrix/classes` | GET | -- | 36+ attack classes (maps to NanoMind output) |
+| `/api/v1/nanomind/stats` | GET | N/A | 7-day aggregate: classifications by tool, correction rates |
+| `/api/v1/trust/publish` | POST | N/A | Unified scan ingestion (all tools → Registry) |
+| `/api/v1/atc/{agentId}` | GET | N/A | Trust level query (cached 5 min) |
+| `/api/v1/threat-matrix/classes` | GET | N/A | 36+ attack classes (maps to NanoMind output) |
 
 ### 11.2 Internal Endpoints (require `INTERNAL_API_KEY`)
 
@@ -670,7 +670,7 @@ The model owner is responsible for:
 | 2026-04 | Augmented v9 with v8 attack data | v9 alone had too few samples per class (318 vs 400) |
 | 2026-04 | Excluded v8 policy_violation from augmentation | Contaminated with stego examples that were relabeled in v9 |
 | 2026-09 | Defined the emitted-token vocabulary (§4.3): `none` is the benign-case token and normalizes to class `benign`; not an eleventh class | The spec defined classes but never the emitted token, so two spellings of the benign case were both locally defensible; a null marker admitted as a class would be a terminal-benign path with no verdict cross-check |
-| 2026-09 | Defined the `/v1/infer` wire vocabulary (§3.4.1): the five-value `attackClass` enum whose empty string is the not-applicable marker, the `classified`/`abstain` statuses, the 0.5 abstain floor, and the total mapping from the ten §4.2 classes | The wire contract existed only in the daemon package README, so a consumer reading the spec alone could not tell a confident benign (`classified`, `""`) from an abstain (`abstain`, `""`) — both of which carry the same empty `attackClass` |
+| 2026-09 | Defined the `/v1/infer` wire vocabulary (§3.4.1): the five-value `attackClass` enum whose empty string is the not-applicable marker, the `classified`/`abstain` statuses, the 0.5 abstain floor, and the total mapping from the ten §4.2 classes | The wire contract existed only in the daemon package README, so a consumer reading the spec alone could not tell a confident benign (`classified`, `""`) from an abstain (`abstain`, `""`), both of which carry the same empty `attackClass` |
 
 ## 14. References
 
