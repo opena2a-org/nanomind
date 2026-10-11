@@ -22,9 +22,9 @@
 // when a file cannot be read or an option is unknown.
 
 import { execFileSync } from 'node:child_process';
-import { readdirSync, readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -461,6 +461,19 @@ function main(args) {
   return 0;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+// Whether node started this file as the script to run. node resolves the
+// symlinks in the path of that script and process.argv[1] keeps them, as in a
+// path under /tmp or /var on macOS, so both paths are resolved before they are
+// compared.
+function startedAsScript() {
+  if (!process.argv[1]) return false;
+  try {
+    return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+}
+
+if (startedAsScript()) {
   process.exitCode = main(process.argv.slice(2));
 }

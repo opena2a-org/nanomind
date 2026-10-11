@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -262,6 +262,23 @@ test('a repository named in GIT_DIR, as a git hook sets it, does not replace the
   assert.equal(result.status, 1);
   assert.match(result.stderr, /^README\.md:1: spaced double hyphen\n\n1 finding\(s\) in 1 file\(s\)/);
   assert.doesNotMatch(result.stderr, /tracked\.md|fatal|\n\s+at /);
+});
+
+test('the command line checks the files when its directory is reached through a symlink, as under /tmp or /var on macOS', (t) => {
+  const dir = scratch(t, {
+    'README.md': 'The daemon runs locally -- no network call.\n',
+    'docs/guide.md': 'Plain prose.\n',
+  });
+  mkdirSync(join(dir, 'scripts'));
+  copyFileSync(script, join(dir, 'scripts', 'check-docs-prose.mjs'));
+  const link = join(scratch(t, {}), 'link');
+  symlinkSync(dir, link, 'dir');
+  assert.deepEqual(trackedDocs(link), ['README.md', 'docs/guide.md']);
+
+  const env = { ...process.env, GIT_CEILING_DIRECTORIES: dirname(dir) };
+  const result = run(join(link, 'scripts', 'check-docs-prose.mjs'), [], { cwd: link, env });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /^README\.md:1: spaced double hyphen\n\n1 finding\(s\) in 1 file\(s\)/);
 });
 
 test('changelogs, licenses, vendored and test data are out of scope', () => {
