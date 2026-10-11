@@ -34,6 +34,10 @@ See [Model files](#model-files) for the manual staging procedure.
 
 Classify input text using the loaded NanoMind model.
 
+Each example below is a request followed by the response the v0.5.0 classifier returned for it. `latencyMs` differs from call to call. When the model files are present in `~/.nanomind/models/`, `src/server.test.ts` sends these three requests to the real model and checks every other field against the response shown here.
+
+Malicious classification:
+
 ```bash
 curl -X POST http://127.0.0.1:47200/v1/infer \
   -H "Content-Type: application/json" \
@@ -45,48 +49,60 @@ curl -X POST http://127.0.0.1:47200/v1/infer \
   }'
 ```
 
-Response (malicious classification):
-
 ```json
 {
   "intent": "SCAN_SKILL",
-  "result": "exfiltration",
-  "confidence": 0.94,
-  "attackClass": "exfiltration_pattern",
+  "result": "lateral_movement",
+  "confidence": 0.7121035149431125,
+  "attackClass": "tool_misuse",
   "classification": "classified",
-  "evidence": "exfiltration",
   "latencyMs": 2,
-  "modelVersion": "nanomind-tme-v0.5.0"
+  "modelVersion": "nanomind-tme-v0.5.0",
+  "evidence": "lateral_movement"
 }
 ```
 
-Response (benign):
+The input describes exfiltration, but v0.5.0 labels it `lateral_movement` (bucketed as `tool_misuse`) at 0.71 confidence, which is below the `confidence > 0.8` that the FGA contract blocks on. See [Known model-quality limitations](#known-model-quality-limitations-v050-classifier).
+
+Benign:
+
+```bash
+curl -X POST http://127.0.0.1:47200/v1/infer \
+  -H "Content-Type: application/json" \
+  -d '{"intent": "INTENT_CHECK", "input": "Check the weather forecast for tomorrow"}'
+```
 
 ```json
 {
   "intent": "INTENT_CHECK",
   "result": "benign",
-  "confidence": 0.91,
+  "confidence": 0.9991440961060066,
   "attackClass": "",
   "classification": "classified",
-  "evidence": "benign",
   "latencyMs": 1,
-  "modelVersion": "nanomind-tme-v0.5.0"
+  "modelVersion": "nanomind-tme-v0.5.0",
+  "evidence": "benign"
 }
 ```
 
-Response (abstain: model could not produce a usable verdict):
+Abstain (the predicted class's confidence is below the 0.5 floor, so `attackClass` is forced to `""` and the raw guess stays in `evidence`):
+
+```bash
+curl -X POST http://127.0.0.1:47200/v1/infer \
+  -H "Content-Type: application/json" \
+  -d '{"intent": "INTENT_CHECK", "input": "agent"}'
+```
 
 ```json
 {
   "intent": "INTENT_CHECK",
-  "result": "injection",
-  "confidence": 0.31,
+  "result": "social_engineering",
+  "confidence": 0.366523552816409,
   "attackClass": "",
   "classification": "abstain",
-  "evidence": "injection",
   "latencyMs": 1,
-  "modelVersion": "nanomind-tme-v0.5.0"
+  "modelVersion": "nanomind-tme-v0.5.0",
+  "evidence": "social_engineering"
 }
 ```
 
