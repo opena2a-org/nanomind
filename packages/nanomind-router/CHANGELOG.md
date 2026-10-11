@@ -34,11 +34,16 @@
 
 ## 0.1.3 — 2026-04-28
 
-Restore source-of-truth parity with the npm registry. No code or API changes between 0.1.1 and 0.1.3.
+Restore source-of-truth parity with the npm registry. The `dist/` files of 0.1.3 are identical to those of 0.1.2, and both add the following to 0.1.1:
+
+- Six intents in `IntentType`: `SCAN_SKILL_INTENT`, `SCAN_SOUL_COMPLETENESS`, `SCAN_MCP_SCOPE`, `SCAN_PROMPT_INTENT`, `SCAN_VERSION_DELTA` and `SCAN_EXPLAIN`.
+- `isScanIntent(intent)`, which returns `true` for those six intents.
+- Six result types: `ScanSkillResult`, `ScanSoulResult`, `ScanMCPResult`, `ScanPromptResult`, `ScanVersionDeltaResult` and `ScanExplainResult`.
+- `classifyIntent` tries a pattern for each of the six intents before any other pattern, so some input that 0.1.1 classified as another intent now returns one of them: "check mcp scope" was SCAN and is SCAN_MCP_SCOPE, "show the semantic diff" was COMPARE and is SCAN_VERSION_DELTA, and "explain finding 3" was EXPLAIN and is SCAN_EXPLAIN. `mapToCommand` returns `null` for all six, so "check mcp scope" no longer maps to `<cli> secure .`.
 
 `@nanomind/router@0.1.2` was a manual `npm publish` from 2026-03-26 that predated the org's Trusted Publishing-only mandate (effective 2026-04-21). It carries no SLSA attestations, no `router-v*` git tag, and no committed source bump. It has been deprecated on npm with a pointer to 0.1.1 or 0.1.3+. 0.1.2 itself is permanent (npm versions are immutable; the unpublish window is 72 hours and has long expired).
 
-0.1.3 republishes the same source as 0.1.1 via Trusted Publishing so consumers can pin a `dist-tag.latest` that has SLSA v1 provenance. Verify with:
+0.1.3 publishes the same code as 0.1.2 via Trusted Publishing so consumers can pin a `dist-tag.latest` that has SLSA v1 provenance. Verify with:
 
 ```
 npm view @nanomind/router@0.1.3 dist.attestations --json
