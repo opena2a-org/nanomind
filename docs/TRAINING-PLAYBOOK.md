@@ -1,7 +1,7 @@
 # NanoMind Training Playbook
 
 **Version:** 1.0
-**Last Updated:** 2026-04-09
+**Last Updated:** 2026-10-11
 **Companion to:** [SPECIFICATION.md](SPECIFICATION.md), [EVALUATION-STANDARD.md](EVALUATION-STANDARD.md)
 
 ---
@@ -34,8 +34,8 @@ pip install huggingface_hub
 ### 2.3 Repository Layout
 
 ```
-nanomind/                          # Model definitions and training scripts
-  training/
+nanomind/                          # Model catalog and documentation (this repository)
+  training/                        # Private training tree, not in this repository (2.4)
     scripts/
       train-tme-mlx.py            # Main training script (MLX)
       export-onnx.py              # MLX -> ONNX conversion
@@ -56,6 +56,15 @@ nanomind-training/                 # Training data (separate private repo)
   benchmarks/                     # Benchmark datasets
 ```
 
+### 2.4 Scripts that are not in this repository
+
+The training tree was moved to the separate private `nanomind-training` repository, and `training/` is listed in `.gitignore`, so a clone of this repository has no `training/` directory. The commands in this playbook that run a script from one of the paths below work only in a checkout that has the private training tree; in a clone of this repository alone they fail with `No such file or directory`.
+
+Paths this playbook uses that are not in this repository:
+
+- `training/`: the private training tree, with `training/scripts/train-tme-mlx.py`, `training/scripts/export-onnx.py`, `training/scripts/push-to-huggingface.py`, `training/evaluation/` and `training/models-tme-v{N}/`
+- `scripts/collect-skills-corpus.js`: the Registry skill-corpus collector in Step 0. This repository's `scripts/` directory does not contain it; corpus-building scripts are kept with `nanomind-training`.
+
 ## 3. Data Collection (before training)
 
 ### Step 0: Collect Data from Registry Pipeline
@@ -74,6 +83,8 @@ node scripts/collect-skills-corpus.js \
   --registry-url=https://api.oa2a.org \
   --limit=50000
 ```
+
+`scripts/collect-skills-corpus.js` is not in this repository (see 2.4).
 
 **Quality review of Registry exports:**
 
@@ -229,22 +240,18 @@ Create `docs/model-cards/v{VERSION}.md` using the template in [MODEL-CARD-TEMPLA
 
 ### Step 8: Commit and Push
 
+Commit the catalog entry and the model card to this repository. The training scripts and the model directory stay in the private training tree (see 2.4); do not force-add `training/` here.
+
 ```bash
 git checkout -b feat/tme-v{N}-{description}
-git add -f nanomind-models.json \
-  training/scripts/train-tme-mlx.py \
-  training/scripts/export-onnx.py \
-  training/models-tme-v{N}/ \
-  docs/model-cards/v{VERSION}.md
+git add nanomind-models.json docs/model-cards/v{VERSION}.md
 git commit -m "Add {N}-class TME model v{VERSION} with {description}"
 ```
 
 ### Step 9: Publish to HuggingFace
 
-**Option A: Via CI (recommended)**
-Push to main. The `publish-models.yml` workflow auto-publishes.
+Publishing is manual and runs from the private training tree (see 2.4). The `publish-models.yml` workflow in this repository validates `nanomind-models.json` on every change to it; it does not publish.
 
-**Option B: Manual**
 ```bash
 python3 training/scripts/push-to-huggingface.py \
   --model nanomind-security-classifier \
@@ -371,6 +378,8 @@ Every training run must be reproducible. Before considering a training run compl
 - [ ] nanomind-models.json updated
 
 ## 8. Quick Reference
+
+The `training/` commands below run only in a checkout that has the private training tree (see 2.4).
 
 ### Train a model
 ```bash
