@@ -261,6 +261,18 @@ const result = await daemon.infer({
 });
 ```
 
+`daemon.infer()` runs the same code as `POST /v1/infer` and resolves to the same object (see [Response schema](#response-schema)). Calling `start()` first is optional: on a daemon that was never started, the first `infer()` call loads the model and no port is bound.
+
+Where the HTTP API answers with an error status, `infer()` rejects:
+
+| Rejects with | When | HTTP equivalent |
+|---|---|---|
+| `InferRequestError` with `code: 'invalid_request'` | The request is not an object, or `input` is missing, empty or whitespace-only. | 400 |
+| `InferRequestError` with `code: 'queue_full'` | `maxConcurrent` inferences are already running, over HTTP or through `infer()`. | 429 |
+| The engine's own error | The model could not be loaded, or inference failed. | 500 |
+
+A rejection means the model did not classify the input. Treat it as an abstain, never as a benign verdict. `InferRequestError` is exported from `@nanomind/daemon`.
+
 ## Model files
 
 The daemon loads the v0.5.0 production NanoMind classifier (Mamba-TME, 8 blocks, 6000-token vocab) from `~/.nanomind/models/`. Three files are required:
