@@ -12,6 +12,7 @@
  * involved.
  */
 
+import * as path from 'node:path';
 import * as readline from 'node:readline';
 import { spawnSync, type SpawnSyncOptionsWithStringEncoding } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -19,6 +20,7 @@ import { join } from 'node:path';
 import { classifyIntent, mapToCommand, isATCIntent, type IntentClassification } from '@nanomind/router';
 import { ATCIntentHandler } from '@nanomind/atc';
 import { screenInput, detectInputSource } from '@nanomind/guard';
+import { generateArtifact, detectArtifactType, artifactTypeFromInput, listArtifactTypes } from './codegen.ts';
 
 export interface NanoMindSession {
   cliName: string;
@@ -27,6 +29,7 @@ export interface NanoMindSession {
   onCommand: (cmd: string, args: string[]) => Promise<string>;
   /** CLI that scan, fix, status and help requests run. Defaults to cliName. */
   targetCli?: string;
+  projectDir?: string; // directory generated artifacts are for; defaults to the working directory
 }
 
 const WELCOME = `
@@ -92,7 +95,7 @@ export async function startSession(session: NanoMindSession): Promise<void> {
   });
 }
 
-async function handleInput(
+export async function handleInput(
   input: string,
   session: NanoMindSession,
   atcHandler: ATCIntentHandler,
@@ -102,6 +105,12 @@ async function handleInput(
   // ATC intents — handle directly via ATCIntentHandler
   if (isATCIntent(classification.intent)) {
     await handleATCIntent(classification, atcHandler);
+    return;
+  }
+
+  // GENERATE — print the artifact from the local templates; no CLI command runs
+  if (classification.intent === 'GENERATE') {
+    handleGenerate(input, session);
     return;
   }
 
@@ -128,6 +137,27 @@ async function handleInput(
   } catch (err) {
     console.log(`  Command failed: ${err instanceof Error ? err.message : 'Unknown error'}\n`);
   }
+}
+
+function handleGenerate(input: string, session: NanoMindSession): void {
+  const projectDir = path.resolve(session.projectDir ?? process.cwd());
+  const named = artifactTypeFromInput(input);
+  const type = named ?? detectArtifactType(projectDir);
+  const artifact = generateArtifact(type, {
+    projectName: path.basename(projectDir),
+    projectType: 'mcp_server',
+    language: 'typescript',
+    registryUrl: session.registryUrl,
+  });
+
+  console.log(`\n  > Generating ${type} config`);
+  if (!named) {
+    console.log('  > No type named, so the type comes from the files in this directory.');
+  }
+  console.log(`\n${artifact}`);
+  const others = listArtifactTypes().filter((t) => t !== type);
+  console.log('  Save this to your CI configuration.');
+  console.log(`  For another type, ask "generate a ${others[0]} config". Types: ${others.join(', ')}\n`);
 }
 
 async function handleATCIntent(
