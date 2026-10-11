@@ -8,8 +8,9 @@
   can pass its own table as the third argument, and any other CLI gets
   the previous routes. `secretless-ai` SECRETS_EXPOSE now runs
   `secretless-ai diagnose`, SCAN runs `secretless-ai scan` and STATUS
-  runs `secretless-ai verify`, where all three used to run
-  `secretless-ai secure`, which does not exist. `hma` SCAN runs
+  runs `secretless-ai verify`, where SCAN and STATUS used to run
+  `secretless-ai secure`, which does not exist, and SECRETS_EXPOSE had
+  no route. `hma` SCAN runs
   `hma detect .` when the input says "detect" and `hma check <name>`
   when it names `package: <name>`. `opena2a` SECRETS_EXPOSE runs
   `opena2a secretless`, SCAN runs `opena2a scan` or `opena2a detect`,
