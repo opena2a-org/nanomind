@@ -355,9 +355,11 @@ In the OpenA2A stack the model does not run bare. It sits behind the
 integrity (SHA-256), and serves classification over a local socket. In front of
 it runs an **input-classifier gate** (MiniLM-L6 + logistic regression at
 threshold 0.90, plus a byte-level BIDI/steganography pre-filter). Neither the
-daemon nor the gate is part of this repo. If you run the weights directly, you
-get the raw specialist model and its Limitation 1 behaviour. For scanning real
-projects, use HMA.
+daemon nor the gate is part of the Hugging Face model repository; both ship in
+the `nanomind-analyst` package, under `packages/nanomind-analyst` in the
+[nanomind source repository](https://github.com/opena2a-org/nanomind). If you
+run the weights directly, you get the raw specialist model and its Limitation 1
+behaviour. For scanning real projects, use HMA.
 
 ## License
 
