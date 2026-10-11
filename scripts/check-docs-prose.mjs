@@ -19,7 +19,7 @@
 // such file on disk when the tree is not a git checkout. A file argument is
 // read relative to the current directory.
 // Exits 1 and prints file:line for each finding, 0 when there is none, and 2
-// when a file cannot be read or an option is unknown.
+// when a file or directory cannot be read or an option is unknown.
 
 import { execFileSync } from 'node:child_process';
 import { readdirSync, readFileSync, realpathSync } from 'node:fs';
@@ -36,8 +36,8 @@ the prose of Markdown files. Code, front matter, comments and link targets are
 not prose and are skipped. With no file it checks every tracked *.md and *.mdx
 file in scope; a file argument is read relative to the current directory.
 
-Exit status: 0 with no finding, 1 with a finding, 2 when a file cannot be read
-or an option is unknown.`;
+Exit status: 0 with no finding, 1 with a finding, 2 when a file or directory
+cannot be read or an option is unknown.`;
 
 const EXCLUDED = [
   /(^|\/)CHANGELOG\.md$/i,
@@ -369,12 +369,22 @@ export function checkText(text) {
   return findings;
 }
 
-function filesOnDisk(cwd, dir = '') {
+// A directory whose files are all out of scope, such as node_modules or test
+// data, is not listed. A directory that cannot be listed is added to
+// unreadable as { path, error } and its files are not checked.
+function filesOnDisk(cwd, unreadable, dir = '') {
+  let entries;
+  try {
+    entries = readdirSync(join(cwd, dir), { withFileTypes: true });
+  } catch (error) {
+    unreadable.push({ path: `${dir === '' ? '.' : dir}/`, error });
+    return [];
+  }
   const found = [];
-  for (const entry of readdirSync(join(cwd, dir), { withFileTypes: true })) {
+  for (const entry of entries) {
     const path = dir === '' ? entry.name : `${dir}/${entry.name}`;
-    if (entry.isDirectory() && entry.name !== '.git' && entry.name !== 'node_modules') {
-      found.push(...filesOnDisk(cwd, path));
+    if (entry.isDirectory() && entry.name !== '.git' && !EXCLUDED.some((pattern) => pattern.test(`${path}/`))) {
+      found.push(...filesOnDisk(cwd, unreadable, path));
     } else if (entry.isFile() && /\.mdx?$/i.test(entry.name)) {
       found.push(path);
     }
@@ -389,14 +399,22 @@ function filesOnDisk(cwd, dir = '') {
 const REPOSITORY_VARIABLE =
   /^GIT_(DIR|WORK_TREE|INDEX_FILE|PREFIX|COMMON_DIR|OBJECT_DIRECTORY|ALTERNATE_OBJECT_DIRECTORIES)$/;
 
+// The variables that change how git matches a pathspec. With one of them set,
+// *.md matches only the files at the top of the tree, or no file at all.
+const PATHSPEC_VARIABLE = /^GIT_(GLOB|NOGLOB|ICASE|LITERAL)_PATHSPECS$/;
+
 // The tracked Markdown files in scope. Outside a git checkout, such as a
-// source archive, or when git lists none, the files on disk. git finds the
-// repository from cwd alone, not from the variables a git hook exports.
-export function trackedDocs(cwd = root) {
+// source archive, or when git lists none, the files on disk; a directory that
+// cannot be listed is added to unreadable as { path, error }. git finds the
+// repository from cwd alone, not from the variables a git hook exports, and
+// matches the pathspecs the same way whatever the environment sets.
+export function trackedDocs(cwd = root, unreadable = []) {
   let listed = [];
   try {
     const env = Object.fromEntries(
-      Object.entries(process.env).filter(([name]) => !REPOSITORY_VARIABLE.test(name)),
+      Object.entries(process.env).filter(
+        ([name]) => !REPOSITORY_VARIABLE.test(name) && !PATHSPEC_VARIABLE.test(name),
+      ),
     );
     const output = execFileSync('git', ['ls-files', '-z', '--', '*.md', '*.mdx'], {
       cwd,
@@ -408,7 +426,7 @@ export function trackedDocs(cwd = root) {
   } catch {
     // Not a git checkout, or git is not installed.
   }
-  return (listed.length > 0 ? listed : filesOnDisk(cwd)).filter(inScope).sort();
+  return (listed.length > 0 ? listed : filesOnDisk(cwd, unreadable)).filter(inScope).sort();
 }
 
 export function checkFiles(paths, cwd = root) {
@@ -435,21 +453,23 @@ function main(args) {
   }
 
   const cwd = named.length > 0 ? process.cwd() : root;
-  const paths = named.length > 0 ? named : trackedDocs();
-  const findings = [];
   const unreadable = [];
+  const paths = named.length > 0 ? named : trackedDocs(root, unreadable);
+  const findings = [];
   for (const path of paths) {
     try {
       findings.push(...checkFiles([path], cwd));
     } catch (error) {
-      unreadable.push(`check-docs-prose: cannot read ${path} (${error.code ?? error.message})`);
+      unreadable.push({ path, error });
     }
   }
 
   for (const { path, line, rule } of findings) {
     console.error(`${path}:${line}: ${rule}`);
   }
-  for (const message of unreadable) console.error(message);
+  for (const { path, error } of unreadable) {
+    console.error(`check-docs-prose: cannot read ${path} (${error.code ?? error.message})`);
+  }
   if (unreadable.length > 0) return 2;
   if (findings.length > 0) {
     console.error(`\n${findings.length} finding(s) in ${new Set(findings.map((f) => f.path)).size} file(s). ` +

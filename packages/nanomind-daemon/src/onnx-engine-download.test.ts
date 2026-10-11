@@ -1,4 +1,4 @@
-import { describe, it, before, after, beforeEach } from 'node:test';
+import { describe, it, before, after, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, type Server } from 'node:http';
 import { createHash } from 'node:crypto';
@@ -101,6 +101,9 @@ describe('OnnxEngine auto-download', () => {
     upstream.served.clear();
     upstream.fail.clear();
     upstream.redirect.clear();
+  });
+  afterEach(async () => {
+    await rm(modelDir, { recursive: true, force: true });
   });
 
   it('downloads all three missing files when auto-download is enabled', async () => {
