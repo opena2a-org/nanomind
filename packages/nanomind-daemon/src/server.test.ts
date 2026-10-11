@@ -6,7 +6,7 @@ import { createServer as createNetServer, connect } from 'node:net';
 import { join } from 'node:path';
 import { homedir, tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { NanoMindDaemon } from './server.ts';
+import { ABSTAIN_CONFIDENCE_FLOOR, NanoMindDaemon } from './server.ts';
 import { OnnxEngine } from './onnx-engine.ts';
 
 // Each suite binds its socket in its own temporary directory, never the
@@ -786,6 +786,110 @@ describe('OnnxEngine — prompt-injection corpus smoke', () => {
     for (const r of nonEmpty) {
       assert.ok(r.confidence > 0 && r.confidence <= 1, 'confidence must be a probability');
       assert.ok(r.rawLabel.length > 0, 'rawLabel must be set when classification fires');
+    }
+  });
+});
+
+/**
+ * The `POST /v1/infer` examples, read from the README itself so the doc and
+ * this test cannot drift apart. Each example is a ```bash curl block whose
+ * `-d '...'` body is the request, followed by a ```json block holding the
+ * response the shipped model returned for it.
+ */
+function readmeInferExamples(): { request: Record<string, unknown>; response: Record<string, unknown> }[] {
+  const readme = readFileSync(fileURLToPath(new URL('../README.md', import.meta.url)), 'utf-8');
+  const start = readme.indexOf('### POST /v1/infer');
+  assert.notStrictEqual(start, -1, 'README has a "### POST /v1/infer" section');
+  const end = readme.indexOf('\n### ', start + 1);
+  const section = readme.slice(start, end === -1 ? undefined : end);
+
+  const requests = [...section.matchAll(/```bash\n([\s\S]*?)\n```/g)].map((m) => {
+    const body = m[1].match(/-d '([^']*)'/);
+    assert.ok(body, `bash example has a -d '<json>' request body:\n${m[1]}`);
+    return JSON.parse(body[1]) as Record<string, unknown>;
+  });
+  const responses = [...section.matchAll(/```json\n([\s\S]*?)\n```/g)].map(
+    (m) => JSON.parse(m[1]) as Record<string, unknown>,
+  );
+  assert.strictEqual(requests.length, responses.length, 'every response example has its request');
+  return requests.map((request, i) => ({ request, response: responses[i] }));
+}
+
+describe('README POST /v1/infer examples', () => {
+  it('document a malicious, a benign and an abstain response, each with its request', () => {
+    const examples = readmeInferExamples();
+    assert.strictEqual(examples.length, 3);
+    const [malicious, benign, abstain] = examples.map((e) => e.response);
+
+    assert.strictEqual(malicious.classification, 'classified');
+    assert.notStrictEqual(malicious.attackClass, '');
+    assert.strictEqual(benign.classification, 'classified');
+    assert.strictEqual(benign.result, 'benign');
+    assert.strictEqual(benign.attackClass, '');
+    assert.strictEqual(abstain.classification, 'abstain');
+    assert.strictEqual(abstain.attackClass, '');
+
+    for (const { response } of examples) {
+      const confidence = response.confidence as number;
+      assert.strictEqual(
+        response.classification,
+        confidence >= ABSTAIN_CONFIDENCE_FLOOR ? 'classified' : 'abstain',
+        `classification of a ${confidence} confidence against the ${ABSTAIN_CONFIDENCE_FLOOR} floor`,
+      );
+    }
+  });
+
+  // Skip when the model files are missing, unless NANOMIND_REQUIRE_MODEL=1
+  // turns a missing model into a failure (same switch as the corpus smoke).
+  const MODELS_DIR = join(homedir(), '.nanomind', 'models');
+  const haveModel = existsSync(join(MODELS_DIR, 'nanomind-tme.onnx')) &&
+                    existsSync(join(MODELS_DIR, 'nanomind-tme.onnx.data')) &&
+                    existsSync(join(MODELS_DIR, 'tokenizer.json'));
+  const skipReason = haveModel
+    ? false
+    : 'requires ~/.nanomind/models/* (set NANOMIND_REQUIRE_MODEL=1 to fail instead of skip)';
+  if (skipReason && process.env.NANOMIND_REQUIRE_MODEL === '1') {
+    throw new Error(`NANOMIND_REQUIRE_MODEL=1 set but ${skipReason}`);
+  }
+
+  it('match what the shipped model returns for each request', { skip: skipReason }, async () => {
+    const EXAMPLES_PORT = 47292; // distinct from the suites above
+    const daemon = new NanoMindDaemon({
+      httpPort: EXAMPLES_PORT,
+      ipcPath: join(SOCKET_DIR, 'examples.sock'),
+      idleUnloadSeconds: 60,
+      engine: new OnnxEngine({ noAutoDownload: true }),
+    });
+    await daemon.start();
+    try {
+      for (const { request: req, response: documented } of readmeInferExamples()) {
+        const resp = await fetch(`http://127.0.0.1:${EXAMPLES_PORT}/v1/infer`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(req),
+        });
+        assert.strictEqual(resp.status, 200);
+        const actual = await resp.json() as Record<string, unknown>;
+        const label = `README example for input ${JSON.stringify(req.input)}`;
+
+        assert.deepStrictEqual(Object.keys(actual).sort(), Object.keys(documented).sort(), `${label}: field set`);
+        for (const key of Object.keys(documented)) {
+          if (key === 'latencyMs') {
+            assert.strictEqual(typeof actual.latencyMs, 'number', `${label}: latencyMs`);
+          } else if (key === 'confidence') {
+            // Tolerance absorbs floating-point differences between onnxruntime
+            // builds; a different model or class moves it far more than this.
+            assert.ok(
+              Math.abs((actual.confidence as number) - (documented.confidence as number)) < 1e-4,
+              `${label}: confidence ${actual.confidence}, README shows ${documented.confidence}`,
+            );
+          } else {
+            assert.strictEqual(actual[key], documented[key], `${label}: ${key}`);
+          }
+        }
+      }
+    } finally {
+      await daemon.stop();
     }
   });
 });
