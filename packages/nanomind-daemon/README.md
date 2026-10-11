@@ -1,6 +1,6 @@
 # @nanomind/daemon
 
-Persistent NanoMind inference server. Runs on `localhost:47200` with HTTP and Unix socket interfaces. Lazy-loads the model on first request, unloads after idle timeout.
+Persistent NanoMind inference server. Runs on `localhost:47200` with HTTP and Unix socket interfaces. Loads the model at start, releases it after an idle timeout, and reloads it on the next request.
 
 ## Install
 
@@ -162,19 +162,34 @@ The fields are required (always present); `attackClass` is empty when the model 
 
 ```bash
 curl http://127.0.0.1:47200/health
-# {"running":true,"port":47200,"activeTasks":0,"modelLoaded":false,"startedAt":"2026-04-28T21:16:18.748Z","uptime":2069}
+# {"running":true,"port":47200,"activeTasks":0,"modelLoaded":true,"startedAt":"2026-04-28T21:16:18.748Z","uptime":2069}
 ```
 
-`modelLoaded` is `true` as soon as `/health` returns 200. `start()` calls
-`engine.ensureReady()` before binding HTTP, so the daemon will not accept
-requests until the classifier has loaded. The model unloads after
-`idleUnloadSeconds` of inactivity and re-loads lazily on the next request.
+The model loads at start: `start()` calls `engine.ensureReady()` before
+binding HTTP, so the daemon accepts no requests until the classifier has
+loaded, and `modelLoaded` is `true` on the first `/health` response. After
+`idleUnloadSeconds` without a request the daemon releases the model (the
+inference session and the vocabulary) and `modelLoaded` turns `false`; the
+next `/v1/infer` loads it again and re-verifies the SHA-256 of each file. The
+process's resident memory does not necessarily fall after a release, because
+the memory allocator can keep the freed pages for reuse.
+
+### GET /health/ready
+
+```bash
+curl -s -w ' %{http_code}\n' http://127.0.0.1:47200/health/ready
+# {"ready":true,"service":"nanomind-daemon","commit":null,"version":"0.4.0","checkedAt":"2026-10-11T09:59:46.332Z","degraded":false,"dependencies":{"model":{"status":"ok","required":true}}} 200
+```
+
+Returns 200 while the daemon can serve: the model is loaded, or it was
+released after the idle timeout and the next request reloads it. Returns 503
+with `"reason":"model not loaded"` when a model load has failed.
 
 ### GET /v1/status
 
 ```bash
 curl http://127.0.0.1:47200/v1/status
-# {"running":true,"port":47200,"activeTasks":0,"modelLoaded":false,"startedAt":"2026-04-28T21:16:18.748Z","uptime":2069}
+# {"running":true,"port":47200,"activeTasks":0,"modelLoaded":true,"startedAt":"2026-04-28T21:16:18.748Z","uptime":2069}
 ```
 
 ## Known model-quality limitations (v0.5.0 classifier)
@@ -200,7 +215,7 @@ A retrain to v0.6.0 with broader corpus coverage is tracked separately. The 5-va
 | `httpPort` | `47200` | HTTP server port |
 | `ipcPath` | `/tmp/nanomind.sock` | Unix socket path |
 | `maxConcurrent` | `4` | Max concurrent inference requests |
-| `idleUnloadSeconds` | `300` | Unload model after N seconds idle |
+| `idleUnloadSeconds` | `300` | Release the model after N seconds without a request; the next request reloads it |
 
 ## Programmatic Usage
 

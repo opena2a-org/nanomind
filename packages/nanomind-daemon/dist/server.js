@@ -39,6 +39,10 @@ class NanoMindDaemon extends node_events_1.EventEmitter {
     activeTasks = 0;
     idleTimer = null;
     modelLoaded = false;
+    // True while the model is released by the idle timer and has not failed
+    // to reload since. The daemon can still serve in that state: the next
+    // /v1/infer loads the model again.
+    idleUnloaded = false;
     startedAt = null;
     constructor(config = {}) {
         super();
@@ -61,6 +65,7 @@ class NanoMindDaemon extends node_events_1.EventEmitter {
         // HuggingFace unless `noAutoDownload` is set on the engine.
         await this.engine.ensureReady();
         this.modelLoaded = true;
+        this.idleUnloaded = false;
         this.emit('model_loaded');
         // Now safe to start the HTTP server on localhost only (non-routable).
         this.httpServer = (0, node_http_1.createServer)((req, res) => this.handleHTTP(req, res));
@@ -80,6 +85,7 @@ class NanoMindDaemon extends node_events_1.EventEmitter {
             this.httpServer = null;
         }
         this.modelLoaded = false;
+        this.idleUnloaded = false;
         this.startedAt = null;
         this.emit('stopped');
     }
@@ -106,10 +112,12 @@ class NanoMindDaemon extends node_events_1.EventEmitter {
             return;
         }
         // Readiness: the model is the daemon's single required dependency.
+        // An idle-unloaded model counts as available because the next
+        // /v1/infer reloads it; only a model that failed to load does not.
         // The unavailable reason is a fixed string — never an engine error or
         // filesystem path, which must not leak onto this surface.
         if (url === '/health/ready' && method === 'GET') {
-            const modelOk = this.modelLoaded;
+            const modelOk = this.modelLoaded || this.idleUnloaded;
             res.setHeader('Cache-Control', 'no-store');
             res.writeHead(modelOk ? 200 : 503);
             res.end(JSON.stringify({
@@ -185,10 +193,19 @@ class NanoMindDaemon extends node_events_1.EventEmitter {
         this.resetIdleTimer();
         const startMs = Date.now();
         try {
-            // Ensure model is loaded on first request
+            // Load the model if the idle timer released it or an earlier load failed
             if (!this.modelLoaded) {
-                await this.engine.ensureReady();
+                try {
+                    await this.engine.ensureReady();
+                }
+                catch (err) {
+                    // The daemon cannot serve until the load succeeds, so it is no
+                    // longer ready.
+                    this.idleUnloaded = false;
+                    throw err;
+                }
                 this.modelLoaded = true;
+                this.idleUnloaded = false;
                 this.emit('model_loaded');
             }
             // Route intent if not provided
@@ -269,9 +286,17 @@ class NanoMindDaemon extends node_events_1.EventEmitter {
             clearTimeout(this.idleTimer);
         }
         this.idleTimer = setTimeout(() => {
-            if (this.activeTasks === 0) {
-                this.emit('idle_unload');
+            if (this.activeTasks === 0 && this.modelLoaded && this.engine.unload) {
+                // Flip the flags before releasing so a request that arrives while
+                // the release runs takes the reload path. OnnxEngine drops its
+                // references before releasing, so a failed release does not block
+                // that reload.
                 this.modelLoaded = false;
+                this.idleUnloaded = true;
+                this.emit('idle_unload');
+                Promise.resolve()
+                    .then(() => this.engine.unload?.())
+                    .catch(() => undefined);
             }
         }, this.config.idleUnloadSeconds * 1000);
     }

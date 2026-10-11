@@ -247,6 +247,19 @@ export class OnnxEngine {
   }
 
   /**
+   * Release the ORT session and drop the vocabulary. `isLoaded()` turns
+   * false, so the next `ensureReady()` or `infer()` loads the artifacts
+   * from disk again, integrity check included. A no-op when nothing is
+   * loaded.
+   */
+  async unload(): Promise<void> {
+    const session = this.session;
+    this.session = null;
+    this.vocab = null;
+    if (session) await session.release();
+  }
+
+  /**
    * Run sequence classification on `text`. Same return shape as the legacy
    * llamafile engine plus `attackClass` / `rawLabel` / `confidence`.
    */
