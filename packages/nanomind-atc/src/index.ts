@@ -87,7 +87,9 @@ export class ATCIntentHandler {
     const atc = await this.fetchATC(agentId);
 
     const factors: ATCFactor[] = [];
-    let projectedScore = 0;
+    // Points of the factors the agent already has, and of the ones its fixes would add.
+    let presentPoints = 0;
+    let missingPoints = 0;
 
     // Factor 1: HMA scan
     if (atc?.scanSummary?.hma === 'passed') {
@@ -97,7 +99,7 @@ export class ATCIntentHandler {
         impact: '+160 pts vulnerability surface',
         fix: '',
       });
-      projectedScore += 160;
+      presentPoints += 160;
     } else {
       factors.push({
         name: 'HMA scan',
@@ -105,6 +107,7 @@ export class ATCIntentHandler {
         impact: '+160 pts vulnerability surface',
         fix: 'Run: hackmyagent secure . (fix all findings, then re-scan)',
       });
+      missingPoints += 160;
     }
 
     // Factor 2: Build attestation
@@ -115,7 +118,7 @@ export class ATCIntentHandler {
         impact: '+80 pts supply chain',
         fix: '',
       });
-      projectedScore += 80;
+      presentPoints += 80;
     } else {
       factors.push({
         name: 'Build attestation',
@@ -123,6 +126,7 @@ export class ATCIntentHandler {
         impact: '+80 pts supply chain',
         fix: 'Add opena2a/build-action to your CI pipeline.\n         Run: opena2a > "add OpenA2A to my pipeline"',
       });
+      missingPoints += 80;
     }
 
     // Factor 3: Publisher verified
@@ -133,7 +137,7 @@ export class ATCIntentHandler {
         impact: '+40 pts identity governance',
         fix: '',
       });
-      projectedScore += 40;
+      presentPoints += 40;
     } else {
       factors.push({
         name: 'Publisher verified',
@@ -141,6 +145,7 @@ export class ATCIntentHandler {
         impact: '+40 pts identity governance',
         fix: 'Verify your publisher identity at registry.opena2a.org/auth/github',
       });
+      missingPoints += 40;
     }
 
     // Factor 4: Behavioral data
@@ -151,7 +156,7 @@ export class ATCIntentHandler {
         impact: '+150 pts runtime behavior',
         fix: '',
       });
-      projectedScore += 150;
+      presentPoints += 150;
     } else {
       factors.push({
         name: 'Runtime behavioral data',
@@ -159,6 +164,7 @@ export class ATCIntentHandler {
         impact: '+150 pts runtime behavior',
         fix: 'Install ARP alongside your agent.\n         Run: npm install @opena2a/arp',
       });
+      missingPoints += 150;
     }
 
     // Factor 5: Signatures
@@ -170,7 +176,7 @@ export class ATCIntentHandler {
         impact: '+70 pts cryptographic proof',
         fix: '',
       });
-      projectedScore += 70;
+      presentPoints += 70;
     } else {
       factors.push({
         name: 'Threshold signatures',
@@ -178,10 +184,12 @@ export class ATCIntentHandler {
         impact: '+70 pts cryptographic proof',
         fix: 'Automatic — the registry signs with threshold keys on ATC issuance',
       });
+      missingPoints += 70;
     }
 
     const currentLevel = atc?.trustLevel ?? 0;
     const currentScore = atc?.trustScore ?? 0;
+    const projectedScore = presentPoints + missingPoints;
     const projectedLevel = projectedScore >= 500 ? 4 : projectedScore >= 300 ? 3 : projectedScore >= 100 ? 2 : 1;
 
     const missingFactors = factors.filter(f => f.status !== 'present');
@@ -191,7 +199,8 @@ export class ATCIntentHandler {
           if (f.status === 'present') return `  Present: ${f.name} (${f.impact})`;
           return `  Missing: ${f.name} (${f.impact})\n    Fix: ${f.fix}`;
         }).join('\n') +
-        `\n  Projected level ${projectedLevel} after fixes: ${projectedScore} pts`
+        `\n  Projected level ${projectedLevel} after fixes: ${projectedScore} pts` +
+        ` (${presentPoints} present + ${missingPoints} from fixes)`
       : `No ATC found for agent ${agentId}. To get started:\n` +
         '  1. Register your package at registry.opena2a.org\n' +
         '  2. Run: hackmyagent secure .\n' +
