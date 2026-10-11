@@ -1,6 +1,43 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { classifyIntent, mapToCommand, isATCIntent, isScanIntent } from './index.ts';
+import { readFileSync } from 'node:fs';
+import {
+  classifyIntent,
+  mapToCommand,
+  commandTableFor,
+  isATCIntent,
+  isScanIntent,
+  COMMAND_TABLES,
+  type IntentClassification,
+  type IntentType,
+} from './index.ts';
+
+function intent(name: IntentType, entities: Record<string, string> = {}): IntentClassification {
+  return { intent: name, confidence: 0.85, entities, rawInput: '' };
+}
+
+function route(input: string, cliName: string) {
+  return mapToCommand(classifyIntent(input), cliName);
+}
+
+// The adapter directory for each CLI that has a routing table.
+const ADAPTER_DIRS: Record<string, string> = {
+  hma: 'hma',
+  'secretless-ai': 'secretless-ai',
+  opena2a: 'opena2a',
+};
+
+function adapterSource(cliName: string): string {
+  return readFileSync(new URL(`../../../integrations/${ADAPTER_DIRS[cliName]}/index.ts`, import.meta.url), 'utf8');
+}
+
+// Subcommand names an adapter's getCommandManifest() lists, without the CLI name.
+function manifestCommands(cliName: string): Set<string> {
+  const source = adapterSource(cliName);
+  const manifest = source.slice(source.indexOf('export function getCommandManifest'));
+  const names = [...manifest.matchAll(/\bname:\s*'([^']+)'/g)].map((m) => m[1]);
+  return new Set(names.map((name) => name.replace(new RegExp(`^${cliName} `), '').split(' ')[0]));
+}
 
 describe('NanoMind Router', () => {
   // Scan intents
@@ -127,4 +164,111 @@ describe('NanoMind Router', () => {
     assert.ok(cmd);
     assert.strictEqual(cmd.command, 'opena2a trust');
   });
+
+  // Secrets: tried before the general SCAN pattern, which also matches "check"
+  it('classifies "check for exposed secrets" as SECRETS_EXPOSE', () => {
+    assert.strictEqual(classifyIntent('check for exposed secrets').intent, 'SECRETS_EXPOSE');
+  });
+
+  it('classifies "find credentials" as SECRETS_EXPOSE', () => {
+    assert.strictEqual(classifyIntent('find credentials').intent, 'SECRETS_EXPOSE');
+  });
+
+  it('classifies "is my api key exposed" as SECRETS_EXPOSE', () => {
+    assert.strictEqual(classifyIntent('is my api key exposed').intent, 'SECRETS_EXPOSE');
+  });
+
+  it('classifies "detect agents in this project" as SCAN', () => {
+    assert.strictEqual(classifyIntent('detect agents in this project').intent, 'SCAN');
+  });
+});
+
+describe('Per-CLI command tables', () => {
+  it('routes secretless-ai SECRETS_EXPOSE to secretless-ai diagnose', () => {
+    const cmd = mapToCommand(intent('SECRETS_EXPOSE'), 'secretless-ai');
+    assert.ok(cmd);
+    assert.strictEqual(cmd.command, 'secretless-ai diagnose');
+  });
+
+  it('routes "check for exposed secrets" in secretless-ai to diagnose, not a scan', () => {
+    assert.strictEqual(route('check for exposed secrets', 'secretless-ai')?.command, 'secretless-ai diagnose');
+  });
+
+  it('routes secretless-ai SCAN and STATUS to commands in its manifest', () => {
+    assert.strictEqual(route('scan this project', 'secretless-ai')?.command, 'secretless-ai scan');
+    assert.strictEqual(route('show status', 'secretless-ai')?.command, 'secretless-ai verify');
+  });
+
+  it('routes hma "detect" to hma detect', () => {
+    assert.deepStrictEqual(route('detect agents in this project', 'hma'), {
+      command: 'hma detect',
+      args: ['.'],
+      description: 'Detect AI agents in project',
+    });
+  });
+
+  it('routes hma "check package: <name>" to hma check <name>', () => {
+    const cmd = route('check package: express', 'hma');
+    assert.ok(cmd);
+    assert.strictEqual(cmd.command, 'hma check');
+    assert.deepStrictEqual(cmd.args, ['express']);
+  });
+
+  it('keeps the hma scan, fix, status and help routes', () => {
+    assert.deepStrictEqual(route('scan this project', 'hma'), { command: 'hma secure', args: ['.'], description: 'Run security scan' });
+    assert.deepStrictEqual(route('auto-fix all findings', 'hma'), { command: 'hma secure', args: ['--fix'], description: 'Auto-fix findings' });
+    assert.deepStrictEqual(route('show status', 'hma'), { command: 'hma secure', args: ['--summary'], description: 'Show scan summary' });
+    assert.deepStrictEqual(route('help', 'hma'), { command: 'hma --help', args: [], description: 'Show help' });
+  });
+
+  it('routes hma SECRETS_EXPOSE to the hma credential scan', () => {
+    assert.strictEqual(route('check for exposed secrets', 'hma')?.command, 'hma secure');
+  });
+
+  it('routes opena2a intents to the products behind it', () => {
+    assert.strictEqual(route('check for exposed secrets', 'opena2a')?.command, 'opena2a secretless');
+    assert.strictEqual(route('detect agents in this project', 'opena2a')?.command, 'opena2a detect');
+    assert.strictEqual(route('scan this project', 'opena2a')?.command, 'opena2a scan');
+    assert.strictEqual(route('show status', 'opena2a')?.command, 'opena2a review');
+    assert.deepStrictEqual(mapToCommand(intent('TRUST_QUERY', { agentId: 'my-agent' }), 'opena2a')?.args, ['my-agent']);
+  });
+
+  it('returns null for an intent a CLI has no command for', () => {
+    assert.strictEqual(mapToCommand(intent('FIX'), 'secretless-ai'), null);
+    assert.strictEqual(mapToCommand(intent('NAVIGATE'), 'hma'), null);
+    assert.strictEqual(mapToCommand(intent('constructor' as IntentType), 'hma'), null);
+  });
+
+  it('gives a CLI without a table the generic routes', () => {
+    assert.deepStrictEqual(commandTableFor('acme'), commandTableFor('another-cli'));
+    assert.strictEqual(route('scan this project', 'acme')?.command, 'acme secure');
+    assert.strictEqual(route('check for exposed secrets', 'acme')?.command, 'acme secure');
+  });
+
+  it('uses a table the caller supplies over the built-in one', () => {
+    const cmd = mapToCommand(intent('COMPARE'), 'acme', {
+      COMPARE: [{ command: 'diff', args: ['--last'], description: 'Compare with the last scan' }],
+    });
+    assert.deepStrictEqual(cmd, { command: 'acme diff', args: ['--last'], description: 'Compare with the last scan' });
+  });
+
+  for (const cliName of Object.keys(COMMAND_TABLES)) {
+    it(`${cliName} adapter declares the cliName its table is keyed by`, () => {
+      assert.match(adapterSource(cliName), new RegExp(`cliName:\\s*'${cliName}'`));
+    });
+
+    it(`${cliName} table only routes to commands an adapter manifest lists`, () => {
+      for (const [intentName, routes] of Object.entries(COMMAND_TABLES[cliName])) {
+        for (const r of routes ?? []) {
+          if (r.command.startsWith('--')) continue;
+          const owner = r.cli ?? cliName;
+          const subcommand = r.command.split(' ')[0];
+          assert.ok(
+            manifestCommands(owner).has(subcommand),
+            `${cliName} ${intentName} routes to "${owner} ${r.command}", which the ${owner} manifest does not list`,
+          );
+        }
+      }
+    });
+  }
 });

@@ -102,7 +102,11 @@ async function handleInput(
   const mapping = mapToCommand(classification, session.cliName);
 
   if (!mapping) {
-    console.log(`\n  I'm not sure how to help with that. Try "help" for examples.\n`);
+    if (classification.intent === 'UNKNOWN') {
+      console.log(`\n  I'm not sure how to help with that. Try "help" for examples.\n`);
+    } else {
+      console.log(`\n  ${session.cliName} has no command for ${classification.intent} requests. Try "help" for examples.\n`);
+    }
     return;
   }
 

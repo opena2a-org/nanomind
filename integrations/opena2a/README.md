@@ -2,7 +2,7 @@
 
 NanoMind adapter for the [opena2a](https://www.npmjs.com/package/opena2a-cli) umbrella CLI, the cross-product interactive router.
 
-Users can ask natural-language questions about HackMyAgent, AIM, Secretless, OASB, and ATC from a single prompt. The adapter classifies intent and hands off to the appropriate subcommand.
+From a single prompt, users reach HackMyAgent scans (`opena2a scan`), agent detection (`opena2a detect`), Secretless credential checks (`opena2a secretless`), a project review (`opena2a review`) and ATC trust queries and attestation (`opena2a trust`, `opena2a attest`). The routes are the `opena2a` table in [`@nanomind/router`](https://github.com/opena2a-org/nanomind/blob/main/packages/nanomind-router/README.md#general-intents-and-routes). AIM and OASB have no route yet.
 
 ## Install
 
