@@ -105,6 +105,20 @@ export declare const ABSTAIN_CONFIDENCE_FLOOR = 0.5;
  * discarded, never buffered.
  */
 export declare const MAX_REQUEST_BODY_BYTES = 1048576;
+/**
+ * Why `infer()` refused a request before the model ran. `/v1/infer` answers
+ * `queue_full` with 429 and `invalid_request` with 400.
+ */
+export type InferRequestErrorCode = 'queue_full' | 'invalid_request';
+/**
+ * Thrown by `NanoMindDaemon.infer()` when a request is refused before the
+ * model runs. An inference failure is not wrapped in this class: `infer()`
+ * rejects with the engine's own error.
+ */
+export declare class InferRequestError extends Error {
+    readonly code: InferRequestErrorCode;
+    constructor(code: InferRequestErrorCode, message: string);
+}
 export declare const DEFAULT_CONFIG: DaemonConfig;
 export declare class NanoMindDaemon extends EventEmitter {
     private config;
@@ -140,6 +154,20 @@ export declare class NanoMindDaemon extends EventEmitter {
         uptime: number;
     };
     private handleHTTP;
+    /**
+     * Run one inference in-process, without the HTTP server. `/v1/infer` calls
+     * this method, so both paths share the request validation, the
+     * `maxConcurrent` cap and the classified/abstain contract. A daemon that was
+     * never started loads the model on the first call.
+     *
+     * Rejects with `InferRequestError` when the request is refused before the
+     * model runs (`queue_full`, `invalid_request`) and with the engine's own
+     * error when inference fails. A rejection means classification did not run:
+     * treat it as an abstain, never as a benign verdict.
+     */
+    infer(request: InferRequest): Promise<InferResponse>;
+    private queueFullError;
+    private respondRefused;
     private handleInfer;
     private resetIdleTimer;
 }

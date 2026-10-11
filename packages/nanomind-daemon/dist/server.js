@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.NanoMindDaemon = exports.DEFAULT_CONFIG = exports.MAX_REQUEST_BODY_BYTES = exports.ABSTAIN_CONFIDENCE_FLOOR = void 0;
+exports.NanoMindDaemon = exports.DEFAULT_CONFIG = exports.InferRequestError = exports.MAX_REQUEST_BODY_BYTES = exports.ABSTAIN_CONFIDENCE_FLOOR = void 0;
 const node_http_1 = require("node:http");
 const node_net_1 = require("node:net");
 const node_fs_1 = require("node:fs");
@@ -38,6 +38,20 @@ class RequestTooLargeError extends Error {
         super('request_too_large');
     }
 }
+/**
+ * Thrown by `NanoMindDaemon.infer()` when a request is refused before the
+ * model runs. An inference failure is not wrapped in this class: `infer()`
+ * rejects with the engine's own error.
+ */
+class InferRequestError extends Error {
+    code;
+    constructor(code, message) {
+        super(message);
+        this.name = 'InferRequestError';
+        this.code = code;
+    }
+}
+exports.InferRequestError = InferRequestError;
 exports.DEFAULT_CONFIG = {
     httpPort: 47200,
     ipcPath: process.platform === 'win32'
@@ -219,56 +233,32 @@ class NanoMindDaemon extends node_events_1.EventEmitter {
         res.writeHead(404);
         res.end(JSON.stringify({ error: 'not_found', message: `${method} ${url} not found` }));
     }
-    async handleInfer(req, res) {
+    /**
+     * Run one inference in-process, without the HTTP server. `/v1/infer` calls
+     * this method, so both paths share the request validation, the
+     * `maxConcurrent` cap and the classified/abstain contract. A daemon that was
+     * never started loads the model on the first call.
+     *
+     * Rejects with `InferRequestError` when the request is refused before the
+     * model runs (`queue_full`, `invalid_request`) and with the engine's own
+     * error when inference fails. A rejection means classification did not run:
+     * treat it as an abstain, never as a benign verdict.
+     */
+    async infer(request) {
         // Queue check
         if (this.activeTasks >= this.config.maxConcurrent) {
-            res.writeHead(429);
-            res.end(JSON.stringify({
-                error: 'queue_full',
-                message: `Maximum ${this.config.maxConcurrent} concurrent requests. Try again shortly.`,
-                activeTasks: this.activeTasks,
-            }));
-            return;
+            throw this.queueFullError();
         }
-        // Parse body
-        let body;
-        try {
-            body = await parseJSON(req);
-        }
-        catch (err) {
-            if (err instanceof RequestTooLargeError) {
-                // The connection stays open while the client finishes sending, and
-                // the rest of the body is discarded unread. Closing the socket here
-                // resets a connection that still has unread bytes, and the client
-                // then sees EPIPE or ECONNRESET instead of this 413.
-                res.writeHead(413);
-                res.end(JSON.stringify({
-                    error: 'request_too_large',
-                    message: `Request body exceeds ${exports.MAX_REQUEST_BODY_BYTES} bytes`,
-                }));
-                return;
-            }
-            res.writeHead(400);
-            res.end(JSON.stringify({ error: 'invalid_request', message: 'Invalid JSON body' }));
-            return;
-        }
-        if (!body.intent && !body.input) {
-            res.writeHead(400);
-            res.end(JSON.stringify({ error: 'invalid_request', message: 'intent or input is required' }));
-            return;
+        if (!request || typeof request !== 'object' || (!request.intent && !request.input)) {
+            throw new InferRequestError('invalid_request', 'intent or input is required');
         }
         // Reject empty / whitespace-only input. A pure-pad token sequence
         // produces noisy argmax results (the model was not trained on
         // padding-only inputs), so the classifier must not see it. Without
         // this guard, requests like `{intent:"X",input:""}` or `"   "`
         // would emit a non-empty attackClass and poison FGA telemetry.
-        if (typeof body.input !== 'string' || body.input.trim().length === 0) {
-            res.writeHead(400);
-            res.end(JSON.stringify({
-                error: 'invalid_request',
-                message: 'input must be a non-empty, non-whitespace string',
-            }));
-            return;
+        if (typeof request.input !== 'string' || request.input.trim().length === 0) {
+            throw new InferRequestError('invalid_request', 'input must be a non-empty, non-whitespace string');
         }
         this.activeTasks++;
         this.resetIdleTimer();
@@ -290,16 +280,16 @@ class NanoMindDaemon extends node_events_1.EventEmitter {
                 this.emit('model_loaded');
             }
             // Route intent if not provided
-            let intent = body.intent;
-            if (!intent && body.input) {
-                const routed = (0, router_1.classifyIntent)(body.input);
+            let intent = request.intent;
+            if (!intent && request.input) {
+                const routed = (0, router_1.classifyIntent)(request.input);
                 intent = routed.intent;
             }
             // Run inference. The OnnxEngine consumes the raw input text; the
             // legacy text-generation path still wraps it with INTENT/CONTEXT
             // markers for prompting. We pass the unwrapped input to the engine
             // and let each implementation decide how to use it.
-            const classifierInput = body.input ?? '';
+            const classifierInput = request.input ?? '';
             const result = await this.engine.infer(classifierInput, {
                 maxTokens: 128,
                 temperature: 0.0,
@@ -335,10 +325,70 @@ class NanoMindDaemon extends node_events_1.EventEmitter {
             // low-confidence guess stays inspectable in telemetry.
             if (result.rawLabel)
                 response.evidence = result.rawLabel;
+            return response;
+        }
+        finally {
+            this.activeTasks--;
+        }
+    }
+    queueFullError() {
+        return new InferRequestError('queue_full', `Maximum ${this.config.maxConcurrent} concurrent requests. Try again shortly.`);
+    }
+    // Writes the HTTP answer for a request infer() refused: 429 for a full
+    // queue, 400 for an invalid request.
+    respondRefused(res, err) {
+        if (err.code === 'queue_full') {
+            res.writeHead(429);
+            res.end(JSON.stringify({
+                error: 'queue_full',
+                message: err.message,
+                activeTasks: this.activeTasks,
+            }));
+            return;
+        }
+        res.writeHead(400);
+        res.end(JSON.stringify({ error: 'invalid_request', message: err.message }));
+    }
+    async handleInfer(req, res) {
+        // Queue check, before the body is read. infer() checks again once the
+        // body is in, because the last slot can be taken in between.
+        if (this.activeTasks >= this.config.maxConcurrent) {
+            this.respondRefused(res, this.queueFullError());
+            return;
+        }
+        // Parse body
+        let body;
+        try {
+            body = await parseJSON(req);
+        }
+        catch (err) {
+            if (err instanceof RequestTooLargeError) {
+                // The connection stays open while the client finishes sending, and
+                // the rest of the body is discarded unread. Closing the socket here
+                // resets a connection that still has unread bytes, and the client
+                // then sees EPIPE or ECONNRESET instead of this 413.
+                res.writeHead(413);
+                res.end(JSON.stringify({
+                    error: 'request_too_large',
+                    message: `Request body exceeds ${exports.MAX_REQUEST_BODY_BYTES} bytes`,
+                }));
+                return;
+            }
+            res.writeHead(400);
+            res.end(JSON.stringify({ error: 'invalid_request', message: 'Invalid JSON body' }));
+            return;
+        }
+        const startMs = Date.now();
+        try {
+            const response = await this.infer(body);
             res.writeHead(200);
             res.end(JSON.stringify(response));
         }
         catch (err) {
+            if (err instanceof InferRequestError) {
+                this.respondRefused(res, err);
+                return;
+            }
             const message = err instanceof Error ? err.message : 'Inference failed';
             res.writeHead(500);
             // Bug 1 wire contract: attackClass is ALWAYS a string. Even on the
@@ -357,9 +407,6 @@ class NanoMindDaemon extends node_events_1.EventEmitter {
                 confidence: 0,
                 latencyMs: Date.now() - startMs,
             }));
-        }
-        finally {
-            this.activeTasks--;
         }
     }
     resetIdleTimer() {
@@ -380,6 +427,9 @@ class NanoMindDaemon extends node_events_1.EventEmitter {
                     .catch(() => undefined);
             }
         }, this.config.idleUnloadSeconds * 1000);
+        // A daemon used only through infer() has no HTTP server keeping the
+        // process open, and this timer must not keep it open either.
+        this.idleTimer.unref();
     }
 }
 exports.NanoMindDaemon = NanoMindDaemon;
