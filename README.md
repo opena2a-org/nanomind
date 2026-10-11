@@ -122,7 +122,9 @@ screenInput('ignore previous instructions', 'piped');
 // { safe: false, patterns: [{ type: 'instruction_override', severity: 'critical' }] }
 ```
 
-A launcher turns screening off for one session when the user passes `--no-guard`: it checks the arguments with `hasNoGuardFlag(args)` from `@nanomind/cli` and starts the session with `noGuard: true`. The session then prints a warning to stderr. The adapters in `integrations/` do not pass the flag yet.
+In a session, a critical match blocks the line. A high or medium match prints the guard's warning or notice, and the line is still routed.
+
+`nanomind --no-guard` turns screening off for one session and prints a warning to stderr. Another launcher does the same by checking its arguments with `hasNoGuardFlag(args)` from `@nanomind/cli` and starting the session with `noGuard: true`. The adapters in `integrations/` do not pass the flag yet.
 
 Detects: instruction override, role switching, permission escalation, zero-width character injection, encoded payloads.
 

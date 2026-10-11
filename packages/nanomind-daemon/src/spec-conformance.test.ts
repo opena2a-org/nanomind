@@ -328,6 +328,21 @@ describe('spec conformance', () => {
     }
   });
 
+  // The daemon routes an intent from `input` when the request has none
+  // (server.test.ts: "routes the intent from the input when the request names none").
+  it('§3.4 Request line and InferRequest mark intent optional, as the daemon routes one', () => {
+    assert.ok(sec34.length > 0, 'docs/SPECIFICATION.md: cannot find the `### 3.4` heading');
+    assert.match(sec34, /When `intent` is absent or empty, the daemon routes one from `input`/);
+    const line = sec34.match(/^\s*Request:\s*\{([^}]*)\}/m);
+    assert.ok(line, 'docs/SPECIFICATION.md §3.4 carries a `Request: { ... }` line for /v1/infer');
+    const specFields = line[1].split(',').map(f => f.trim());
+    assert.ok(specFields.includes('intent?'), `docs/SPECIFICATION.md §3.4 marks intent required: ${line[0].trim()}`);
+    assert.ok(
+      tsInterfaceFields(SERVER_TS, SERVER_TS_PATH, 'InferRequest').includes('intent?'),
+      `${SERVER_TS_PATH}: InferRequest marks intent required`
+    );
+  });
+
   it('NMD-03.AC2 §3.4 Response line is the real InferResponse field set', () => {
     assert.ok(sec34.length > 0, 'docs/SPECIFICATION.md: cannot find the `### 3.4` heading');
     const line = sec34.match(/^\s*Response:\s*\{([^}]*)\}/m);
