@@ -1,6 +1,6 @@
 # @nanomind/guard
 
-Prompt injection detection for CLI input. Protects NanoMind from piped attacks, agent output injection, and encoded payloads.
+Prompt injection detection for CLI input. Screens piped input, a file redirected to stdin, and agent output that a caller passes in, before NanoMind routes it.
 
 ## Install
 
@@ -11,7 +11,10 @@ npm install @nanomind/guard
 ## Usage
 
 ```typescript
-import { screenInput } from '@nanomind/guard';
+import { screenInput, detectInputSource } from '@nanomind/guard';
+
+// Source of stdin: 'direct' for a terminal, 'file' for a redirected file, 'piped' otherwise
+const source = detectInputSource();
 
 // Direct input — always trusted
 screenInput('scan this', 'direct');

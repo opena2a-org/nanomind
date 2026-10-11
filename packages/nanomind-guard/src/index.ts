@@ -8,6 +8,9 @@
  * Runs BEFORE the router on all non-direct input (piped, file, env).
  */
 
+import * as fs from 'node:fs';
+import * as tty from 'node:tty';
+
 export type InputSource = 'direct' | 'piped' | 'file' | 'env' | 'agent-output';
 
 export interface GuardResult {
@@ -68,6 +71,14 @@ const INJECTION_PATTERNS: Array<{
   { pattern: /base64[_\s]*(?:decode|d)\s*\(/i, type: 'encoded_payload', severity: 'medium' },
 ];
 
+const SOURCE_LABELS: Record<InputSource, string> = {
+  direct: 'direct input',
+  piped: 'piped input',
+  file: 'file input',
+  env: 'environment input',
+  'agent-output': 'agent output',
+};
+
 /**
  * Screen input for injection attempts.
  * Returns a GuardResult indicating whether the input is safe to process.
@@ -99,7 +110,7 @@ export function screenInput(input: string, source: InputSource = 'direct'): Guar
   if (hasCritical) {
     recommendation = 'BLOCKED: Critical injection pattern detected. This input appears to contain instructions designed to hijack NanoMind. The command was not executed.';
   } else if (hasHigh) {
-    recommendation = 'WARNING: Suspicious pattern detected in piped input. Review the input before proceeding. Use --no-guard to bypass (not recommended).';
+    recommendation = `WARNING: Suspicious pattern detected in ${SOURCE_LABELS[source]}. Review the input before proceeding. Use --no-guard to bypass (not recommended).`;
   } else if (detected.length > 0) {
     recommendation = 'NOTICE: Minor suspicious pattern detected. Proceeding with caution.';
   }
@@ -113,11 +124,16 @@ export function screenInput(input: string, source: InputSource = 'direct'): Guar
 }
 
 /**
- * Determine the input source.
+ * Determine where the input on a file descriptor (stdin by default) comes
+ * from: a terminal is 'direct', a regular file redirected to it is 'file',
+ * and anything else (a pipe, a socket, a device) is 'piped'.
  */
-export function detectInputSource(): InputSource {
-  if (typeof process !== 'undefined') {
-    if (!process.stdin.isTTY) return 'piped';
+export function detectInputSource(fd: number = 0): InputSource {
+  if (tty.isatty(fd)) return 'direct';
+  try {
+    if (fs.fstatSync(fd).isFile()) return 'file';
+  } catch {
+    // A closed descriptor cannot be identified; it is screened as piped.
   }
-  return 'direct';
+  return 'piped';
 }

@@ -124,7 +124,9 @@ Raw behavioral events NEVER leave the endpoint. Only differentially-private grad
 
 ## 5. Guard Protocol
 
-All non-direct input (piped, file, agent output) is screened for injection before routing:
+Input that does not come from a terminal is screened for injection before routing. Its source is the one `detectInputSource()` reports for stdin: `piped` for a pipe or socket, `file` for a file redirected to stdin. Agent output reaches a session through one of these and is screened as such. A caller that passes agent output to `screenInput` directly labels it `agent-output`. Output from the commands a session runs is printed and never routed, so it is not screened.
+
+The guard screens for:
 
 - Instruction override patterns
 - Role switching patterns
@@ -132,7 +134,7 @@ All non-direct input (piped, file, agent output) is screened for injection befor
 - Encoded payload patterns
 - Zero-width character injection
 
-Detected critical injections are blocked. Guard cannot be disabled via config, only by the `--no-guard` flag (which displays a visible warning).
+Detected critical injections are blocked. Guard cannot be disabled via config. A launcher disables it for one session only when the user passes the `--no-guard` flag, by starting the session with `noGuard: true`; the session prints a visible warning to stderr.
 
 ## 6. Conformance
 

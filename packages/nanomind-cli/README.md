@@ -46,7 +46,7 @@ hma secure   # runs scan directly (NanoMind doesn't intercept commands)
 ## Features
 
 - Pattern-based request routing: scan, fix, status, help, trust level and build attestation requests
-- Prompt injection detection on piped input
+- Prompt injection detection on piped and file input (a session started with `noGuard: true` for `--no-guard` skips it and prints a warning)
 - 9 CI/CD artifact generators
 - Session context (follow-up questions)
 - Skill level adaptation

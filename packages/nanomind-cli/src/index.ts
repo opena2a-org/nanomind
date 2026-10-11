@@ -3,7 +3,9 @@
  * @nanomind/cli — Unified NanoMind CLI Entry Point
  *
  * Run directly as the `nanomind` command, it starts the interactive NanoMind
- * prompt, or answers --help and --version.
+ * prompt, or answers --help and --version. A session started with
+ * `noGuard: true` for --no-guard skips input screening and prints a warning
+ * to stderr.
  *
  * Imported, it is the entry point that HMA, secretless-ai, and opena2a
  * adapters delegate to when the user runs their CLI with no arguments.
@@ -19,7 +21,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { classifyIntent, mapToCommand, isATCIntent, type IntentClassification } from '@nanomind/router';
 import { ATCIntentHandler } from '@nanomind/atc';
-import { screenInput, detectInputSource } from '@nanomind/guard';
+import { screenInput, detectInputSource, type InputSource } from '@nanomind/guard';
 import { generateArtifact, detectArtifactType, artifactTypeFromInput, listArtifactTypes } from './codegen.ts';
 
 export interface NanoMindSession {
@@ -30,6 +32,31 @@ export interface NanoMindSession {
   /** CLI that scan, fix, status and help requests run. Defaults to cliName. */
   targetCli?: string;
   projectDir?: string; // directory generated artifacts are for; defaults to the working directory
+  noGuard?: boolean; // set when the user launched with --no-guard; input is not screened and a warning is printed
+}
+
+/** The launch flag that turns off input screening for one session. */
+export const NO_GUARD_FLAG = '--no-guard';
+
+export const NO_GUARD_WARNING =
+  'WARNING: --no-guard is set. Piped and file input is not screened for prompt injection in this session.';
+
+/**
+ * True when the user's launch arguments (argv without the node and script
+ * paths) include --no-guard.
+ */
+export function hasNoGuardFlag(args: string[]): boolean {
+  return args.includes(NO_GUARD_FLAG);
+}
+
+/**
+ * Screen one line of session input from `source`. Returns the message to
+ * print when the line is blocked, or null when it may be routed.
+ */
+export function screenLine(input: string, source: InputSource, noGuard = false): string | null {
+  if (noGuard || source === 'direct') return null;
+  const result = screenInput(input, source);
+  return result.safe ? null : result.recommendation;
 }
 
 const WELCOME = `
@@ -50,6 +77,9 @@ export async function startSession(session: NanoMindSession): Promise<void> {
 
   console.log(WELCOME);
   console.log(`  Connected to: ${session.cliName} v${session.cliVersion}\n`);
+  if (session.noGuard) {
+    console.error(`  ${NO_GUARD_WARNING}\n`);
+  }
 
   const rl = readline.createInterface({
     input: process.stdin,
@@ -70,14 +100,12 @@ export async function startSession(session: NanoMindSession): Promise<void> {
       return;
     }
 
-    // Guard: screen piped input for injection
-    if (inputSource !== 'direct') {
-      const guardResult = screenInput(input, inputSource);
-      if (!guardResult.safe) {
-        console.log(`\n  ${guardResult.recommendation}\n`);
-        rl.prompt();
-        return;
-      }
+    // Guard: screen piped and file input for injection
+    const blocked = screenLine(input, inputSource, session.noGuard);
+    if (blocked) {
+      console.log(`\n  ${blocked}\n`);
+      rl.prompt();
+      return;
     }
 
     try {
