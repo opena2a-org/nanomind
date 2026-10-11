@@ -348,6 +348,34 @@ test('the variables that name a repository or change how git matches a pathspec 
   }
 });
 
+test('each pathspec variable changes the files git matches for *.md, fewer or more, and none changes the files listed', (t) => {
+  const dir = scratchRepo(t, {
+    'README.md': 'Plain prose.\n',
+    'docs/guide.md': 'Plain prose.\n',
+    'docs/NOTES.MD': 'Plain prose.\n',
+  });
+  if (dir === null) {
+    t.skip('git cannot be started');
+    return;
+  }
+  const matched = (env) =>
+    spawnSync('git', ['ls-files', '--', '*.md'], { cwd: dir, env: { ...plain, ...env }, encoding: 'utf8' })
+      .stdout.split('\n')
+      .filter(Boolean);
+  assert.deepEqual(matched({}), ['README.md', 'docs/guide.md']);
+  const listed = trackedDocs(dir);
+  const withVariable = {
+    GIT_GLOB_PATHSPECS: ['README.md'],
+    GIT_NOGLOB_PATHSPECS: [],
+    GIT_LITERAL_PATHSPECS: [],
+    GIT_ICASE_PATHSPECS: ['README.md', 'docs/NOTES.MD', 'docs/guide.md'],
+  };
+  for (const [name, files] of Object.entries(withVariable)) {
+    assert.deepEqual(matched({ [name]: '1' }), files, `git with ${name}`);
+    assert.deepEqual(withEnv({ [name]: '1' }, () => trackedDocs(dir)), listed, name);
+  }
+});
+
 test('the command line checks the files when its directory is reached through a symlink, as under /tmp or /var on macOS', (t) => {
   const dir = scratch(t, {
     'README.md': 'The daemon runs locally -- no network call.\n',
