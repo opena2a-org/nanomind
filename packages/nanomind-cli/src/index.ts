@@ -2,14 +2,20 @@
 /**
  * @nanomind/cli — Unified NanoMind CLI Entry Point
  *
- * When invoked with no args, launches the interactive NanoMind prompt.
- * When invoked with --no-smart, falls through to the underlying CLI tool.
+ * Run directly as the `nanomind` command, it starts the interactive NanoMind
+ * prompt, or answers --help and --version.
  *
- * This is the entry point that HMA, secretless-ai, and opena2a adapters
- * delegate to when the user runs their CLI with no arguments.
+ * Imported, it is the entry point that HMA, secretless-ai, and opena2a
+ * adapters delegate to when the user runs their CLI with no arguments.
+ *
+ * Requests are routed by pattern matching (@nanomind/router). No model is
+ * involved.
  */
 
 import * as readline from 'node:readline';
+import { spawnSync, type SpawnSyncOptionsWithStringEncoding } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { classifyIntent, mapToCommand, isATCIntent, type IntentClassification } from '@nanomind/router';
 import { ATCIntentHandler } from '@nanomind/atc';
 import { screenInput, detectInputSource } from '@nanomind/guard';
@@ -19,15 +25,16 @@ export interface NanoMindSession {
   cliVersion: string;
   registryUrl: string;
   onCommand: (cmd: string, args: string[]) => Promise<string>;
+  /** CLI that scan, fix, status and help requests run. Defaults to cliName. */
+  targetCli?: string;
 }
 
 const WELCOME = `
-  NanoMind — AI Security Assistant
+  NanoMind: interactive assistant for AI security tools
   Type a question or command. Examples:
     "scan this project"
     "why is my agent level 2"
     "fix the credential issue"
-    "generate a github action for trust"
   Type "exit" or Ctrl+C to quit.
 `;
 
@@ -99,7 +106,7 @@ async function handleInput(
   }
 
   // Map to CLI command
-  const mapping = mapToCommand(classification, session.cliName);
+  const mapping = mapToCommand(classification, session.targetCli ?? session.cliName);
 
   if (!mapping) {
     if (classification.intent === 'UNKNOWN') {
@@ -175,6 +182,134 @@ async function handleATCIntent(
     default:
       console.log(`\n  ATC intent "${classification.intent}" is not yet implemented.\n`);
   }
+}
+
+const DEFAULT_REGISTRY_URL = 'https://api.oa2a.org';
+
+// The scanner a standalone `nanomind` session runs, and how to get it.
+const STANDALONE_TARGET = 'hackmyagent';
+const INSTALL_COMMANDS: Record<string, string> = {
+  hackmyagent: 'npm install -g hackmyagent',
+};
+
+const COMMAND_TIMEOUT_SECONDS = 120;
+const COMMAND_MAX_OUTPUT_MB = 16;
+
+// A command name, subcommand, flag, path or identifier. Anything a shell
+// would interpret is refused, because Windows needs a shell (see runCommand).
+const SAFE_TOKEN = /^[\w@+=:,.\/\\-]+$/;
+
+/**
+ * Run a mapped command (for example "hackmyagent secure" with ["."]) and
+ * return what it printed. A non-zero exit is not an error: scanners exit
+ * non-zero when they report findings.
+ */
+export function runCommand(command: string, args: string[] = []): string {
+  const tokens = [...command.trim().split(/\s+/), ...args];
+  const unsafe = tokens.find((token) => !SAFE_TOKEN.test(token));
+  if (unsafe !== undefined) {
+    throw new Error(`Refusing to run a command that contains "${unsafe}"`);
+  }
+
+  const [bin, ...rest] = tokens;
+  const options: SpawnSyncOptionsWithStringEncoding = {
+    encoding: 'utf-8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+    timeout: COMMAND_TIMEOUT_SECONDS * 1000,
+    maxBuffer: COMMAND_MAX_OUTPUT_MB * 1024 * 1024,
+  };
+  // npm installs command shims as .cmd files on Windows, and only a shell can
+  // start those. Every token passed SAFE_TOKEN above.
+  const result = process.platform === 'win32'
+    ? spawnSync(tokens.join(' '), { ...options, shell: true })
+    : spawnSync(bin, rest, options);
+
+  if (result.error) {
+    const code = (result.error as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT') {
+      const install = INSTALL_COMMANDS[bin];
+      throw new Error(`${bin} was not found on PATH.${install ? ` Install it with: ${install}` : ''}`);
+    }
+    if (code === 'ETIMEDOUT') {
+      throw new Error(`${bin} did not finish within ${COMMAND_TIMEOUT_SECONDS} seconds`);
+    }
+    if (code === 'ENOBUFS') {
+      throw new Error(`${bin} printed more than ${COMMAND_MAX_OUTPUT_MB} MB of output`);
+    }
+    throw result.error;
+  }
+
+  const output = result.stdout || result.stderr;
+  if (!output && result.status !== 0) {
+    const how = result.signal ? `was stopped by ${result.signal}` : `exited with status ${result.status}`;
+    throw new Error(`${bin} ${how} and printed nothing`);
+  }
+  return output;
+}
+
+const USAGE = `nanomind: interactive assistant for AI security tools
+
+Usage:
+  nanomind                 Start the interactive session
+  nanomind --help, -h      Show this help
+  nanomind --version, -v   Print the version
+
+In the session, type a request in plain language, for example
+"scan this project". Requests are matched against fixed patterns
+(no model is involved).
+
+Requests the session acts on:
+  scan, fix, status, help    Runs ${STANDALONE_TARGET} and prints the command first.
+                             ${STANDALONE_TARGET} must be on PATH:
+                             ${INSTALL_COMMANDS[STANDALONE_TARGET]}
+  trust level of an agent    Looks the agent up in the OpenA2A registry
+  build attestation          Prints a CI workflow step
+
+Environment:
+  OPENA2A_REGISTRY_URL   Registry for trust lookups (default: ${DEFAULT_REGISTRY_URL})
+
+Type "exit" or press Ctrl+C to leave the session.`;
+
+function packageVersion(): string {
+  return JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf-8')).version;
+}
+
+/**
+ * The `nanomind` command: --help, --version, or the interactive session.
+ */
+export async function runCli(argv: string[]): Promise<void> {
+  if (argv.includes('--help') || argv.includes('-h')) {
+    console.log(USAGE);
+    return;
+  }
+  if (argv.includes('--version') || argv.includes('-v')) {
+    console.log(packageVersion());
+    return;
+  }
+  if (argv.length > 0) {
+    const kind = argv[0].startsWith('-') ? 'option' : 'command';
+    console.error(`Unknown ${kind}: ${argv[0]}\n`);
+    console.error(USAGE);
+    process.exitCode = 1;
+    return;
+  }
+
+  await startSession({
+    cliName: 'nanomind',
+    cliVersion: packageVersion(),
+    targetCli: STANDALONE_TARGET,
+    registryUrl: process.env.OPENA2A_REGISTRY_URL || DEFAULT_REGISTRY_URL,
+    onCommand: async (cmd: string, args: string[]) => runCommand(cmd, args),
+  });
+}
+
+// Start the command only when this file is the program that was run. Adapters
+// import it for startSession, and that must stay free of side effects.
+if (typeof require !== 'undefined' && typeof module !== 'undefined' && require.main === module) {
+  runCli(process.argv.slice(2)).catch((err) => {
+    console.error(err instanceof Error ? err.message : String(err));
+    process.exit(1);
+  });
 }
 
 export default startSession;
