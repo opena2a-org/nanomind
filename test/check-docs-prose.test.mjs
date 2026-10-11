@@ -229,6 +229,41 @@ test('outside a git checkout the Markdown files on disk in scope are checked', (
   assert.doesNotMatch(result.stderr, /fatal|\n\s+at /);
 });
 
+test('a repository named in GIT_DIR, as a git hook sets it, does not replace the directory checked', (t) => {
+  // The scratch repository is set up without the variables under test, so a
+  // run from a git hook cannot reach the checkout the hook belongs to.
+  const plain = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith('GIT_')));
+  const git = (cwd, ...args) => spawnSync('git', args, { cwd, env: plain, encoding: 'utf8' });
+
+  const repo = scratch(t, { 'tracked.md': 'Tracked prose.\n' });
+  if (git(repo, 'init', '-q').status !== 0 || git(repo, 'add', 'tracked.md').status !== 0) {
+    t.skip('git is not available');
+    return;
+  }
+  const gitDir = join(repo, '.git');
+  const dir = scratch(t, {
+    'README.md': 'The daemon runs locally -- no network call.\n',
+    'docs/guide.md': 'Plain prose.\n',
+  });
+
+  const before = process.env.GIT_DIR;
+  process.env.GIT_DIR = gitDir;
+  try {
+    assert.deepEqual(trackedDocs(dir), ['README.md', 'docs/guide.md']);
+  } finally {
+    if (before === undefined) delete process.env.GIT_DIR;
+    else process.env.GIT_DIR = before;
+  }
+
+  mkdirSync(join(dir, 'scripts'));
+  copyFileSync(script, join(dir, 'scripts', 'check-docs-prose.mjs'));
+  const env = { ...plain, GIT_DIR: gitDir, GIT_CEILING_DIRECTORIES: dirname(dir) };
+  const result = run(join(dir, 'scripts', 'check-docs-prose.mjs'), [], { cwd: dir, env });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /^README\.md:1: spaced double hyphen\n\n1 finding\(s\) in 1 file\(s\)/);
+  assert.doesNotMatch(result.stderr, /tracked\.md|fatal|\n\s+at /);
+});
+
 test('changelogs, licenses, vendored and test data are out of scope', () => {
   for (const path of ['README.md', 'docs/SPECIFICATION.md', 'packages/nanomind-daemon/README.md', 'site/page.mdx']) {
     assert.equal(inScope(path), true, path);

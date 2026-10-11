@@ -382,13 +382,24 @@ function filesOnDisk(cwd, dir = '') {
   return found;
 }
 
+// The variables with which git names a repository to its child processes. A
+// git hook sets them for the checkout it runs in, and a git command that
+// inherits them reads that checkout whatever its working directory is.
+const REPOSITORY_VARIABLE =
+  /^GIT_(DIR|WORK_TREE|INDEX_FILE|PREFIX|COMMON_DIR|OBJECT_DIRECTORY|ALTERNATE_OBJECT_DIRECTORIES)$/;
+
 // The tracked Markdown files in scope. Outside a git checkout, such as a
-// source archive, or when git lists none, the files on disk.
+// source archive, or when git lists none, the files on disk. git finds the
+// repository from cwd alone, not from the variables a git hook exports.
 export function trackedDocs(cwd = root) {
   let listed = [];
   try {
+    const env = Object.fromEntries(
+      Object.entries(process.env).filter(([name]) => !REPOSITORY_VARIABLE.test(name)),
+    );
     const output = execFileSync('git', ['ls-files', '-z', '--', '*.md', '*.mdx'], {
       cwd,
+      env,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
     });
