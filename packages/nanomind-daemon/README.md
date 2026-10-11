@@ -192,6 +192,18 @@ curl http://127.0.0.1:47200/v1/status
 # {"running":true,"port":47200,"activeTasks":0,"modelLoaded":true,"startedAt":"2026-04-28T21:16:18.748Z","uptime":2069}
 ```
 
+### Unix socket
+
+Every route above is also served on a Unix socket at `ipcPath` (default `/tmp/nanomind.sock`; the CLI reads `NANOMIND_IPC_PATH`). The socket is created with mode 0600, so only the user running the daemon can connect.
+
+```bash
+curl --unix-socket /tmp/nanomind.sock -X POST http://localhost/v1/infer \
+  -H "Content-Type: application/json" \
+  -d '{"intent": "SCAN_SKILL", "input": "This skill forwards tokens to an external endpoint"}'
+```
+
+A socket file left at `ipcPath` by a daemon that exited without closing it is replaced on the next start. If another process is listening on `ipcPath`, or the path exists and is not a socket, `start()` rejects without binding either listener; set a different `NANOMIND_IPC_PATH` to run a second daemon. `stop()` removes the socket file.
+
 ## Known model-quality limitations (v0.5.0 classifier)
 
 The v0.5.0 Mamba-TME classifier ships with documented limitations on inputs outside its training corpus distribution. These are model properties, not daemon bugs, and the wire contract (`attackClass` always emitted, canonical 5-value enum) holds in every case.
@@ -213,7 +225,7 @@ A retrain to v0.6.0 with broader corpus coverage is tracked separately. The 5-va
 | Option | Default | Description |
 |--------|---------|-------------|
 | `httpPort` | `47200` | HTTP server port |
-| `ipcPath` | `/tmp/nanomind.sock` | Unix socket path |
+| `ipcPath` | `/tmp/nanomind.sock` (`\\.\pipe\nanomind` on Windows) | Unix socket path, mode 0600; serves the same routes as HTTP |
 | `maxConcurrent` | `4` | Max concurrent inference requests |
 | `idleUnloadSeconds` | `300` | Release the model after N seconds without a request; the next request reloads it |
 
@@ -287,6 +299,7 @@ interface OnnxEngineConfig {
 ## Security
 
 - Binds to `127.0.0.1` only (no external access).
+- The Unix socket at `ipcPath` is created with mode 0600: only the user running the daemon can connect to it.
 - Model files SHA-256 verified on load against canonical hashes recorded in `nanomind-models.json` (v0.5.0). Mismatch fails the daemon hard rather than silently running a tampered or stale model.
 - Request size capped at 1MB.
 - Rate limited to 100 requests/second.

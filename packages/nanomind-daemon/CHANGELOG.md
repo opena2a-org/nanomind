@@ -15,6 +15,16 @@
 
 This is a contract/fallback change only — no model retrain. Stage 1 does **not** re-enable any live Beat-5 classification line; that is gated on Stage 2 (fine-tune to F1 > 0.85).
 
+### Unix socket at `ipcPath` (#105)
+
+The daemon now listens on `ipcPath` (default `/tmp/nanomind.sock`) as well as `127.0.0.1:47200`. The README and package description already described a Unix socket interface, but `ipcPath` was never read and only the HTTP server was created.
+
+- The socket serves the same routes and `/v1/infer` contract as HTTP, through the same request handler: `curl --unix-socket /tmp/nanomind.sock http://localhost/v1/status`.
+- It is created with mode 0600, so only the user running the daemon can connect.
+- A socket file left by a daemon that exited without closing it is replaced on start. A live listener on `ipcPath`, or a path that exists and is not a socket, makes `start()` reject without binding either listener.
+- `stop()` closes the socket and removes its file.
+- The CLI reads `NANOMIND_IPC_PATH` for the socket path and prints it on start.
+
 ### Tests
 
 - 21/21 pass (was 18; +3: a no-confidence engine result abstains; sub-floor confidence abstains and blanks attackClass; a verdict exactly at the inclusive floor classifies through).

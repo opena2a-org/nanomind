@@ -54,6 +54,7 @@ async function startDaemon() {
         }
     }
     const port = parseInt(process.env['NANOMIND_PORT'] ?? String(server_js_1.DEFAULT_CONFIG.httpPort), 10);
+    const ipcPath = process.env['NANOMIND_IPC_PATH'] || server_js_1.DEFAULT_CONFIG.ipcPath;
     const idleSeconds = parseInt(process.env['MODEL_IDLE_UNLOAD_SECONDS'] ?? String(server_js_1.DEFAULT_CONFIG.idleUnloadSeconds), 10);
     // Auto-download is enabled by default. Operators in air-gapped or
     // network-restricted environments can disable it via the
@@ -64,14 +65,16 @@ async function startDaemon() {
         process.env['NANOMIND_NO_AUTO_DOWNLOAD'] === '1';
     const daemon = new server_js_1.NanoMindDaemon({
         httpPort: port,
+        ipcPath,
         idleUnloadSeconds: idleSeconds,
         engine: new onnx_engine_js_1.OnnxEngine({ noAutoDownload }),
     });
-    daemon.on('started', ({ port }) => {
+    daemon.on('started', ({ port, ipcPath }) => {
         // Write PID file
         (0, node_fs_1.mkdirSync)(STATE_DIR, { recursive: true });
         (0, node_fs_1.writeFileSync)(PID_FILE, String(process.pid));
         console.log(`NanoMind daemon started on http://127.0.0.1:${port}`);
+        console.log(`Unix socket: ${ipcPath}`);
         console.log(`PID: ${process.pid}`);
         console.log(`Model idle unload: ${idleSeconds}s`);
         console.log(`Max concurrent: ${server_js_1.DEFAULT_CONFIG.maxConcurrent}`);
@@ -154,6 +157,7 @@ Options:
 
 Environment:
   NANOMIND_PORT                HTTP port (default: 47200)
+  NANOMIND_IPC_PATH            Unix socket path (default: ${server_js_1.DEFAULT_CONFIG.ipcPath})
   MODEL_IDLE_UNLOAD_SECONDS    Unload model after N seconds idle (default: 300)
   NANOMIND_NO_AUTO_DOWNLOAD    Set to "1" to disable auto-download
                                (equivalent to --no-download)
@@ -171,6 +175,9 @@ API:
 
   GET  http://127.0.0.1:47200/v1/status
   GET  http://127.0.0.1:47200/health
+
+  The same routes are served over the Unix socket (mode 0600, owner only):
+    curl --unix-socket ${server_js_1.DEFAULT_CONFIG.ipcPath} http://localhost/v1/status
 `.trim());
 }
 main().catch((err) => {

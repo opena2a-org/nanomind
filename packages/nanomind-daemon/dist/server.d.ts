@@ -103,6 +103,7 @@ export declare class NanoMindDaemon extends EventEmitter {
     private config;
     private engine;
     private httpServer;
+    private ipcServer;
     private activeTasks;
     private idleTimer;
     private modelLoaded;
@@ -112,6 +113,16 @@ export declare class NanoMindDaemon extends EventEmitter {
         engine?: DaemonEngine;
     });
     start(): Promise<void>;
+    /**
+     * Serves the HTTP request handler on a Unix socket (a named pipe on
+     * Windows) at `ipcPath`, so a local client gets the same routes and
+     * `/v1/infer` contract without a TCP port. The socket is created with
+     * mode 0600: only the user running the daemon can connect. A socket file
+     * left by a daemon that exited without cleanup is replaced; a socket with
+     * a live listener, or a path that is not a socket, is never removed and
+     * start() rejects instead.
+     */
+    private listenIPC;
     stop(): Promise<void>;
     getStatus(): {
         running: boolean;

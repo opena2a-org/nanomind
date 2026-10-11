@@ -2,6 +2,8 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.NanoMindDaemon = exports.DEFAULT_CONFIG = exports.ABSTAIN_CONFIDENCE_FLOOR = void 0;
 const node_http_1 = require("node:http");
+const node_net_1 = require("node:net");
+const node_fs_1 = require("node:fs");
 const router_1 = require("@nanomind/router");
 const node_events_1 = require("node:events");
 const onnx_engine_ts_1 = require("./onnx-engine.js");
@@ -36,6 +38,7 @@ class NanoMindDaemon extends node_events_1.EventEmitter {
     config;
     engine;
     httpServer = null;
+    ipcServer = null;
     activeTasks = 0;
     idleTimer = null;
     modelLoaded = false;
@@ -67,13 +70,62 @@ class NanoMindDaemon extends node_events_1.EventEmitter {
         this.modelLoaded = true;
         this.idleUnloaded = false;
         this.emit('model_loaded');
+        // Bind the IPC socket before HTTP, so a socket that cannot be bound
+        // (another daemon owns ipcPath, or the path is not a socket) rejects
+        // start() with nothing left listening.
+        this.ipcServer = await this.listenIPC();
         // Now safe to start the HTTP server on localhost only (non-routable).
         this.httpServer = (0, node_http_1.createServer)((req, res) => this.handleHTTP(req, res));
         this.httpServer.listen(this.config.httpPort, '127.0.0.1', () => {
             this.startedAt = new Date();
-            this.emit('started', { port: this.config.httpPort });
+            this.emit('started', { port: this.config.httpPort, ipcPath: this.config.ipcPath });
         });
         this.resetIdleTimer();
+    }
+    /**
+     * Serves the HTTP request handler on a Unix socket (a named pipe on
+     * Windows) at `ipcPath`, so a local client gets the same routes and
+     * `/v1/infer` contract without a TCP port. The socket is created with
+     * mode 0600: only the user running the daemon can connect. A socket file
+     * left by a daemon that exited without cleanup is replaced; a socket with
+     * a live listener, or a path that is not a socket, is never removed and
+     * start() rejects instead.
+     */
+    async listenIPC() {
+        const ipcPath = this.config.ipcPath;
+        const isUnixSocket = process.platform !== 'win32';
+        if (isUnixSocket)
+            await removeStaleSocket(ipcPath);
+        const server = (0, node_http_1.createServer)((req, res) => this.handleHTTP(req, res));
+        await new Promise((resolve, reject) => {
+            server.once('error', reject);
+            server.once('listening', () => {
+                server.off('error', reject);
+                resolve();
+            });
+            // listen() binds the socket synchronously, so a 0177 umask held
+            // around the call creates it as 0600 with no moment at a wider mode.
+            // Worker threads cannot set the umask; the chmod below still applies.
+            let previousUmask = null;
+            if (isUnixSocket) {
+                try {
+                    previousUmask = process.umask(0o177);
+                }
+                catch {
+                    previousUmask = null;
+                }
+            }
+            try {
+                server.listen(ipcPath);
+            }
+            finally {
+                if (previousUmask !== null)
+                    process.umask(previousUmask);
+            }
+        });
+        if (isUnixSocket)
+            (0, node_fs_1.chmodSync)(ipcPath, 0o600);
+        return server;
     }
     async stop() {
         if (this.idleTimer) {
@@ -83,6 +135,11 @@ class NanoMindDaemon extends node_events_1.EventEmitter {
         if (this.httpServer) {
             this.httpServer.close();
             this.httpServer = null;
+        }
+        if (this.ipcServer) {
+            // Closing a Unix socket server also removes its socket file.
+            this.ipcServer.close();
+            this.ipcServer = null;
         }
         this.modelLoaded = false;
         this.idleUnloaded = false;
@@ -302,6 +359,40 @@ class NanoMindDaemon extends node_events_1.EventEmitter {
     }
 }
 exports.NanoMindDaemon = NanoMindDaemon;
+// Removes a socket file at `path` that no process is listening on, so a
+// daemon that exited without closing its socket does not block the next
+// start. Throws when the path is not a socket or a listener answers on it.
+async function removeStaleSocket(path) {
+    let isSocket;
+    try {
+        isSocket = (0, node_fs_1.lstatSync)(path).isSocket();
+    }
+    catch (err) {
+        if (err.code === 'ENOENT')
+            return;
+        throw err;
+    }
+    if (!isSocket) {
+        throw new Error(`ipcPath ${path} exists and is not a socket; refusing to replace it`);
+    }
+    const probe = await new Promise((resolve) => {
+        const socket = (0, node_net_1.connect)(path);
+        socket.once('connect', () => {
+            socket.destroy();
+            resolve('connected');
+        });
+        socket.once('error', (err) => resolve(err.code ?? 'error'));
+    });
+    if (probe === 'ENOENT')
+        return;
+    if (probe === 'connected') {
+        throw new Error(`ipcPath ${path} is in use by another process`);
+    }
+    if (probe !== 'ECONNREFUSED') {
+        throw new Error(`ipcPath ${path} exists and could not be probed (${probe})`);
+    }
+    (0, node_fs_1.unlinkSync)(path);
+}
 // Parse JSON body from IncomingMessage
 function parseJSON(req) {
     return new Promise((resolve, reject) => {
