@@ -88,7 +88,7 @@ Model versions tracked in [`nanomind-models.json`](nanomind-models.json). Publis
 
 ## CLI Mode
 
-NanoMind replaces the help screen when a CLI tool is run with no arguments. It classifies natural language into one of 16 intent types and routes to the appropriate command.
+NanoMind replaces the help screen when a CLI tool is run with no arguments. It classifies natural language into one of 16 intent types and maps the intent to a command through a per-CLI routing table in `@nanomind/router`. The tables for `hma`, `secretless-ai` and `opena2a` are listed in the [router README](packages/nanomind-router/README.md#general-intents-and-routes); an intent with no route there maps to no command, and the session says that CLI has no command for it.
 
 ### Intent Classification
 

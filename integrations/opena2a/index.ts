@@ -1,8 +1,9 @@
 /**
  * NanoMind OpenA2A CLI Adapter
  *
- * The primary cross-product router. Users can ask about HMA, AIM,
- * Secretless, OASB, ATC from a single prompt.
+ * The cross-product router. One prompt reaches HMA scans, agent detection,
+ * Secretless credential checks and ATC trust queries; the routes are the
+ * opena2a table in @nanomind/router.
  *
  * Usage in opena2a CLI's router.ts:
  *
@@ -64,6 +65,7 @@ export function getCommandManifest() {
       { name: 'opena2a detect', description: 'Detect AI agents in project' },
       { name: 'opena2a identity', description: 'Manage agent identity' },
       { name: 'opena2a secretless', description: 'Check credential exposure' },
+      { name: 'opena2a review', description: 'Review project security' },
     ],
   };
 }

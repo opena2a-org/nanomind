@@ -84,6 +84,8 @@ export function getCommandManifest() {
   return {
     commands: [
       { name: 'secure', description: 'Run security scan', aliases: ['scan'], args: ['[directory]'], flags: ['--fix', '--ci', '--format'] },
+      { name: 'detect', description: 'Detect AI agents in project', args: ['[directory]'] },
+      { name: 'check', description: 'Check a package', args: ['<package>'] },
       { name: 'attack', description: 'Run attack simulation', args: ['[directory]'], flags: ['--scenario'] },
       { name: 'init-mcp', description: 'Initialize MCP security', args: [] },
       { name: 'oasb', description: 'OASB compliance check', args: ['[directory]'] },

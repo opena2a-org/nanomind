@@ -2,8 +2,8 @@
  * NanoMind secretless-ai Adapter
  *
  * When `secretless-ai` runs with no args, launches NanoMind interactive mode.
- * SECRETS_EXPOSE intent routes to secretless-ai diagnose workflow.
- * EXPOSURE intent shows how credential exposure affects ARS.
+ * SECRETS_EXPOSE intent routes to secretless-ai diagnose; the routes are
+ * the secretless-ai table in @nanomind/router.
  */
 
 import { execSync } from 'node:child_process';

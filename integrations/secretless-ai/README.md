@@ -2,7 +2,7 @@
 
 NanoMind adapter for [secretless-ai](https://www.npmjs.com/package/secretless-ai).
 
-When `secretless-ai` is invoked with no arguments, this adapter launches NanoMind interactive mode. `SECRETS_EXPOSE` intent routes to the `secretless-ai diagnose` workflow.
+When `secretless-ai` is invoked with no arguments, this adapter launches NanoMind interactive mode. `SECRETS_EXPOSE` intent routes to `secretless-ai diagnose`, `SCAN` to `secretless-ai scan` and `STATUS` to `secretless-ai verify`. The routes are the `secretless-ai` table in [`@nanomind/router`](https://github.com/opena2a-org/nanomind/blob/main/packages/nanomind-router/README.md#general-intents-and-routes).
 
 ## Install
 

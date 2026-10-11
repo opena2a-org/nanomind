@@ -64,8 +64,11 @@ const INTENT_PATTERNS: Array<{ pattern: RegExp; intent: IntentType }> = [
   { pattern: /\b(revok(ed|e|ation)|why.*blocked)\b/i, intent: 'REVOCATION' },
   { pattern: /\b(exposure|ceiling|exposure\s*ceiling)\b/i, intent: 'EXPOSURE' },
   { pattern: /\b(attest|attestation|build.*(trust|atc)|add.*ci.*trust)\b/i, intent: 'ATTEST' },
+  // Secrets (before SCAN, which also matches "check"); the noun may come before or after the verb
+  { pattern: /\b(secrets?|credentials?|keys?|tokens?|passwords?|env)\b.*\b(exposed?|leak(s|ed|ing)?|find|check)\b/i, intent: 'SECRETS_EXPOSE' },
+  { pattern: /\b(exposed?|leak(s|ed|ing)?|find|check)\b.*\b(secrets?|credentials?|keys?|tokens?|passwords?|env)\b/i, intent: 'SECRETS_EXPOSE' },
   // Scan
-  { pattern: /\b(scan|check|audit|inspect|analyze|secure)\b/i, intent: 'SCAN' },
+  { pattern: /\b(scan|check|audit|inspect|analyze|secure|detect)\b/i, intent: 'SCAN' },
   // Fix
   { pattern: /\b(fix|repair|patch|remediate|auto-?fix)\b/i, intent: 'FIX' },
   // Generate
@@ -80,8 +83,6 @@ const INTENT_PATTERNS: Array<{ pattern: RegExp; intent: IntentType }> = [
   { pattern: /\b(explain|what (does|is|are)|describe|tell me about|meaning)\b/i, intent: 'EXPLAIN' },
   // Help
   { pattern: /\b(help|command|what can|how do|usage)\b/i, intent: 'HELP' },
-  // Secrets
-  { pattern: /\b(secret|credential|key|token|password|env)\b.*\b(exposed?|leak|find|check)\b/i, intent: 'SECRETS_EXPOSE' },
 ];
 
 // Entity extraction patterns
@@ -129,44 +130,119 @@ export function classifyIntent(input: string): IntentClassification {
 }
 
 /**
- * Map an intent to a CLI command.
+ * One command an intent can run. `command` is what follows the CLI name.
+ */
+export interface CommandRoute {
+  command: string;
+  /** The CLI that owns the command, when it is not the CLI being routed. */
+  cli?: string;
+  args?: string[];
+  description: string;
+  /** The route applies only when the raw input matches. */
+  match?: RegExp;
+  /** Entities the route needs; their values are appended to args in this order. */
+  entities?: string[];
+  /** Entities appended to args when present. */
+  optionalEntities?: string[];
+}
+
+/**
+ * Per-CLI intent-to-command table. The routes for an intent are tried in
+ * order and the first that applies wins. An intent with no route maps to null.
+ */
+export type CommandTable = Partial<Record<IntentType, CommandRoute[]>>;
+
+// ATC intents are answered by the opena2a CLI whichever CLI the user is in.
+const ATC_ROUTES: CommandTable = {
+  TRUST_QUERY: [{ cli: 'opena2a', command: 'trust', optionalEntities: ['agentId'], description: 'Query trust level' }],
+  ATC_STATUS: [{ cli: 'opena2a', command: 'trust explain', optionalEntities: ['agentId'], description: 'Explain trust level' }],
+  ATTEST: [{ cli: 'opena2a', command: 'attest', description: 'Generate build attestation config' }],
+};
+
+const HELP_ROUTE: CommandTable = {
+  HELP: [{ command: '--help', description: 'Show help' }],
+};
+
+const SECURE_SCAN: CommandRoute = { command: 'secure', args: ['.'], description: 'Run security scan' };
+
+// Routes for a CLI with no table of its own.
+const DEFAULT_COMMAND_TABLE: CommandTable = {
+  SCAN: [SECURE_SCAN],
+  SECRETS_EXPOSE: [{ ...SECURE_SCAN, description: 'Scan for exposed credentials' }],
+  FIX: [{ command: 'secure', args: ['--fix'], description: 'Auto-fix findings' }],
+  STATUS: [{ command: 'secure', args: ['--summary'], description: 'Show scan summary' }],
+  ...ATC_ROUTES,
+  ...HELP_ROUTE,
+};
+
+const DETECT_WORD = /\bdetect\b/i;
+
+/**
+ * Tables for the CLIs that ship an adapter in this repository, keyed by the
+ * adapter's cliName. Each route names a command that the getCommandManifest()
+ * of the owning CLI's adapter lists.
+ */
+export const COMMAND_TABLES: Record<string, CommandTable> = {
+  hma: {
+    ...DEFAULT_COMMAND_TABLE,
+    SCAN: [
+      { command: 'check', entities: ['packageName'], description: 'Check a package' },
+      { command: 'detect', args: ['.'], match: DETECT_WORD, description: 'Detect AI agents in project' },
+      SECURE_SCAN,
+    ],
+  },
+  'secretless-ai': {
+    SCAN: [{ command: 'scan', description: 'Scan for exposed secrets' }],
+    SECRETS_EXPOSE: [{ command: 'diagnose', description: 'Diagnose credential exposure' }],
+    STATUS: [{ command: 'verify', description: 'Verify secretless configuration' }],
+    ...ATC_ROUTES,
+    ...HELP_ROUTE,
+  },
+  opena2a: {
+    SCAN: [
+      { command: 'detect', args: ['.'], match: DETECT_WORD, description: 'Detect AI agents in project' },
+      { command: 'scan', args: ['.'], description: 'Run HMA security scan' },
+    ],
+    SECRETS_EXPOSE: [{ command: 'secretless', description: 'Check credential exposure' }],
+    STATUS: [{ command: 'review', description: 'Review project security' }],
+    ...ATC_ROUTES,
+    ...HELP_ROUTE,
+  },
+};
+
+/**
+ * The command table for a CLI: its own table, or the default routes.
+ */
+export function commandTableFor(cliName: string): CommandTable {
+  return Object.hasOwn(COMMAND_TABLES, cliName) ? COMMAND_TABLES[cliName] : DEFAULT_COMMAND_TABLE;
+}
+
+/**
+ * Map an intent to a CLI command, using `table` when the caller supplies one
+ * and the CLI's built-in table otherwise.
  */
 export function mapToCommand(
   classification: IntentClassification,
   cliName: string,
+  table: CommandTable = commandTableFor(cliName),
 ): CommandMapping | null {
-  const { intent, entities } = classification;
+  const entities = classification.entities ?? {};
+  const rawInput = classification.rawInput ?? '';
+  const routes = Object.hasOwn(table, classification.intent) ? table[classification.intent] : undefined;
 
-  switch (intent) {
-    case 'SCAN':
-      return { command: `${cliName} secure`, args: ['.'], description: 'Run security scan' };
-    case 'FIX':
-      return { command: `${cliName} secure`, args: ['--fix'], description: 'Auto-fix findings' };
-    case 'STATUS':
-      return { command: `${cliName} secure`, args: ['--summary'], description: 'Show scan summary' };
-    case 'TRUST_QUERY':
-      return {
-        command: 'opena2a trust',
-        args: entities.agentId ? [entities.agentId] : [],
-        description: 'Query trust level',
-      };
-    case 'ATC_STATUS':
-      return {
-        command: 'opena2a trust explain',
-        args: entities.agentId ? [entities.agentId] : [],
-        description: 'Explain trust level',
-      };
-    case 'ATTEST':
-      return {
-        command: 'opena2a attest',
-        args: [],
-        description: 'Generate build attestation config',
-      };
-    case 'HELP':
-      return { command: `${cliName} --help`, args: [], description: 'Show help' };
-    default:
-      return null;
+  for (const route of routes ?? []) {
+    if (route.match && !route.match.test(rawInput)) continue;
+    const required = route.entities ?? [];
+    if (required.some((name) => !entities[name])) continue;
+
+    const optional = (route.optionalEntities ?? []).filter((name) => entities[name]);
+    return {
+      command: `${route.cli ?? cliName} ${route.command}`,
+      args: [...(route.args ?? []), ...[...required, ...optional].map((name) => entities[name])],
+      description: route.description,
+    };
   }
+  return null;
 }
 
 /**
