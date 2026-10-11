@@ -15,7 +15,9 @@
   holds the routes for `hma`, `secretless-ai` and `opena2a`, each to a
   command the matching adapter's `getCommandManifest()` lists; a caller
   can pass its own table as the third argument, and any other CLI gets
-  the previous routes. `secretless-ai` SECRETS_EXPOSE now runs
+  the previous routes, plus SECRETS_EXPOSE, which had no route on any
+  CLI and now runs `<cli> secure .` there and on `hma`. `secretless-ai`
+  SECRETS_EXPOSE now runs
   `secretless-ai diagnose`, SCAN runs `secretless-ai scan` and STATUS
   runs `secretless-ai verify`, where SCAN and STATUS used to run
   `secretless-ai secure`, which does not exist, and SECRETS_EXPOSE had
