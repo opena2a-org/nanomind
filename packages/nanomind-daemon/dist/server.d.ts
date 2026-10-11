@@ -13,6 +13,12 @@ export interface DaemonEngine {
         rawLabel?: string;
         confidence?: number;
     }>;
+    /**
+     * Release the loaded model; the next `ensureReady()` loads it again.
+     * An engine without `unload` is never idle-unloaded, because the daemon
+     * would otherwise report a resident model as unloaded.
+     */
+    unload?(): Promise<void> | void;
     readonly modelVersion?: string;
 }
 export interface DaemonConfig {
@@ -100,6 +106,7 @@ export declare class NanoMindDaemon extends EventEmitter {
     private activeTasks;
     private idleTimer;
     private modelLoaded;
+    private idleUnloaded;
     private startedAt;
     constructor(config?: Partial<DaemonConfig> & {
         engine?: DaemonEngine;
