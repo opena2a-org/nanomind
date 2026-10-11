@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- `mapToCommand` appends a package name or agent id from the input to the
+  command's arguments only when it is a plain argument (`isPlainArgument`:
+  ASCII letters, digits and `@ . : / + - _`, starting with a letter, digit
+  or `@`). A route whose entity value fails that check is skipped, and the
+  next route for the intent applies, or `null` when there is none: "check
+  package: x;echo" and "check package: --fix" run `hma secure .` in `hma`
+  instead of `hma check` with that text as an argument. The adapters in
+  `integrations/` run the mapped command through a shell; the check keeps
+  shell syntax from the input out of that command.
 - `mapToCommand` looks intents up in a per-CLI table. `COMMAND_TABLES`
   holds the routes for `hma`, `secretless-ai` and `opena2a`, each to a
   command the matching adapter's `getCommandManifest()` lists; a caller

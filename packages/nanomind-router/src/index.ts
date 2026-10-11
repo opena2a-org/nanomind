@@ -217,9 +217,26 @@ export function commandTableFor(cliName: string): CommandTable {
   return Object.hasOwn(COMMAND_TABLES, cliName) ? COMMAND_TABLES[cliName] : DEFAULT_COMMAND_TABLE;
 }
 
+// An entity value that can be passed to a command as one argument: a package
+// name, agent id or similar identifier. Entity values come from the request
+// text and adapters run the mapped command through a shell, so anything a
+// shell interprets is refused, and so is a leading hyphen, which a CLI would
+// read as an option.
+const PLAIN_ARGUMENT = /^[A-Za-z0-9@][\w@.:\/+-]*$/;
+
+/**
+ * Whether an entity value can be appended to a command's arguments as is.
+ */
+export function isPlainArgument(value: string): boolean {
+  return PLAIN_ARGUMENT.test(value);
+}
+
 /**
  * Map an intent to a CLI command, using `table` when the caller supplies one
- * and the CLI's built-in table otherwise.
+ * and the CLI's built-in table otherwise. A route whose entity value is not a
+ * plain argument (see `isPlainArgument`) is skipped, so a request like
+ * "check package: x;echo" falls through to the next route instead of
+ * putting that text into a command.
  */
 export function mapToCommand(
   classification: IntentClassification,
@@ -236,9 +253,12 @@ export function mapToCommand(
     if (required.some((name) => !entities[name])) continue;
 
     const optional = (route.optionalEntities ?? []).filter((name) => entities[name]);
+    const values = [...required, ...optional].map((name) => entities[name]);
+    if (!values.every(isPlainArgument)) continue;
+
     return {
       command: `${route.cli ?? cliName} ${route.command}`,
-      args: [...(route.args ?? []), ...[...required, ...optional].map((name) => entities[name])],
+      args: [...(route.args ?? []), ...values],
       description: route.description,
     };
   }
