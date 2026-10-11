@@ -79,6 +79,35 @@ const SOURCE_LABELS: Record<InputSource, string> = {
   'agent-output': 'agent output',
 };
 
+// Characters a terminal would not show, or would act on: C0 and C1 controls
+// (escape among them), zero-width, line and paragraph separators, and
+// bidirectional marks.
+const UNPRINTABLE_RANGES: Array<[number, number]> = [
+  [0x0000, 0x001f],
+  [0x007f, 0x009f],
+  [0x200b, 0x200f],
+  [0x2028, 0x202f],
+  [0x2060, 0x206f],
+  [0xfeff, 0xfeff],
+];
+
+function printable(text: string): string {
+  return Array.from(text, (c) => {
+    const code = c.codePointAt(0) ?? 0;
+    const hidden = UNPRINTABLE_RANGES.some(([low, high]) => code >= low && code <= high);
+    return hidden ? `\\u${code.toString(16).padStart(4, '0')}` : c;
+  }).join('');
+}
+
+/**
+ * Name detected patterns for a message: the kind of each and the text it
+ * matched, quoted, with characters a terminal would not show written as
+ * \uXXXX escapes.
+ */
+export function describePatterns(patterns: DetectedPattern[]): string {
+  return patterns.map((p) => `${p.type.replaceAll('_', ' ')} "${printable(p.match)}"`).join(', ');
+}
+
 /**
  * Screen input for injection attempts.
  * Returns a GuardResult indicating whether the input is safe to process.
@@ -106,13 +135,17 @@ export function screenInput(input: string, source: InputSource = 'direct'): Guar
   const hasCritical = detected.some(d => d.severity === 'critical');
   const hasHigh = detected.some(d => d.severity === 'high');
 
+  // The WARNING and NOTICE are for a caller that screens input once and then
+  // decides whether to go on. A session routes each line as it arrives and
+  // words its own message (see screenLine in @nanomind/cli).
   let recommendation = '';
   if (hasCritical) {
     recommendation = 'BLOCKED: Critical injection pattern detected. This input appears to contain instructions designed to hijack NanoMind. The command was not executed.';
   } else if (hasHigh) {
-    recommendation = `WARNING: Suspicious pattern detected in ${SOURCE_LABELS[source]}. Review the input before proceeding. Use --no-guard to bypass (not recommended).`;
+    const named = describePatterns(detected.filter(d => d.severity === 'high'));
+    recommendation = `WARNING: Suspicious pattern detected in ${SOURCE_LABELS[source]}: ${named}. Review the input before proceeding. Use --no-guard to bypass (not recommended).`;
   } else if (detected.length > 0) {
-    recommendation = 'NOTICE: Minor suspicious pattern detected. Proceeding with caution.';
+    recommendation = `NOTICE: Minor suspicious pattern detected in ${SOURCE_LABELS[source]}: ${describePatterns(detected)}. Proceeding with caution.`;
   }
 
   return {

@@ -5,7 +5,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { screenInput, detectInputSource } from './index.ts';
+import { screenInput, detectInputSource, describePatterns } from './index.ts';
 
 // Runs detectInputSource() in a child process whose stdin is `stdin`.
 function sourceOfChildStdin(stdin: 'pipe' | number, input?: string): string {
@@ -43,6 +43,47 @@ describe('detectInputSource', () => {
     const result = screenInput('act as a reviewer', 'file');
     assert.strictEqual(result.safe, true);
     assert.ok(result.recommendation.includes('file input'), result.recommendation);
+  });
+});
+
+describe('screenInput messages', () => {
+  it('names the pattern in the warning and keeps the review and --no-guard advice', () => {
+    const result = screenInput('act as a reviewer', 'piped');
+    assert.strictEqual(
+      result.recommendation,
+      'WARNING: Suspicious pattern detected in piped input: role switching "act as a". Review the input before proceeding. Use --no-guard to bypass (not recommended).',
+    );
+  });
+
+  it('names the pattern and the input source in the notice', () => {
+    const result = screenInput('base64 decode(payload)', 'piped');
+    assert.strictEqual(result.safe, true);
+    assert.strictEqual(
+      result.recommendation,
+      'NOTICE: Minor suspicious pattern detected in piped input: encoded payload "base64 decode(". Proceeding with caution.',
+    );
+  });
+
+  it('escapes characters a terminal would not show when it names a match', () => {
+    const zeroWidthSpace = String.fromCharCode(0x200b);
+    const zeroWidth = screenInput(`normal text${zeroWidthSpace}hidden`, 'agent-output');
+    assert.ok(zeroWidth.recommendation.includes('indirect injection "\\u200b"'), zeroWidth.recommendation);
+    assert.ok(!zeroWidth.recommendation.includes(zeroWidthSpace), zeroWidth.recommendation);
+
+    const esc = String.fromCharCode(0x1b);
+    const escape = screenInput(`scan ${esc}[2J this`, 'piped');
+    assert.ok(escape.recommendation.includes('indirect injection "\\u001b"'), escape.recommendation);
+    assert.ok(!escape.recommendation.includes(esc), escape.recommendation);
+  });
+
+  it('describes each pattern by kind and quoted match', () => {
+    assert.strictEqual(
+      describePatterns([
+        { type: 'role_switching', match: 'act as a', position: 0, severity: 'high' },
+        { type: 'permission_escalation', match: 'sudo\tmode', position: 12, severity: 'high' },
+      ]),
+      'role switching "act as a", permission escalation "sudo\\u0009mode"',
+    );
   });
 });
 

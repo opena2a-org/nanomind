@@ -21,7 +21,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { classifyIntent, mapToCommand, isATCIntent, type IntentClassification } from '@nanomind/router';
 import { ATCIntentHandler } from '@nanomind/atc';
-import { screenInput, detectInputSource, type InputSource } from '@nanomind/guard';
+import { screenInput, detectInputSource, type InputSource, type DetectedPattern } from '@nanomind/guard';
 import { generateArtifact, detectArtifactType, artifactTypeFromInput, listArtifactTypes } from './codegen.ts';
 
 export interface NanoMindSession {
@@ -52,21 +52,68 @@ export function hasNoGuardFlag(args: string[]): boolean {
 export interface ScreenedLine {
   /** True when the line must not be routed. */
   blocked: boolean;
-  /** The guard's BLOCKED, WARNING or NOTICE text to print. */
+  /** The BLOCKED, WARNING or NOTICE text to print. */
   message: string;
+}
+
+const SOURCE_LABELS: Record<InputSource, string> = {
+  direct: 'direct input',
+  piped: 'piped input',
+  file: 'file input',
+  env: 'environment input',
+  'agent-output': 'agent output',
+};
+
+// Characters a terminal would not show, or would act on: C0 and C1 controls
+// (escape among them), zero-width, line and paragraph separators, and
+// bidirectional marks.
+const UNPRINTABLE_RANGES: Array<[number, number]> = [
+  [0x0000, 0x001f],
+  [0x007f, 0x009f],
+  [0x200b, 0x200f],
+  [0x2028, 0x202f],
+  [0x2060, 0x206f],
+  [0xfeff, 0xfeff],
+];
+
+function printable(text: string): string {
+  return Array.from(text, (c) => {
+    const code = c.codePointAt(0) ?? 0;
+    const hidden = UNPRINTABLE_RANGES.some(([low, high]) => code >= low && code <= high);
+    return hidden ? `\\u${code.toString(16).padStart(4, '0')}` : c;
+  }).join('');
+}
+
+/**
+ * Name matched patterns for a session message: the kind of each and the text
+ * it matched, quoted, with characters a terminal would not show written as
+ * \uXXXX escapes. The guard release this package depends on does not export
+ * a way to do this, so the session does it here.
+ */
+function describePatterns(patterns: DetectedPattern[]): string {
+  return patterns.map((p) => `${p.type.replaceAll('_', ' ')} "${printable(p.match)}"`).join(', ');
 }
 
 /**
  * Screen one line of session input from `source`. Returns null when the line
- * is not screened or no pattern matched. Otherwise it returns the guard's
- * message to print and whether the line is blocked; a line that is not
- * blocked is still routed.
+ * is not screened or no pattern matched. Otherwise it returns the message to
+ * print and whether the line is blocked. A blocked line gets the guard's
+ * BLOCKED text. A line that is not blocked is routed at once, so its WARNING
+ * or NOTICE names the matched pattern and says the line is still routed, in
+ * place of the guard's advice to review the input before proceeding.
  */
 export function screenLine(input: string, source: InputSource, noGuard = false): ScreenedLine | null {
   if (noGuard || source === 'direct') return null;
   const result = screenInput(input, source);
   if (!result.recommendation) return null;
-  return { blocked: !result.safe, message: result.recommendation };
+  if (!result.safe) return { blocked: true, message: result.recommendation };
+
+  const high = result.patterns.filter((p) => p.severity === 'high');
+  const from = SOURCE_LABELS[source];
+  const message = high.length > 0
+    ? `WARNING: Suspicious pattern detected in ${from}: ${describePatterns(high)}. The line is still routed; a session blocks only critical patterns.`
+    : `NOTICE: Minor suspicious pattern detected in ${from}: ${describePatterns(result.patterns)}. The line is still routed.`;
+  return { blocked: false, message };
 }
 
 const WELCOME = `
