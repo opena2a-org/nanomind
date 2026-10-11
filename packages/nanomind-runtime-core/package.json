@@ -8,7 +8,7 @@
     "build": "tsc",
     "test": "node --test --experimental-strip-types src/runtime-twin.test.ts"
   },
-  "license": "MIT",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/opena2a-org/nanomind.git",

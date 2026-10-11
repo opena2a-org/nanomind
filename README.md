@@ -261,4 +261,4 @@ npx tsx --test packages/nanomind-runtime/src/e2e.test.ts
 
 ## License
 
-MIT
+Apache-2.0. See [LICENSE](LICENSE).

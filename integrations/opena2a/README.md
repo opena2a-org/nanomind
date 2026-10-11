@@ -27,4 +27,4 @@ await launchOpena2aInteractive(process.argv.slice(2));
 
 ## License
 
-MIT. Part of the [OpenA2A](https://github.com/opena2a-org/nanomind) ecosystem.
+Apache-2.0. Part of the [OpenA2A](https://github.com/opena2a-org/nanomind) ecosystem.
