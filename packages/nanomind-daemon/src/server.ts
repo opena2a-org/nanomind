@@ -43,7 +43,7 @@ export interface DaemonConfig {
 }
 
 export interface InferRequest {
-  intent: string;
+  intent?: string; // routed from input when absent or empty
   input: string;
   context?: {
     agentId?: string;

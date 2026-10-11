@@ -3,9 +3,9 @@
  * @nanomind/cli — Unified NanoMind CLI Entry Point
  *
  * Run directly as the `nanomind` command, it starts the interactive NanoMind
- * prompt, or answers --help and --version. A session started with
- * `noGuard: true` for --no-guard skips input screening and prints a warning
- * to stderr.
+ * prompt, or answers --help and --version. `nanomind --no-guard` starts the
+ * session with `noGuard: true`, which skips input screening and prints a
+ * warning to stderr.
  *
  * Imported, it is the entry point that HMA, secretless-ai, and opena2a
  * adapters delegate to when the user runs their CLI with no arguments.
@@ -49,14 +49,24 @@ export function hasNoGuardFlag(args: string[]): boolean {
   return args.includes(NO_GUARD_FLAG);
 }
 
+export interface ScreenedLine {
+  /** True when the line must not be routed. */
+  blocked: boolean;
+  /** The guard's BLOCKED, WARNING or NOTICE text to print. */
+  message: string;
+}
+
 /**
- * Screen one line of session input from `source`. Returns the message to
- * print when the line is blocked, or null when it may be routed.
+ * Screen one line of session input from `source`. Returns null when the line
+ * is not screened or no pattern matched. Otherwise it returns the guard's
+ * message to print and whether the line is blocked; a line that is not
+ * blocked is still routed.
  */
-export function screenLine(input: string, source: InputSource, noGuard = false): string | null {
+export function screenLine(input: string, source: InputSource, noGuard = false): ScreenedLine | null {
   if (noGuard || source === 'direct') return null;
   const result = screenInput(input, source);
-  return result.safe ? null : result.recommendation;
+  if (!result.recommendation) return null;
+  return { blocked: !result.safe, message: result.recommendation };
 }
 
 const WELCOME = `
@@ -101,11 +111,13 @@ export async function startSession(session: NanoMindSession): Promise<void> {
     }
 
     // Guard: screen piped and file input for injection
-    const blocked = screenLine(input, inputSource, session.noGuard);
-    if (blocked) {
-      console.log(`\n  ${blocked}\n`);
-      rl.prompt();
-      return;
+    const screened = screenLine(input, inputSource, session.noGuard);
+    if (screened) {
+      console.log(`\n  ${screened.message}\n`);
+      if (screened.blocked) {
+        rl.prompt();
+        return;
+      }
     }
 
     try {
@@ -309,6 +321,8 @@ const USAGE = `nanomind: interactive assistant for AI security tools
 
 Usage:
   nanomind                 Start the interactive session
+  nanomind --no-guard      Start it without screening piped or file input
+                           for prompt injection (not recommended)
   nanomind --help, -h      Show this help
   nanomind --version, -v   Print the version
 
@@ -333,7 +347,8 @@ function packageVersion(): string {
 }
 
 /**
- * The `nanomind` command: --help, --version, or the interactive session.
+ * The `nanomind` command: --help, --version, or the interactive session,
+ * screened unless --no-guard is given.
  */
 export async function runCli(argv: string[]): Promise<void> {
   if (argv.includes('--help') || argv.includes('-h')) {
@@ -344,9 +359,10 @@ export async function runCli(argv: string[]): Promise<void> {
     console.log(packageVersion());
     return;
   }
-  if (argv.length > 0) {
-    const kind = argv[0].startsWith('-') ? 'option' : 'command';
-    console.error(`Unknown ${kind}: ${argv[0]}\n`);
+  const unknown = argv.find((arg) => arg !== NO_GUARD_FLAG);
+  if (unknown !== undefined) {
+    const kind = unknown.startsWith('-') ? 'option' : 'command';
+    console.error(`Unknown ${kind}: ${unknown}\n`);
     console.error(USAGE);
     process.exitCode = 1;
     return;
@@ -358,6 +374,7 @@ export async function runCli(argv: string[]): Promise<void> {
     targetCli: STANDALONE_TARGET,
     registryUrl: process.env.OPENA2A_REGISTRY_URL || DEFAULT_REGISTRY_URL,
     onCommand: async (cmd: string, args: string[]) => runCommand(cmd, args),
+    noGuard: hasNoGuardFlag(argv),
   });
 }
 

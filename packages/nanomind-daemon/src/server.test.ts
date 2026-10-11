@@ -942,7 +942,7 @@ describe('NanoMindDaemon.infer() direct inference', () => {
 
   it('routes the intent from the input when the request names none', async () => {
     const input = 'scan this project for hardcoded credentials';
-    const response = await daemonWith(recordingEngine()).infer({ input } as InferRequest);
+    const response = await daemonWith(recordingEngine()).infer({ input });
     assert.strictEqual(response.intent, classifyIntent(input).intent);
   });
 

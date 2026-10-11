@@ -146,7 +146,7 @@ A persistent inference server that keeps the model loaded in memory. Called by t
 
 ```
 POST /v1/infer          — Classification endpoint
-  Request:  { intent, input, context?, priority? }
+  Request:  { intent?, input, context?, priority? }
   Response: { intent, result, confidence, attackClass, classification, evidence?, remediation?, latencyMs, modelVersion }
 
 GET  /v1/status          — Model status and health

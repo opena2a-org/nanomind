@@ -12,6 +12,7 @@ npm install @nanomind/cli
 
 ```bash
 npx nanomind             # start the interactive session
+npx nanomind --no-guard  # start it without screening piped or file input (not recommended)
 npx nanomind --help      # describe the session and the requests it acts on
 npx nanomind --version   # print the version
 ```
@@ -46,7 +47,7 @@ hma secure   # runs scan directly (NanoMind doesn't intercept commands)
 ## Features
 
 - Pattern-based request routing: scan, fix, status, help, trust level and build attestation requests
-- Prompt injection detection on piped and file input (a session started with `noGuard: true` for `--no-guard` skips it and prints a warning)
+- Prompt injection detection on piped and file input: a critical match blocks the line, and a high or medium match prints a warning or notice before the line is routed (`nanomind --no-guard`, or a session started with `noGuard: true`, skips it and prints a warning)
 - 9 CI/CD artifact generators
 - Session context (follow-up questions)
 - Skill level adaptation

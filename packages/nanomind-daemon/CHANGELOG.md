@@ -25,6 +25,10 @@ The daemon now listens on `ipcPath` (default `/tmp/nanomind.sock`) as well as `1
 - `stop()` closes the socket and removes its file.
 - The CLI reads `NANOMIND_IPC_PATH` for the socket path and prints it on start.
 
+### `InferRequest.intent` is optional (#145)
+
+`InferRequest` declares `intent?: string`, and the specification's `/v1/infer` Request line reads `{ intent?, input, context?, priority? }`. The daemon already routed an intent from `input` when a request had none, but the type required one, so a TypeScript caller of `infer({ input })` needed a cast.
+
 ### Tests
 
 - 21/21 pass (was 18; +3: a no-confidence engine result abstains; sub-floor confidence abstains and blanks attackClass; a verdict exactly at the inclusive floor classifies through).
