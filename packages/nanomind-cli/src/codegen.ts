@@ -5,6 +5,9 @@
  * 9 artifact types covering all major CI platforms + Docker + ATC.
  */
 
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+
 export type ArtifactType =
   | 'github-action'
   | 'gitlab-ci'
@@ -189,9 +192,6 @@ export function listArtifactTypes(): ArtifactType[] {
  * Detect the best artifact type for a project.
  */
 export function detectArtifactType(projectDir: string): ArtifactType {
-  const fs = require('node:fs');
-  const path = require('node:path');
-
   if (fs.existsSync(path.join(projectDir, '.github/workflows'))) return 'github-action';
   if (fs.existsSync(path.join(projectDir, '.gitlab-ci.yml'))) return 'gitlab-ci';
   if (fs.existsSync(path.join(projectDir, 'azure-pipelines.yml'))) return 'azure-pipelines';
@@ -201,4 +201,28 @@ export function detectArtifactType(projectDir: string): ArtifactType {
   if (fs.existsSync(path.join(projectDir, 'Makefile'))) return 'makefile';
 
   return 'github-action'; // default
+}
+
+// Order matters: "build action" before "github", "compose" before a bare "docker".
+const NAMED_TYPES: Array<{ pattern: RegExp; type: ArtifactType }> = [
+  { pattern: /\bbuild[\s-]*action\b/i, type: 'build-action' },
+  { pattern: /\bgithub\b|\bgh[\s-]*actions?\b/i, type: 'github-action' },
+  { pattern: /\bgit[\s-]*lab\b/i, type: 'gitlab-ci' },
+  { pattern: /\bazure\b/i, type: 'azure-pipelines' },
+  { pattern: /\bcircle[\s-]*ci\b/i, type: 'circleci' },
+  { pattern: /\bpre[\s-]*commit\b/i, type: 'pre-commit' },
+  { pattern: /\bmakefile\b/i, type: 'makefile' },
+  { pattern: /\bdocker[\s-]*compose\b|\bcompose\b/i, type: 'docker-compose' },
+  { pattern: /\bdocker[\s-]*file\b|\bdocker\b/i, type: 'dockerfile' },
+];
+
+/**
+ * Read the artifact type named in a request ("generate a gitlab ci config").
+ * Returns null when the request names none.
+ */
+export function artifactTypeFromInput(input: string): ArtifactType | null {
+  for (const { pattern, type } of NAMED_TYPES) {
+    if (pattern.test(input)) return type;
+  }
+  return null;
 }

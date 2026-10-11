@@ -2,7 +2,10 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import { SkillAdapter } from './adapt.ts';
 import { SessionManager } from './session.ts';
-import { generateArtifact, listArtifactTypes, detectArtifactType } from './codegen.ts';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { generateArtifact, listArtifactTypes, detectArtifactType, artifactTypeFromInput } from './codegen.ts';
 
 describe('SkillAdapter', () => {
   it('defaults to intermediate', () => {
@@ -113,6 +116,36 @@ describe('CodeGen', () => {
         language: 'typescript',
       });
       assert.ok(result.length > 0, `${type} should produce non-empty output`);
+    }
+  });
+
+  it('reads the artifact type named in a request', () => {
+    const cases: Array<[string, string | null]> = [
+      ['generate a github action', 'github-action'],
+      ['generate a github action for trust', 'github-action'],
+      ['create a gitlab ci config', 'gitlab-ci'],
+      ['set up azure pipelines yaml', 'azure-pipelines'],
+      ['generate circleci config', 'circleci'],
+      ['make a docker compose config', 'docker-compose'],
+      ['generate docker config', 'dockerfile'],
+      ['create a pre-commit config', 'pre-commit'],
+      ['generate a makefile config', 'makefile'],
+      ['create a build action config', 'build-action'],
+      ['generate a ci config', null],
+    ];
+    for (const [input, expected] of cases) {
+      assert.strictEqual(artifactTypeFromInput(input), expected, input);
+    }
+  });
+
+  it('detects the artifact type from project files', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nm-codegen-'));
+    try {
+      assert.strictEqual(detectArtifactType(dir), 'github-action');
+      fs.writeFileSync(path.join(dir, '.gitlab-ci.yml'), '');
+      assert.strictEqual(detectArtifactType(dir), 'gitlab-ci');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
     }
   });
 
