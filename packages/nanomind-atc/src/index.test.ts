@@ -142,9 +142,31 @@ describe('ATCIntentHandler', () => {
     assert.strictEqual(byName['Runtime behavioral data'].status, 'missing');
     assert.strictEqual(byName['Publisher verified'].status, 'present');
     assert.ok(explanation.factors.filter(f => f.status !== 'present').every(f => f.fix !== ''));
-    assert.strictEqual(explanation.projectedScore, 40);
-    assert.strictEqual(explanation.projectedLevel, 1);
+    assert.strictEqual(explanation.projectedScore, 500);
+    assert.strictEqual(explanation.projectedLevel, 4);
     assert.ok(explanation.summary.includes('Missing: HMA scan'));
+  });
+
+  it('projects the score after fixes as the present points plus the missing points', async (t) => {
+    t.mock.method(globalThis, 'fetch', async () =>
+      jsonResponse({ trustLevel: 2, scanSummary: { hma: 'passed' }, signatures: [{}, {}] }),
+    );
+    const handler = new ATCIntentHandler({ registryUrl: REGISTRY });
+
+    const explanation = await handler.explainTrustLevel('billing-agent');
+
+    assert.strictEqual(explanation.currentLevel, 2);
+    assert.strictEqual(explanation.currentScore, 0);
+    assert.deepStrictEqual(
+      explanation.factors.filter(f => f.status === 'present').map(f => f.name),
+      ['HMA scan', 'Threshold signatures'],
+    );
+    assert.strictEqual(explanation.projectedScore, 500);
+    assert.strictEqual(explanation.projectedLevel, 4);
+    assert.ok(
+      explanation.summary.endsWith('\n  Projected level 4 after fixes: 500 pts (230 present + 270 from fixes)'),
+      explanation.summary,
+    );
   });
 
   it('explains how to get started when the registry has no ATC', async (t) => {
@@ -155,8 +177,8 @@ describe('ATCIntentHandler', () => {
 
     assert.strictEqual(explanation.currentLevel, 0);
     assert.strictEqual(explanation.currentScore, 0);
-    assert.strictEqual(explanation.projectedScore, 0);
-    assert.strictEqual(explanation.projectedLevel, 1);
+    assert.strictEqual(explanation.projectedScore, 500);
+    assert.strictEqual(explanation.projectedLevel, 4);
     assert.ok(explanation.factors.every(f => f.status === 'missing'));
     assert.ok(explanation.summary.startsWith('No ATC found for agent acme/new. To get started:'));
   });
