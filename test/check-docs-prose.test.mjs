@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -21,6 +21,39 @@ function scratch(t, files) {
     writeFileSync(join(dir, path), text);
   }
   return dir;
+}
+
+// Scratch repositories are set up without the variables git exports to a
+// hook, so a run of the tests from a git hook cannot reach the checkout the
+// hook belongs to.
+const plain = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith('GIT_')));
+const git = (cwd, ...args) => spawnSync('git', args, { cwd, env: plain, encoding: 'utf8' });
+
+// A scratch repository holding files, of which the paths in tracked are added
+// to its index. Returns null when git cannot be started; any other failure of
+// git fails the test.
+function scratchRepo(t, files, tracked = Object.keys(files)) {
+  const dir = scratch(t, files);
+  const init = git(dir, 'init', '-q');
+  if (init.error) return null;
+  assert.equal(init.status, 0, `git init failed: ${init.stderr}`);
+  const add = git(dir, 'add', '--', ...tracked);
+  assert.equal(add.status, 0, `git add failed: ${add.stderr}`);
+  return dir;
+}
+
+// Runs fn with the variables in values set in process.env, then restores them.
+function withEnv(values, fn) {
+  const before = Object.fromEntries(Object.keys(values).map((name) => [name, process.env[name]]));
+  Object.assign(process.env, values);
+  try {
+    return fn();
+  } finally {
+    for (const [name, value] of Object.entries(before)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  }
 }
 
 test('a dash used in prose is reported with its line', () => {
@@ -229,15 +262,43 @@ test('outside a git checkout the Markdown files on disk in scope are checked', (
   assert.doesNotMatch(result.stderr, /fatal|\n\s+at /);
 });
 
-test('a repository named in GIT_DIR, as a git hook sets it, does not replace the directory checked', (t) => {
-  // The scratch repository is set up without the variables under test, so a
-  // run from a git hook cannot reach the checkout the hook belongs to.
-  const plain = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith('GIT_')));
-  const git = (cwd, ...args) => spawnSync('git', args, { cwd, env: plain, encoding: 'utf8' });
+test('a directory that cannot be read outside a git checkout is reported with exit status 2', (t) => {
+  if (process.getuid?.() === 0) {
+    t.skip('the superuser reads a directory without permission');
+    return;
+  }
+  const dir = scratch(t, {
+    'README.md': 'The daemon runs locally -- no network call.\n',
+    'docs/guide.md': 'Plain prose.\n',
+    'private/notes.md': 'Unreadable -- text.\n',
+    'build/notes.md': 'Out of scope -- text.\n',
+  });
+  mkdirSync(join(dir, 'scripts'));
+  copyFileSync(script, join(dir, 'scripts', 'check-docs-prose.mjs'));
+  const env = { ...process.env, GIT_CEILING_DIRECTORIES: dirname(dir) };
 
-  const repo = scratch(t, { 'tracked.md': 'Tracked prose.\n' });
-  if (git(repo, 'init', '-q').status !== 0 || git(repo, 'add', 'tracked.md').status !== 0) {
-    t.skip('git is not available');
+  // A directory whose files are all out of scope is not needed, so it is not
+  // reported when it cannot be read.
+  chmodSync(join(dir, 'private'), 0o000);
+  chmodSync(join(dir, 'build'), 0o000);
+  try {
+    const unreadable = [];
+    assert.deepEqual(trackedDocs(dir, unreadable), ['README.md', 'docs/guide.md']);
+    assert.deepEqual(unreadable.map(({ path, error }) => `${path} ${error.code}`), ['private/ EACCES']);
+
+    const result = run(join(dir, 'scripts', 'check-docs-prose.mjs'), [], { cwd: dir, env });
+    assert.equal(result.status, 2);
+    assert.match(result.stderr, /^README\.md:1: spaced double hyphen\ncheck-docs-prose: cannot read private\/ \(EACCES\)\n$/);
+  } finally {
+    chmodSync(join(dir, 'private'), 0o755);
+    chmodSync(join(dir, 'build'), 0o755);
+  }
+});
+
+test('a repository named in GIT_DIR, as a hook in a linked worktree receives it, does not replace the directory checked', (t) => {
+  const repo = scratchRepo(t, { 'tracked.md': 'Tracked prose.\n' });
+  if (repo === null) {
+    t.skip('git cannot be started');
     return;
   }
   const gitDir = join(repo, '.git');
@@ -246,14 +307,7 @@ test('a repository named in GIT_DIR, as a git hook sets it, does not replace the
     'docs/guide.md': 'Plain prose.\n',
   });
 
-  const before = process.env.GIT_DIR;
-  process.env.GIT_DIR = gitDir;
-  try {
-    assert.deepEqual(trackedDocs(dir), ['README.md', 'docs/guide.md']);
-  } finally {
-    if (before === undefined) delete process.env.GIT_DIR;
-    else process.env.GIT_DIR = before;
-  }
+  assert.deepEqual(withEnv({ GIT_DIR: gitDir }, () => trackedDocs(dir)), ['README.md', 'docs/guide.md']);
 
   mkdirSync(join(dir, 'scripts'));
   copyFileSync(script, join(dir, 'scripts', 'check-docs-prose.mjs'));
@@ -262,6 +316,36 @@ test('a repository named in GIT_DIR, as a git hook sets it, does not replace the
   assert.equal(result.status, 1);
   assert.match(result.stderr, /^README\.md:1: spaced double hyphen\n\n1 finding\(s\) in 1 file\(s\)/);
   assert.doesNotMatch(result.stderr, /tracked\.md|fatal|\n\s+at /);
+});
+
+test('the variables that name a repository or change how git matches a pathspec do not change the files listed', (t) => {
+  const repo = scratchRepo(t, { 'tracked.md': 'Tracked prose.\n' });
+  const dir = scratchRepo(
+    t,
+    { 'README.md': 'Plain prose.\n', 'docs/guide.md': 'Plain prose.\n', 'docs/draft.md': 'Untracked prose.\n' },
+    ['README.md', 'docs/guide.md'],
+  );
+  if (repo === null || dir === null) {
+    t.skip('git cannot be started');
+    return;
+  }
+  const missing = join(repo, 'missing');
+  const settings = {
+    GIT_DIR: join(repo, '.git'),
+    GIT_WORK_TREE: repo,
+    GIT_INDEX_FILE: join(repo, '.git', 'index'),
+    GIT_PREFIX: 'docs/',
+    GIT_COMMON_DIR: missing,
+    GIT_OBJECT_DIRECTORY: missing,
+    GIT_ALTERNATE_OBJECT_DIRECTORIES: missing,
+    GIT_GLOB_PATHSPECS: '1',
+    GIT_NOGLOB_PATHSPECS: '1',
+    GIT_ICASE_PATHSPECS: '1',
+    GIT_LITERAL_PATHSPECS: '1',
+  };
+  for (const [name, value] of Object.entries(settings)) {
+    assert.deepEqual(withEnv({ [name]: value }, () => trackedDocs(dir)), ['README.md', 'docs/guide.md'], name);
+  }
 });
 
 test('the command line checks the files when its directory is reached through a symlink, as under /tmp or /var on macOS', (t) => {
