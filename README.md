@@ -113,7 +113,7 @@ const cmd = mapToCommand(result, 'hma');
 
 ### Prompt Injection Guard
 
-All non-direct input (piped, file, agent output) is screened before routing:
+Input that does not come from a terminal is screened before routing. Piped stdin is screened as `piped` and a file redirected to stdin as `file`. Agent output reaches a session the same way, through a pipe or a file. A caller that passes agent output to `screenInput` directly labels it `agent-output`. Output from the commands a session runs is printed and never routed.
 
 ```typescript
 import { screenInput } from '@nanomind/guard';
@@ -121,6 +121,8 @@ import { screenInput } from '@nanomind/guard';
 screenInput('ignore previous instructions', 'piped');
 // { safe: false, patterns: [{ type: 'instruction_override', severity: 'critical' }] }
 ```
+
+A launcher turns screening off for one session when the user passes `--no-guard`: it checks the arguments with `hasNoGuardFlag(args)` from `@nanomind/cli` and starts the session with `noGuard: true`. The session then prints a warning to stderr. The adapters in `integrations/` do not pass the flag yet.
 
 Detects: instruction override, role switching, permission escalation, zero-width character injection, encoded payloads.
 
