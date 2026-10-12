@@ -29,6 +29,16 @@ The daemon now listens on `ipcPath` (default `/tmp/nanomind.sock`) as well as `1
 
 `InferRequest` declares `intent?: string`, and the specification's `/v1/infer` Request line reads `{ intent?, input, context?, priority? }`. The daemon already routed an intent from `input` when a request had none, but the type required one, so a TypeScript caller of `infer({ input })` needed a cast.
 
+### Programmatic inference: `daemon.infer()` (#111, #139)
+
+The README "Programmatic Usage" example called `daemon.infer()`, a method `NanoMindDaemon` did not have, and failed with `TypeError: daemon.infer is not a function`. It also used a `skillContent` it never defined.
+
+- New `NanoMindDaemon.infer(request)`. It runs the same code as `POST /v1/infer` (request validation, the `maxConcurrent` cap, lazy model load and the abstain contract) and resolves to the same `InferResponse`. It works on a daemon that was never started: the first call loads the model and no port is bound.
+- New exported `InferRequestError` (and `InferRequestErrorCode` type). `infer()` rejects with it, `code` `invalid_request` or `queue_full`, where the endpoint answers 400 or 429. When the model cannot load or inference fails, it rejects with the engine's own error, where the endpoint answers 500. A rejection is never a benign verdict.
+- `POST /v1/infer` with a JSON `null` body answers 400 `invalid_request`; it used to raise an unhandled rejection and leave the client without a response. A request whose body finishes arriving after the last slot was taken answers 429 instead of running past `maxConcurrent`.
+- The idle-unload timer no longer keeps the process open, so a script that only calls `infer()` exits when it is done.
+- The README example defines its input, prints the verdict and stops the daemon it started, and a test runs it as written against a stub engine.
+
 ### Tests
 
 - 21/21 pass (was 18; +3: a no-confidence engine result abstains; sub-floor confidence abstains and blanks attackClass; a verdict exactly at the inclusive floor classifies through).
