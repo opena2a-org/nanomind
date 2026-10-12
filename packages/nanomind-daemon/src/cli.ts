@@ -2,6 +2,7 @@
 
 import { NanoMindDaemon, DEFAULT_CONFIG } from './server.js';
 import { OnnxEngine } from './onnx-engine.js';
+import { errorMessage } from './error-message.js';
 import { existsSync, readFileSync, writeFileSync, rmSync, unlinkSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
@@ -207,6 +208,6 @@ API:
 }
 
 main().catch((err) => {
-  console.error('Fatal:', err instanceof Error ? err.message : err);
+  console.error('Fatal:', err instanceof Error ? errorMessage(err) : err);
   process.exit(1);
 });

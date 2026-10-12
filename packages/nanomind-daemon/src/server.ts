@@ -147,9 +147,10 @@ export const RATE_LIMIT_PER_SECOND = 100;
 
 /**
  * Routes the rate limit does not count, as `METHOD path`. They answer from
- * memory, and every local client shares the loopback address, so counting
- * them would make a health probe report the daemon down while another client
- * on that address is over the limit.
+ * memory, and a local TCP client connects from 127.0.0.1 unless it binds
+ * another loopback address, so local clients usually share one bucket and
+ * counting them would make a health probe report the daemon down while
+ * another client on that address is over the limit.
  */
 const RATE_LIMIT_EXEMPT_ROUTES = new Set(['GET /health', 'GET /health/ready', 'GET /v1/status']);
 

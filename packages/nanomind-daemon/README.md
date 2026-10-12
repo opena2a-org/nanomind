@@ -193,7 +193,7 @@ The one other error status is 503 from `GET /health/ready`. Its body is the read
 
 A 429 means the daemon is running and refused this one request. The input was not classified. Read the body's `error` code to choose what to do:
 
-- `rate_limited`: the client address sent more than 100 requests/second. Wait the number of seconds in the `Retry-After` header, then send the request again. Every local TCP client connects from `127.0.0.1` and shares one budget, and every Unix socket client shares another.
+- `rate_limited`: the client address sent more than 100 requests/second. Wait the number of seconds in the `Retry-After` header, then send the request again. A local TCP client connects from `127.0.0.1` unless it binds another loopback address, and the TCP clients on one address share one budget. Every Unix socket client shares another.
 - `queue_full`: `maxConcurrent` inferences are already running. Send the request again shortly.
 
 A client that treats every non-2xx answer as "daemon unavailable" and falls back (for example to the `fail_open` path in the [FGA contract](#fga-contract)) hides these refusals from its users. Retry first, and count or log the requests it gives up on. The daemon counts the requests it refused in the `refusals` field of `GET /v1/status`. The health and status routes are not rate limited, so a health probe keeps answering 200 while a client on the same address is over the limit.
