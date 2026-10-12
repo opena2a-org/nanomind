@@ -138,6 +138,76 @@ class RequestTooLargeError extends Error {
 }
 
 /**
+ * Requests per second each client address may make, counted across every
+ * route. Also the bucket size, so an idle client can send one second of
+ * requests at once. A request over the limit is answered with HTTP 429.
+ */
+export const RATE_LIMIT_PER_SECOND = 100;
+
+/**
+ * Most client addresses the rate limiter keeps a bucket for. The daemon binds
+ * to loopback, but a local client can pick any 127.0.0.0/8 source address, so
+ * the table is bounded: addresses past the bound share one bucket.
+ */
+const RATE_LIMIT_MAX_CLIENTS = 1024;
+
+interface TokenBucket {
+  tokens: number;
+  updatedAt: number;
+}
+
+/**
+ * Token bucket per client. Each bucket holds up to `ratePerSecond` tokens and
+ * refills continuously at `ratePerSecond`; a request spends one token and is
+ * refused when the bucket is empty. `now` returns milliseconds on a monotonic
+ * clock and is injectable so tests can step time.
+ */
+export class TokenBucketRateLimiter {
+  private readonly ratePerSecond: number;
+  private readonly now: () => number;
+  private readonly buckets = new Map<string, TokenBucket>();
+  private overflow: TokenBucket | null = null;
+
+  constructor(ratePerSecond: number, now: () => number = () => performance.now()) {
+    this.ratePerSecond = ratePerSecond;
+    this.now = now;
+  }
+
+  /** Spend one token for `client`. Returns false when its bucket is empty. */
+  tryRemove(client: string): boolean {
+    const now = this.now();
+    let bucket = this.buckets.get(client);
+    if (!bucket) {
+      if (this.buckets.size >= RATE_LIMIT_MAX_CLIENTS) this.dropRefilled(now);
+      if (this.buckets.size >= RATE_LIMIT_MAX_CLIENTS) {
+        this.overflow ??= { tokens: this.ratePerSecond, updatedAt: now };
+        bucket = this.overflow;
+      } else {
+        bucket = { tokens: this.ratePerSecond, updatedAt: now };
+        this.buckets.set(client, bucket);
+      }
+    }
+
+    const elapsedSeconds = Math.max(0, now - bucket.updatedAt) / 1000;
+    bucket.tokens = Math.min(this.ratePerSecond, bucket.tokens + elapsedSeconds * this.ratePerSecond);
+    bucket.updatedAt = now;
+    if (bucket.tokens < 1) return false;
+    bucket.tokens -= 1;
+    return true;
+  }
+
+  /**
+   * Forget every bucket idle for a second or more. Such a bucket has refilled
+   * completely, so dropping it changes no decision.
+   */
+  private dropRefilled(now: number): void {
+    for (const [client, bucket] of this.buckets) {
+      if (now - bucket.updatedAt >= 1000) this.buckets.delete(client);
+    }
+  }
+}
+
+/**
  * Why `infer()` refused a request before the model ran. `/v1/infer` answers
  * `queue_full` with 429 and `invalid_request` with 400.
  */
@@ -180,6 +250,7 @@ export class NanoMindDaemon extends EventEmitter {
   // /v1/infer loads the model again.
   private idleUnloaded = false;
   private startedAt: Date | null = null;
+  private rateLimiter = new TokenBucketRateLimiter(RATE_LIMIT_PER_SECOND);
 
   constructor(config: Partial<DaemonConfig> & { engine?: DaemonEngine } = {}) {
     super();
@@ -301,6 +372,19 @@ export class NanoMindDaemon extends EventEmitter {
 
     const url = req.url ?? '/';
     const method = req.method ?? 'GET';
+
+    // Rate limit: one token bucket per client address, shared by every route.
+    // A Unix socket connection has no address, so the socket's callers share
+    // one bucket.
+    if (!this.rateLimiter.tryRemove(req.socket.remoteAddress ?? '')) {
+      res.setHeader('Retry-After', '1');
+      res.writeHead(429);
+      res.end(JSON.stringify({
+        error: 'rate_limited',
+        message: `Rate limit of ${RATE_LIMIT_PER_SECOND} requests/second exceeded. Try again shortly.`,
+      }));
+      return;
+    }
 
     // Health check
     if (url === '/health' && method === 'GET') {
