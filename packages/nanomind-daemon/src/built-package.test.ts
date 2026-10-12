@@ -81,6 +81,16 @@ describe('nanomind-daemon start: model directory', { skip: !CLI_BUILT && 'dist/ 
     assert.ok(!run.stderr.includes(join(home, '.nanomind', 'models')), 'the default directory is not consulted');
   });
 
+  it('prints the error message without a stack trace and exits 1', () => {
+    const run = startWithoutModel({ NANOMIND_MODEL_DIR: modelDir });
+    assert.strictEqual(run.status, 1, run.stderr);
+    assert.ok(
+      run.stderr.startsWith(`Fatal: NanoMind model not found at ${join(modelDir, 'nanomind-tme.onnx')}`),
+      `stderr does not open with the message:\n${run.stderr}`,
+    );
+    assert.doesNotMatch(run.stderr, /^\s+at /m, 'stderr carries stack frames');
+  });
+
   it('reads them from ~/.nanomind/models/ when NANOMIND_MODEL_DIR is unset or empty', () => {
     for (const env of [{}, { NANOMIND_MODEL_DIR: '' }]) {
       const run = startWithoutModel(env);

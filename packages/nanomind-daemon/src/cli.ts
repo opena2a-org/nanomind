@@ -145,6 +145,10 @@ async function showStatus(): Promise<void> {
       console.log(`  Active tasks: ${status.activeTasks}`);
       console.log(`  Model loaded: ${status.modelLoaded}`);
       console.log(`  Uptime:       ${Math.round(status.uptime / 1000)}s`);
+      // A daemon older than the refusal counter does not report it.
+      if (status.refusals) {
+        console.log(`  Refused:      ${status.refusals.rateLimited} rate limited, ${status.refusals.queueFull} queue full`);
+      }
     } else {
       console.log('Daemon returned error:', resp.status);
     }
@@ -203,6 +207,6 @@ API:
 }
 
 main().catch((err) => {
-  console.error('Fatal:', err);
+  console.error('Fatal:', err instanceof Error ? err.message : err);
   process.exit(1);
 });

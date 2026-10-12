@@ -139,10 +139,19 @@ class RequestTooLargeError extends Error {
 
 /**
  * Requests per second each client address may make, counted across every
- * route. Also the bucket size, so an idle client can send one second of
- * requests at once. A request over the limit is answered with HTTP 429.
+ * route except RATE_LIMIT_EXEMPT_ROUTES. Also the bucket size, so an idle
+ * client can send one second of requests at once. A request over the limit is
+ * answered with HTTP 429.
  */
 export const RATE_LIMIT_PER_SECOND = 100;
+
+/**
+ * Routes the rate limit does not count, as `METHOD path`. They answer from
+ * memory, and every local client shares the loopback address, so counting
+ * them would make a health probe report the daemon down while another client
+ * on that address is over the limit.
+ */
+const RATE_LIMIT_EXEMPT_ROUTES = new Set(['GET /health', 'GET /health/ready', 'GET /v1/status']);
 
 /**
  * Most client addresses the rate limiter keeps a bucket for. The daemon binds
@@ -237,6 +246,16 @@ export const DEFAULT_CONFIG: DaemonConfig = {
   idleUnloadSeconds: 300,
 };
 
+/**
+ * Requests the daemon has refused since it was created, by reason.
+ * `rateLimited` counts 429 `rate_limited` answers; `queueFull` counts 429
+ * `queue_full` answers and `infer()` calls rejected with `queue_full`.
+ */
+export interface RefusalCounts {
+  rateLimited: number;
+  queueFull: number;
+}
+
 export class NanoMindDaemon extends EventEmitter {
   private config: DaemonConfig;
   private engine: DaemonEngine;
@@ -251,6 +270,7 @@ export class NanoMindDaemon extends EventEmitter {
   private idleUnloaded = false;
   private startedAt: Date | null = null;
   private rateLimiter = new TokenBucketRateLimiter(RATE_LIMIT_PER_SECOND);
+  private refusals: RefusalCounts = { rateLimited: 0, queueFull: 0 };
 
   constructor(config: Partial<DaemonConfig> & { engine?: DaemonEngine } = {}) {
     super();
@@ -354,7 +374,7 @@ export class NanoMindDaemon extends EventEmitter {
     this.emit('stopped');
   }
 
-  getStatus(): { running: boolean; port: number; activeTasks: number; modelLoaded: boolean; startedAt: Date | null; uptime: number } {
+  getStatus(): { running: boolean; port: number; activeTasks: number; modelLoaded: boolean; startedAt: Date | null; uptime: number; refusals: RefusalCounts } {
     return {
       running: this.httpServer !== null,
       port: this.config.httpPort,
@@ -362,6 +382,7 @@ export class NanoMindDaemon extends EventEmitter {
       modelLoaded: this.modelLoaded,
       startedAt: this.startedAt,
       uptime: this.startedAt ? Date.now() - this.startedAt.getTime() : 0,
+      refusals: { ...this.refusals },
     };
   }
 
@@ -373,10 +394,14 @@ export class NanoMindDaemon extends EventEmitter {
     const url = req.url ?? '/';
     const method = req.method ?? 'GET';
 
-    // Rate limit: one token bucket per client address, shared by every route.
-    // A Unix socket connection has no address, so the socket's callers share
-    // one bucket.
-    if (!this.rateLimiter.tryRemove(req.socket.remoteAddress ?? '')) {
+    // Rate limit: one token bucket per client address, shared by every route
+    // except the health and status routes. A Unix socket connection has no
+    // address, so the socket's callers share one bucket.
+    if (
+      !RATE_LIMIT_EXEMPT_ROUTES.has(`${method} ${url}`) &&
+      !this.rateLimiter.tryRemove(req.socket.remoteAddress ?? '')
+    ) {
+      this.refusals.rateLimited++;
       res.setHeader('Retry-After', '1');
       res.writeHead(429);
       res.end(JSON.stringify({
@@ -450,7 +475,7 @@ export class NanoMindDaemon extends EventEmitter {
   async infer(request: InferRequest): Promise<InferResponse> {
     // Queue check
     if (this.activeTasks >= this.config.maxConcurrent) {
-      throw this.queueFullError();
+      throw this.refuseQueueFull();
     }
 
     if (!request || typeof request !== 'object' || (!request.intent && !request.input)) {
@@ -543,7 +568,9 @@ export class NanoMindDaemon extends EventEmitter {
     }
   }
 
-  private queueFullError(): InferRequestError {
+  // Counts a queue_full refusal and returns the error that reports it.
+  private refuseQueueFull(): InferRequestError {
+    this.refusals.queueFull++;
     return new InferRequestError(
       'queue_full',
       `Maximum ${this.config.maxConcurrent} concurrent requests. Try again shortly.`,
@@ -570,7 +597,7 @@ export class NanoMindDaemon extends EventEmitter {
     // Queue check, before the body is read. infer() checks again once the
     // body is in, because the last slot can be taken in between.
     if (this.activeTasks >= this.config.maxConcurrent) {
-      this.respondRefused(res, this.queueFullError());
+      this.respondRefused(res, this.refuseQueueFull());
       return;
     }
 

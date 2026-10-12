@@ -43,9 +43,20 @@ The README "Programmatic Usage" example called `daemon.infer()`, a method `NanoM
 
 The README and `--help` described these; the daemon now does them.
 
-- Every HTTP and Unix socket route is rate limited to 100 requests/second per client address (a token bucket holding 100). A request over the limit is answered with HTTP 429 (`rate_limited`) and a `Retry-After` header. The existing limit of `maxConcurrent` inference requests still answers HTTP 429 (`queue_full`). `daemon.infer()` called in-process is not rate limited.
+- Every HTTP and Unix socket route except the health and status routes (#163) is rate limited to 100 requests/second per client address (a token bucket holding 100). A request over the limit is answered with HTTP 429 (`rate_limited`) and a `Retry-After` header. The existing limit of `maxConcurrent` inference requests still answers HTTP 429 (`queue_full`). `daemon.infer()` called in-process is not rate limited.
 - `nanomind-daemon start` reads `NANOMIND_MODEL_DIR` as the directory the model files are read from and downloaded to. Unset or empty, it stays `~/.nanomind/models/`.
 - `ABSTAIN_CONFIDENCE_FLOOR` and the `ClassificationStatus` type are exported from the package entry point. They were declared in `server.ts` only, so `import { ABSTAIN_CONFIDENCE_FLOOR } from '@nanomind/daemon'` failed.
+
+### Rate limit: client guidance, health probes and refusal counts (#163)
+
+**Behavior change for clients.** A client that sends more than 100 requests/second from one address, `POST /v1/infer` included, now gets HTTP 429 `rate_limited` for the requests over the limit; before 0.4.0 the daemon had no rate limit. Every local TCP client connects from `127.0.0.1` and shares that budget. Retry a `rate_limited` answer after the seconds in its `Retry-After` header instead of treating it as "daemon unavailable": a client that falls back on any non-2xx answer (for example by recording `fail_open`) hides the refusal from its users. The README section "Retrying a 429" covers both 429 answers.
+
+- `GET /health`, `GET /health/ready` and `GET /v1/status` are no longer rate limited and spend no tokens. A health probe kept failing with 429 while another local client was over the limit, so a client that reads a non-2xx `/health` as "daemon down" could try to start a second daemon, and `nanomind-daemon status` printed "Daemon returned error: 429".
+- `GET /health`, `GET /v1/status` and `getStatus()` report `refusals: { rateLimited, queueFull }`, the requests refused since the daemon was created, and `nanomind-daemon status` prints them. The `RefusalCounts` type is exported.
+- `BaseFabricAdapter.infer()` rejects with `Error('rate_limited')` when the daemon answers 429 `rate_limited`. It rejected every 429 as `queue_full`. It reads the body's `error` code, and the `Retry-After` header when the body has none.
+- `nanomind-daemon start` prints `Fatal:` and the error message, without a stack trace, when it cannot start (for example when the model files are missing and downloads are off). It still exits 1.
+- README "Error responses" names the error bodies it describes and the 503 from `GET /health/ready`, whose body has no `error` or `message`. The 400 row now also lists a body that is not a JSON object, an `input` that is not a string, and a body that has not finished arriving after 30 seconds.
+- New tests: a Unix socket client and a TCP client have separate buckets, and more than 100 `infer()` calls in-process at a fixed clock are all classified.
 
 ### Tests
 

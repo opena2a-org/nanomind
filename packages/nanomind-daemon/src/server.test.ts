@@ -853,11 +853,29 @@ describe('NanoMindDaemon rate limit', () => {
       new TokenBucketRateLimiter(RATE, () => clockMs);
   }
 
-  /** Statuses of `count` sequential GET /health requests. */
-  async function healthStatuses(count: number): Promise<number[]> {
+  const INFER_BODY = JSON.stringify({ intent: 'INTENT_CHECK', input: 'list users' });
+  const postInfer = () => fetch(`${BASE}/v1/infer`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: INFER_BODY,
+  });
+
+  /** Statuses of `count` sequential POST /v1/infer requests over TCP. */
+  async function inferStatuses(count: number): Promise<number[]> {
     const statuses: number[] = [];
     for (let i = 0; i < count; i++) {
-      const resp = await fetch(`${BASE}/health`);
+      const resp = await postInfer();
+      statuses.push(resp.status);
+      await resp.text();
+    }
+    return statuses;
+  }
+
+  /** Statuses of `count` sequential GET requests to `path` over TCP. */
+  async function getStatuses(path: string, count: number): Promise<number[]> {
+    const statuses: number[] = [];
+    for (let i = 0; i < count; i++) {
+      const resp = await fetch(`${BASE}${path}`);
       statuses.push(resp.status);
       await resp.text();
     }
@@ -865,12 +883,16 @@ describe('NanoMindDaemon rate limit', () => {
   }
 
   const count = (statuses: number[], status: number) => statuses.filter(s => s === status).length;
+  const refusals = () => daemon.getStatus().refusals;
 
   before(async () => {
     daemon = new NanoMindDaemon({
       httpPort: RATE_PORT,
       ipcPath: join(SOCKET_DIR, 'rate.sock'),
       idleUnloadSeconds: 60,
+      // Above the 20 requests the first test sends at once, so every 429 in
+      // this suite is the rate limit, never queue_full.
+      maxConcurrent: 32,
       engine: stubEngine,
     });
     await daemon.start();
@@ -889,7 +911,7 @@ describe('NanoMindDaemon rate limit', () => {
     const startedAt = performance.now();
     const statuses: number[] = [];
     for (let batch = 0; batch < 15; batch++) {
-      const responses = await Promise.all(Array.from({ length: 20 }, () => fetch(`${BASE}/health`)));
+      const responses = await Promise.all(Array.from({ length: 20 }, postInfer));
       for (const resp of responses) {
         statuses.push(resp.status);
         await resp.text();
@@ -909,9 +931,9 @@ describe('NanoMindDaemon rate limit', () => {
   it('answers 429 rate_limited with Retry-After once the bucket is empty, and refills at 100 per second', async () => {
     useSteppedClock();
 
-    assert.deepStrictEqual(await healthStatuses(RATE), Array(RATE).fill(200), 'a full bucket passes 100 requests');
+    assert.deepStrictEqual(await inferStatuses(RATE), Array(RATE).fill(200), 'a full bucket passes 100 requests');
 
-    const limited = await fetch(`${BASE}/health`);
+    const limited = await postInfer();
     assert.strictEqual(limited.status, 429, 'request 101 in the same instant is refused');
     assert.strictEqual(limited.headers.get('retry-after'), '1');
     const body = await limited.json() as { error: string; message: string };
@@ -920,55 +942,95 @@ describe('NanoMindDaemon rate limit', () => {
 
     // 15 ms at 100 per second is one whole token, not two.
     clockMs += 15;
-    assert.deepStrictEqual(await healthStatuses(2), [200, 429]);
+    assert.deepStrictEqual(await inferStatuses(2), [200, 429]);
 
     // Five idle seconds refill the bucket to 100 and no further.
     clockMs += 5000;
-    const refilled = await healthStatuses(RATE + 1);
+    const refilled = await inferStatuses(RATE + 1);
     assert.strictEqual(count(refilled, 200), RATE);
     assert.strictEqual(refilled[RATE], 429);
   });
 
-  it('applies the limit to every route, and a refused /v1/infer is not classified', async () => {
+  it('applies the limit to /v1/infer and unmatched routes, and a refused /v1/infer is not classified', async () => {
     useSteppedClock();
-    await healthStatuses(RATE);
+    await inferStatuses(RATE);
     inferCalls = 0;
 
-    for (const [method, path] of [['GET', '/health'], ['GET', '/health/ready'], ['GET', '/v1/status'], ['GET', '/unknown']]) {
-      const resp = await fetch(`${BASE}${path}`, { method });
-      assert.strictEqual(resp.status, 429, `${method} ${path}`);
-      await resp.text();
-    }
+    assert.deepStrictEqual(await getStatuses('/unknown', 1), [429], 'GET /unknown');
 
-    const infer = await fetch(`${BASE}/v1/infer`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ intent: 'INTENT_CHECK', input: 'list users' }),
-    });
+    const infer = await postInfer();
     assert.strictEqual(infer.status, 429);
     assert.strictEqual((await infer.json() as { error: string }).error, 'rate_limited');
     assert.strictEqual(inferCalls, 0, 'a rate-limited request must not reach the engine');
 
     // Once a token is back the same request is classified.
     clockMs += 1000;
-    const allowed = await fetch(`${BASE}/v1/infer`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ intent: 'INTENT_CHECK', input: 'list users' }),
-    });
-    assert.strictEqual(allowed.status, 200);
-    await allowed.text();
+    assert.deepStrictEqual(await inferStatuses(1), [200]);
     assert.strictEqual(inferCalls, 1);
   });
 
-  it('does not limit infer() called in-process', async () => {
+  it('answers the health and status routes while the client is over the limit, and they spend no tokens', async () => {
     useSteppedClock();
-    await healthStatuses(RATE);
+    const routes = ['/health', '/health/ready', '/v1/status'];
+
+    // Twice the bucket of probes in one instant: none is refused, and the
+    // bucket is still full afterwards.
+    for (const path of routes) {
+      assert.deepStrictEqual(await getStatuses(path, 2 * RATE), Array(2 * RATE).fill(200), `GET ${path}`);
+    }
+    assert.deepStrictEqual(await inferStatuses(RATE), Array(RATE).fill(200), 'the probes left the bucket full');
+
+    // The bucket is empty now; a probe from the same address still answers.
+    assert.deepStrictEqual(await inferStatuses(1), [429]);
+    for (const path of routes) {
+      assert.deepStrictEqual(await getStatuses(path, 1), [200], `GET ${path} while the client is limited`);
+    }
+  });
+
+  it('keeps a separate bucket for the Unix socket and for each TCP address', {
+    skip: process.platform === 'win32' ? 'ipcPath is a named pipe on Windows' : false,
+  }, async () => {
+    useSteppedClock();
+    const sockPath = join(SOCKET_DIR, 'rate.sock');
+
+    for (let i = 0; i < RATE; i++) {
+      assert.strictEqual((await unixRequest(sockPath, 'POST', '/v1/infer', INFER_BODY)).status, 200, `socket request ${i + 1}`);
+    }
+    const limited = await unixRequest(sockPath, 'POST', '/v1/infer', INFER_BODY);
+    assert.strictEqual(limited.status, 429, 'the socket bucket is empty');
+    assert.strictEqual((JSON.parse(limited.body) as { error: string }).error, 'rate_limited');
+
+    assert.deepStrictEqual(await inferStatuses(1), [200], 'a TCP client on 127.0.0.1 still has its own tokens');
+  });
+
+  it('does not limit infer() called in-process', async () => {
+    // At a fixed clock, so no token comes back while the calls run. More
+    // calls than the bucket holds pass whether or not the TCP bucket is
+    // empty, so infer() is charged to no bucket at all.
+    useSteppedClock();
+    await inferStatuses(RATE);
     inferCalls = 0;
 
-    const response = await daemon.infer({ intent: 'INTENT_CHECK', input: 'list users' });
-    assert.strictEqual(response.classification, 'classified');
-    assert.strictEqual(inferCalls, 1);
+    for (let i = 0; i < 2 * RATE; i++) {
+      const response = await daemon.infer({ intent: 'INTENT_CHECK', input: 'list users' });
+      assert.strictEqual(response.classification, 'classified', `in-process call ${i + 1}`);
+    }
+    assert.strictEqual(inferCalls, 2 * RATE);
+    assert.deepStrictEqual(await inferStatuses(1), [429], 'the TCP bucket is still empty');
+  });
+
+  it('counts rate-limited refusals in /v1/status', async () => {
+    useSteppedClock();
+    await inferStatuses(RATE);
+    const before = refusals();
+
+    await inferStatuses(3);
+    await getStatuses('/unknown', 2);
+
+    const resp = await fetch(`${BASE}/v1/status`);
+    assert.strictEqual(resp.status, 200);
+    const status = await resp.json() as { refusals: { rateLimited: number; queueFull: number } };
+    assert.deepStrictEqual(status.refusals, { rateLimited: before.rateLimited + 5, queueFull: before.queueFull });
   });
 });
 
@@ -1160,6 +1222,7 @@ describe('NanoMindDaemon.infer() direct inference', () => {
       (err: unknown) => isRefusal('queue_full')(err) && /Maximum 1 concurrent requests/.test((err as Error).message),
     );
     assert.strictEqual(daemon.getStatus().activeTasks, 1, 'the refused call takes no slot');
+    assert.deepStrictEqual(daemon.getStatus().refusals, { rateLimited: 0, queueFull: 1 }, 'the refusal is counted');
 
     release();
     assert.strictEqual((await first).classification, 'classified');
@@ -1263,6 +1326,7 @@ describe('NanoMindDaemon.infer() direct inference', () => {
       activeTasks: 1,
     });
     assert.strictEqual(daemon.getStatus().activeTasks, 0);
+    assert.deepStrictEqual(daemon.getStatus().refusals, { rateLimited: 0, queueFull: 1 }, 'the refusal is counted');
   });
 
   it('lets a script that only calls infer() exit without waiting for the idle timer', () => {
