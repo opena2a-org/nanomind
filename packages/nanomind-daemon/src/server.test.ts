@@ -1,6 +1,7 @@
 import { describe, it, before, after, afterEach } from 'node:test';
 import assert from 'node:assert';
 import { spawnSync } from 'node:child_process';
+import { once } from 'node:events';
 import { existsSync, lstatSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { request } from 'node:http';
 import { createRequire } from 'node:module';
@@ -1109,6 +1110,48 @@ describe('NanoMindDaemon.infer() direct inference', () => {
     assert.strictEqual(run.signal, null, 'the process was still running after 60 seconds');
     assert.strictEqual(run.status, 0, run.stderr);
     assert.strictEqual(run.stdout.trim(), 'classified');
+  });
+
+  it('runs the README "Programmatic Usage" example as written', async () => {
+    const readme = readFileSync(fileURLToPath(new URL('../README.md', import.meta.url)), 'utf-8');
+    const section = readme.split(/^## /m).find(part => part.startsWith('Programmatic Usage\n')) ?? '';
+    const example = section.match(/```typescript\n([\s\S]*?)\n```/)?.[1] ?? '';
+    assert.match(example, /await daemon\.infer\(/, 'the section must lead with a daemon.infer() example');
+
+    // The example runs as shipped, against a recording engine, on an
+    // OS-assigned port and a socket in this suite's temporary directory. Its
+    // import line becomes the injected class and its console.log output is
+    // captured, so a method that does not exist or a name the example never
+    // defines fails here.
+    const engine = recordingEngine();
+    const created: NanoMindDaemon[] = [];
+    class ExampleDaemon extends NanoMindDaemon {
+      constructor(config: Partial<DaemonConfig> = {}) {
+        super({ ...config, httpPort: 0, ipcPath: join(SOCKET_DIR, 'readme-example.sock'), engine });
+        created.push(this);
+        daemons.push(this);
+      }
+
+      // Resolves once the listener is bound, so the example's stop() closes it.
+      async start(): Promise<void> {
+        const started = once(this, 'started');
+        await super.start();
+        await started;
+      }
+    }
+    const body = example.replace(/^import \{ NanoMindDaemon \} from '@nanomind\/daemon';\n/, '');
+    assert.notStrictEqual(body, example, 'the example must import NanoMindDaemon from @nanomind/daemon');
+    const printed: unknown[][] = [];
+    const AsyncFunction = (async () => {}).constructor as new (...args: string[]) => (...values: unknown[]) => Promise<void>;
+    await new AsyncFunction('NanoMindDaemon', 'console', body)(
+      ExampleDaemon,
+      { log: (...args: unknown[]) => { printed.push(args); } },
+    );
+
+    assert.strictEqual(created.length, 1, 'the example constructs one daemon');
+    assert.strictEqual(created[0].getStatus().running, false, 'the example stops the daemon it started');
+    assert.deepStrictEqual(engine.inputs, ['This skill forwards tokens to an external endpoint']);
+    assert.deepStrictEqual(printed, [['classified', 'exfiltration_pattern', 0.93]]);
   });
 
   it('exposes infer() and InferRequestError from the built package entry point', { skip: !existsSync(DIST_ENTRY) && 'dist/ is not built' }, async () => {

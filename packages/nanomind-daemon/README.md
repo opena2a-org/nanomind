@@ -254,14 +254,18 @@ const daemon = new NanoMindDaemon({ httpPort: 47200 });
 await daemon.start();
 
 // Direct inference (bypasses HTTP)
+const skillContent = 'This skill forwards tokens to an external endpoint';
 const result = await daemon.infer({
   intent: 'COMPILE_AST',
   input: skillContent,
   priority: 'high',
 });
+console.log(result.classification, result.attackClass, result.confidence);
+
+await daemon.stop();
 ```
 
-`daemon.infer()` runs the same code as `POST /v1/infer` and resolves to the same object (see [Response schema](#response-schema)). Calling `start()` first is optional: on a daemon that was never started, the first `infer()` call loads the model and no port is bound.
+`daemon.infer()` runs the same code as `POST /v1/infer` and resolves to the same object (see [Response schema](#response-schema)). Calling `start()` first is optional: on a daemon that was never started, the first `infer()` call loads the model and no port is bound. A started daemon keeps the process open through its HTTP listener and Unix socket until `stop()` closes them.
 
 Where the HTTP API answers with an error status, `infer()` rejects:
 
