@@ -176,22 +176,35 @@ The fields are required (always present); `attackClass` is empty when the model 
 
 ### Error responses
 
-Every error body is JSON with an `error` code and a `message`.
+Each response in this table has a JSON body with an `error` code and a `message`.
 
 | Status | `error` | When |
 |---|---|---|
-| 400 | `invalid_request` | The body is not valid JSON, or `input` is missing, empty or whitespace only. |
+| 400 | `invalid_request` | The body is not valid JSON, is not a JSON object, or has not finished arriving 30 seconds after the request reached the daemon; or `input` is missing, is not a string, or is empty or whitespace only. |
 | 404 | `not_found` | No route matches the method and path. |
 | 413 | `request_too_large` | The `/v1/infer` request body is larger than 1MB (1,048,576 bytes). The input is not classified. |
-| 429 | `rate_limited` | The client address sent more than 100 requests/second. Applies to every route and carries a `Retry-After` header. |
+| 429 | `rate_limited` | The client address sent more than 100 requests/second. Applies to every route except `GET /health`, `GET /health/ready` and `GET /v1/status`, and carries a `Retry-After` header. |
 | 429 | `queue_full` | `maxConcurrent` inference requests are already running. Applies to `/v1/infer` only. |
 | 500 | `inference_error` | The engine failed. The body also carries `classification: "abstain"`. |
+
+The one other error status is 503 from `GET /health/ready`. Its body is the readiness body, with `"ready":false` and a `reason`, and has no `error` or `message`; see [GET /health/ready](#get-healthready).
+
+### Retrying a 429
+
+A 429 means the daemon is running and refused this one request. The input was not classified. Read the body's `error` code to choose what to do:
+
+- `rate_limited`: the client address sent more than 100 requests/second. Wait the number of seconds in the `Retry-After` header, then send the request again. Every local TCP client connects from `127.0.0.1` and shares one budget, and every Unix socket client shares another.
+- `queue_full`: `maxConcurrent` inferences are already running. Send the request again shortly.
+
+A client that treats every non-2xx answer as "daemon unavailable" and falls back (for example to the `fail_open` path in the [FGA contract](#fga-contract)) hides these refusals from its users. Retry first, and count or log the requests it gives up on. The daemon counts the requests it refused in the `refusals` field of `GET /v1/status`. The health and status routes are not rate limited, so a health probe keeps answering 200 while a client on the same address is over the limit.
+
+`BaseFabricAdapter.infer()` rejects with `Error('rate_limited')` or `Error('queue_full')` for these two answers.
 
 ### GET /health
 
 ```bash
 curl http://127.0.0.1:47200/health
-# {"running":true,"port":47200,"activeTasks":0,"modelLoaded":true,"startedAt":"2026-04-28T21:16:18.748Z","uptime":2069}
+# {"running":true,"port":47200,"activeTasks":0,"modelLoaded":true,"startedAt":"2026-04-28T21:16:18.748Z","uptime":2069,"refusals":{"rateLimited":0,"queueFull":0}}
 ```
 
 The model loads at start: `start()` calls `engine.ensureReady()` before
@@ -218,8 +231,10 @@ with `"reason":"model not loaded"` when a model load has failed.
 
 ```bash
 curl http://127.0.0.1:47200/v1/status
-# {"running":true,"port":47200,"activeTasks":0,"modelLoaded":true,"startedAt":"2026-04-28T21:16:18.748Z","uptime":2069}
+# {"running":true,"port":47200,"activeTasks":0,"modelLoaded":true,"startedAt":"2026-04-28T21:16:18.748Z","uptime":2069,"refusals":{"rateLimited":0,"queueFull":0}}
 ```
+
+`refusals` counts the requests the daemon has refused since it was created: `rateLimited` counts 429 `rate_limited` answers, and `queueFull` counts 429 `queue_full` answers and `daemon.infer()` calls rejected with `queue_full`. `nanomind-daemon status` prints both counts.
 
 ### Unix socket
 
@@ -353,7 +368,7 @@ interface OnnxEngineConfig {
 - The Unix socket at `ipcPath` is created with mode 0600: only the user running the daemon can connect to it.
 - Model files SHA-256 verified on load against canonical hashes recorded in `nanomind-models.json` (v0.5.0). Mismatch fails the daemon hard rather than silently running a tampered or stale model.
 - Request size capped at 1MB (1,048,576 bytes). A larger `/v1/infer` body gets HTTP 413 with `error: "request_too_large"` and is never parsed.
-- Rate limited to 100 requests/second per client address, counted across every route, health checks included. The limit is a token bucket, so an idle client can send 100 requests at once. A request over the limit is answered with HTTP 429 `rate_limited`. The daemon listens on loopback only, so local callers that connect from the same address share one bucket, and callers on the Unix socket share one bucket. `daemon.infer()` called in-process is not rate limited.
+- Rate limited to 100 requests/second per client address, counted across every route except `GET /health`, `GET /health/ready` and `GET /v1/status`. Those three answer from memory and are not limited, so a health probe keeps answering while another client on its address is over the limit. The limit is a token bucket, so an idle client can send 100 requests at once. A request over the limit is answered with HTTP 429 `rate_limited`; see [Retrying a 429](#retrying-a-429). The daemon listens on loopback only, so local callers that connect from the same address share one bucket, and callers on the Unix socket share one bucket. `daemon.infer()` called in-process is not rate limited.
 - At most `maxConcurrent` (default 4) inference requests run at the same time. A `/v1/infer` request beyond that is answered with HTTP 429 `queue_full`.
 - No credentials in memory after model load.
 

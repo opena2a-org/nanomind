@@ -94,7 +94,7 @@ export class BaseFabricAdapter implements FabricAdapter {
       throw new Error('daemon_unavailable');
     }
     if (resp.status === 429) {
-      throw new Error('queue_full');
+      throw new Error(await refusalCode(resp));
     }
     if (!resp.ok) {
       throw new Error(`Inference failed: ${resp.status}`);
@@ -102,4 +102,21 @@ export class BaseFabricAdapter implements FabricAdapter {
 
     return resp.json() as Promise<InferResponse>;
   }
+}
+
+/**
+ * The daemon answers 429 for two refusals: `rate_limited` (the client address
+ * is over the rate limit; retry after the Retry-After header's seconds) and
+ * `queue_full` (`maxConcurrent` inferences are running). The body's `error`
+ * code tells them apart. A body without one falls back to the Retry-After
+ * header, which only `rate_limited` carries.
+ */
+async function refusalCode(resp: Response): Promise<'rate_limited' | 'queue_full'> {
+  try {
+    const body = (await resp.json()) as { error?: unknown } | null;
+    if (body?.error === 'rate_limited' || body?.error === 'queue_full') return body.error;
+  } catch {
+    // Not JSON: use the header.
+  }
+  return resp.headers.has('retry-after') ? 'rate_limited' : 'queue_full';
 }
