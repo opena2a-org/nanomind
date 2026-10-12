@@ -174,6 +174,19 @@ classification == "classified" && attackClass != "" && confidence > 0.8
 
 The fields are required (always present); `attackClass` is empty when the model classifies the request as benign and non-empty otherwise, and `classification` records whether that verdict is usable. A non-2xx daemon response, an undecodable body, or `classification: "abstain"` proceeds without blocking but is recorded distinctly (`fail_open` for transport, `abstain` for an unusable verdict) rather than as a clean benign. Consumers needing 10-way granularity (e.g. dashboards, runtime correlation) read the raw label from `evidence`.
 
+### Error responses
+
+Every error body is JSON with an `error` code and a `message`.
+
+| Status | `error` | When |
+|---|---|---|
+| 400 | `invalid_request` | The body is not valid JSON, or `input` is missing, empty or whitespace only. |
+| 404 | `not_found` | No route matches the method and path. |
+| 413 | `request_too_large` | The `/v1/infer` request body is larger than 1MB (1,048,576 bytes). The input is not classified. |
+| 429 | `rate_limited` | The client address sent more than 100 requests/second. Applies to every route and carries a `Retry-After` header. |
+| 429 | `queue_full` | `maxConcurrent` inference requests are already running. Applies to `/v1/infer` only. |
+| 500 | `inference_error` | The engine failed. The body also carries `classification: "abstain"`. |
+
 ### GET /health
 
 ```bash
@@ -287,6 +300,12 @@ The daemon loads the v0.5.0 production NanoMind classifier (Mamba-TME, 8 blocks,
 | `nanomind-tme.onnx.data` | External weights data file (~8MB). |
 | `tokenizer.json` | Word-level vocabulary (6000 entries). |
 
+Set `NANOMIND_MODEL_DIR` to make `nanomind-daemon start` use another directory. The files are read from it, and missing files are downloaded to it:
+
+```bash
+NANOMIND_MODEL_DIR=/opt/nanomind/models nanomind-daemon start
+```
+
 ### Default: auto-download (since 0.3.0)
 
 `nanomind-daemon start` (or `daemon.start()` programmatically) downloads any
@@ -334,7 +353,8 @@ interface OnnxEngineConfig {
 - The Unix socket at `ipcPath` is created with mode 0600: only the user running the daemon can connect to it.
 - Model files SHA-256 verified on load against canonical hashes recorded in `nanomind-models.json` (v0.5.0). Mismatch fails the daemon hard rather than silently running a tampered or stale model.
 - Request size capped at 1MB (1,048,576 bytes). A larger `/v1/infer` body gets HTTP 413 with `error: "request_too_large"` and is never parsed.
-- Rate limited to 100 requests/second.
+- Rate limited to 100 requests/second per client address, counted across every route, health checks included. The limit is a token bucket, so an idle client can send 100 requests at once. A request over the limit is answered with HTTP 429 `rate_limited`. The daemon listens on loopback only, so local callers that connect from the same address share one bucket, and callers on the Unix socket share one bucket. `daemon.infer()` called in-process is not rate limited.
+- At most `maxConcurrent` (default 4) inference requests run at the same time. A `/v1/infer` request beyond that is answered with HTTP 429 `queue_full`.
 - No credentials in memory after model load.
 
 ## License

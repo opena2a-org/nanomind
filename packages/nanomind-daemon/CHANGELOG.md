@@ -39,9 +39,18 @@ The README "Programmatic Usage" example called `daemon.infer()`, a method `NanoM
 - The idle-unload timer no longer keeps the process open, so a script that only calls `infer()` exits when it is done.
 - The README example defines its input, prints the verdict and stops the daemon it started, and a test runs it as written against a stub engine.
 
+### Rate limit, model directory and entry-point exports (#141)
+
+The README and `--help` described these; the daemon now does them.
+
+- Every HTTP and Unix socket route is rate limited to 100 requests/second per client address (a token bucket holding 100). A request over the limit is answered with HTTP 429 (`rate_limited`) and a `Retry-After` header. The existing limit of `maxConcurrent` inference requests still answers HTTP 429 (`queue_full`). `daemon.infer()` called in-process is not rate limited.
+- `nanomind-daemon start` reads `NANOMIND_MODEL_DIR` as the directory the model files are read from and downloaded to. Unset or empty, it stays `~/.nanomind/models/`.
+- `ABSTAIN_CONFIDENCE_FLOOR` and the `ClassificationStatus` type are exported from the package entry point. They were declared in `server.ts` only, so `import { ABSTAIN_CONFIDENCE_FLOOR } from '@nanomind/daemon'` failed.
+
 ### Tests
 
 - 21/21 pass (was 18; +3: a no-confidence engine result abstains; sub-floor confidence abstains and blanks attackClass; a verdict exactly at the inclusive floor classifies through).
+- New tests cover the rate limit, `NANOMIND_MODEL_DIR` and the entry-point exports. The last two run the built package and skip until `npm run build` has written `dist/`.
 
 ---
 

@@ -64,17 +64,21 @@ async function startDaemon(): Promise<void> {
   // Auto-download is enabled by default. Operators in air-gapped or
   // network-restricted environments can disable it via the
   // `--no-download` flag or the `NANOMIND_NO_AUTO_DOWNLOAD=1` env var;
-  // the daemon then expects the model artifacts pre-staged at
-  // ~/.nanomind/models/ and exits non-zero if any are missing.
+  // the daemon then expects the model artifacts pre-staged in the model
+  // directory and exits non-zero if any are missing.
   const noAutoDownload =
     process.argv.includes('--no-download') ||
     process.env['NANOMIND_NO_AUTO_DOWNLOAD'] === '1';
+
+  // The model directory is ~/.nanomind/models/ unless NANOMIND_MODEL_DIR
+  // names another one. An empty value counts as unset.
+  const modelDir = process.env['NANOMIND_MODEL_DIR'] || undefined;
 
   const daemon = new NanoMindDaemon({
     httpPort: port,
     ipcPath,
     idleUnloadSeconds: idleSeconds,
-    engine: new OnnxEngine({ noAutoDownload }),
+    engine: new OnnxEngine({ noAutoDownload, modelDir }),
   });
 
   daemon.on('started', ({ port, ipcPath }: { port: number; ipcPath: string }) => {
@@ -176,6 +180,8 @@ Environment:
   MODEL_IDLE_UNLOAD_SECONDS    Unload model after N seconds idle (default: 300)
   NANOMIND_NO_AUTO_DOWNLOAD    Set to "1" to disable auto-download
                                (equivalent to --no-download)
+  NANOMIND_MODEL_DIR           Directory the model files are read from and
+                               downloaded to (default: ~/.nanomind/models/)
 
 Model:
   Pre-staged at ~/.nanomind/models/ (or NANOMIND_MODEL_DIR if set).
