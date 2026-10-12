@@ -1,11 +1,15 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
-import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { execFile, spawnSync } from 'node:child_process';
+import { once } from 'node:events';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createServer } from 'node:http';
 import { createRequire } from 'node:module';
+import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 import { ABSTAIN_CONFIDENCE_FLOOR } from './server.ts';
 
 // These tests run the built package, the files a consumer installs: the entry
@@ -100,5 +104,113 @@ describe('nanomind-daemon start: model directory', { skip: !CLI_BUILT && 'dist/ 
         `the daemon did not look in the default directory (env ${JSON.stringify(env)}):\n${run.stderr}`,
       );
     }
+  });
+});
+
+describe('nanomind-daemon start: model download refused on every address', { skip: !CLI_BUILT && 'dist/ is not built' }, () => {
+  let dir: string;
+  let preload: string;
+  let port: number;
+
+  before(async () => {
+    dir = mkdtempSync(join(tmpdir(), 'nanomind-refused-'));
+    // A port that was free a moment ago, so a connection to it is refused.
+    const probe = createServer();
+    probe.listen(0, '127.0.0.1');
+    await once(probe, 'listening');
+    port = (probe.address() as AddressInfo).port;
+    probe.close();
+    await once(probe, 'close');
+    // Loaded before the CLI: every HTTPS download goes to that port through a
+    // lookup that returns two addresses, as on a network that refuses
+    // huggingface.co on each of its addresses. Node reports that as an
+    // AggregateError with an empty message.
+    preload = join(dir, 'refuse-downloads.cjs');
+    writeFileSync(
+      preload,
+      [
+        "const http = require('node:http');",
+        "const https = require('node:https');",
+        'const lookup = (_host, options, cb) => {',
+        "  const addresses = [{ address: '127.0.0.1', family: 4 }, { address: '::1', family: 6 }];",
+        '  if (options && options.all) cb(null, addresses);',
+        '  else cb(null, addresses[0].address, addresses[0].family);',
+        '};',
+        `https.get = (_url, cb) => http.get('http://refused.invalid:${port}/', { autoSelectFamily: true, lookup }, cb);`,
+        '',
+      ].join('\n'),
+    );
+  });
+
+  after(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('prints why the download failed on the download line and the Fatal line', () => {
+    const run = spawnSync(process.execPath, ['--require', preload, CLI, 'start'], {
+      env: { PATH: process.env.PATH ?? '', HOME: dir, USERPROFILE: dir, NANOMIND_MODEL_DIR: join(dir, 'models') },
+      encoding: 'utf-8',
+      timeout: 60_000,
+    });
+    assert.strictEqual(run.status, 1, run.stderr);
+    const refused = `connect ECONNREFUSED 127.0.0.1:${port}`;
+    const lines = run.stderr.split('\n');
+    const download = lines.find(line => line.startsWith('[nanomind-daemon] nanomind-tme.onnx failed:'));
+    assert.ok(download?.includes(refused), `the download line does not name the refusal:\n${run.stderr}`);
+    const fatal = lines.find(line => line.startsWith('Fatal:'));
+    assert.ok(fatal?.includes(refused), `the Fatal line does not name the refusal:\n${run.stderr}`);
+  });
+});
+
+describe('nanomind-daemon status: refusals', { skip: !CLI_BUILT && 'dist/ is not built' }, () => {
+  let home: string;
+  let port: number;
+  let status: Record<string, unknown> = {};
+  const daemon = createServer((req, res) => {
+    if (req.url !== '/v1/status') {
+      res.writeHead(404);
+      res.end();
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(status));
+  });
+
+  before(async () => {
+    home = mkdtempSync(join(tmpdir(), 'nanomind-home-'));
+    daemon.listen(0, '127.0.0.1');
+    await once(daemon, 'listening');
+    port = (daemon.address() as AddressInfo).port;
+  });
+
+  after(() => {
+    daemon.close();
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  // Asynchronous, because spawnSync would block this process and with it the
+  // stub daemon the CLI asks.
+  async function runStatus(): Promise<string> {
+    const { stdout } = await promisify(execFile)(process.execPath, [CLI, 'status'], {
+      env: { PATH: process.env.PATH ?? '', HOME: home, USERPROFILE: home, NANOMIND_PORT: String(port) },
+      encoding: 'utf-8',
+      timeout: 60_000,
+    });
+    return stdout;
+  }
+
+  const running = () => ({ running: true, port, activeTasks: 0, modelLoaded: false, uptime: 5000 });
+
+  it('prints the Refused line when the daemon reports refusals', async () => {
+    status = { ...running(), refusals: { rateLimited: 3, queueFull: 2 } };
+    const stdout = await runStatus();
+    assert.match(stdout, /^ {2}Refused: +3 rate limited, 2 queue full$/m, stdout);
+  });
+
+  it('prints no Refused line when the daemon does not report refusals', async () => {
+    status = running();
+    const stdout = await runStatus();
+    assert.match(stdout, /^ {2}Uptime: +5s$/m, stdout);
+    assert.doesNotMatch(stdout, /Refused/, stdout);
   });
 });

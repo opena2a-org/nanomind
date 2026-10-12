@@ -41,6 +41,7 @@ import { get as httpsGet } from 'node:https';
 import { get as httpGet } from 'node:http';
 import * as ort from 'onnxruntime-node';
 import type { AttackClass } from './server.ts';
+import { errorMessage } from './error-message.ts';
 
 const HUGGINGFACE_REPO = 'opena2a/nanomind-security-classifier';
 const HUGGINGFACE_RESOLVE_BASE = `https://huggingface.co/${HUGGINGFACE_REPO}/resolve/main`;
@@ -378,8 +379,7 @@ export class OnnxEngine {
       this.onDownloadProgress({ phase: 'done', file: name, bytes: bytesWritten });
     } catch (err) {
       await unlink(partPath).catch(() => undefined);
-      const message = err instanceof Error ? err.message : String(err);
-      this.onDownloadProgress({ phase: 'error', file: name, message });
+      this.onDownloadProgress({ phase: 'error', file: name, message: errorMessage(err) });
       throw err;
     }
   }

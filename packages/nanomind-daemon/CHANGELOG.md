@@ -49,7 +49,7 @@ The README and `--help` described these; the daemon now does them.
 
 ### Rate limit: client guidance, health probes and refusal counts (#163)
 
-**Behavior change for clients.** A client that sends more than 100 requests/second from one address, `POST /v1/infer` included, now gets HTTP 429 `rate_limited` for the requests over the limit; before 0.4.0 the daemon had no rate limit. Every local TCP client connects from `127.0.0.1` and shares that budget. Retry a `rate_limited` answer after the seconds in its `Retry-After` header instead of treating it as "daemon unavailable": a client that falls back on any non-2xx answer (for example by recording `fail_open`) hides the refusal from its users. The README section "Retrying a 429" covers both 429 answers.
+**Behavior change for clients.** A client that sends more than 100 requests/second from one address, `POST /v1/infer` included, now gets HTTP 429 `rate_limited` for the requests over the limit; before 0.4.0 the daemon had no rate limit. A local TCP client connects from `127.0.0.1` unless it binds another loopback address, so local TCP clients usually share that budget. Retry a `rate_limited` answer after the seconds in its `Retry-After` header instead of treating it as "daemon unavailable": a client that falls back on any non-2xx answer (for example by recording `fail_open`) hides the refusal from its users. The README section "Retrying a 429" covers both 429 answers.
 
 - `GET /health`, `GET /health/ready` and `GET /v1/status` are no longer rate limited and spend no tokens. A health probe kept failing with 429 while another local client was over the limit, so a client that reads a non-2xx `/health` as "daemon down" could try to start a second daemon, and `nanomind-daemon status` printed "Daemon returned error: 429".
 - `GET /health`, `GET /v1/status` and `getStatus()` report `refusals: { rateLimited, queueFull }`, the requests refused since the daemon was created, and `nanomind-daemon status` prints them. The `RefusalCounts` type is exported.
@@ -57,6 +57,12 @@ The README and `--help` described these; the daemon now does them.
 - `nanomind-daemon start` prints `Fatal:` and the error message, without a stack trace, when it cannot start (for example when the model files are missing and downloads are off). It still exits 1.
 - README "Error responses" names the error bodies it describes and the 503 from `GET /health/ready`, whose body has no `error` or `message`. The 400 row now also lists a body that is not a JSON object, an `input` that is not a string, and a body that has not finished arriving after 30 seconds.
 - New tests: a Unix socket client and a TCP client have separate buckets, and more than 100 `infer()` calls in-process at a fixed clock are all classified.
+
+### Download errors, registry paths and refusal tests (#165)
+
+- `nanomind-daemon start` prints the reason when a model download fails on every address of the host, for example `Fatal: connect ECONNREFUSED ::1:443; connect ECONNREFUSED 127.0.0.1:443`. Node reports that failure as an `AggregateError` with an empty message, so the download line and the `Fatal:` line printed nothing after the colon. The `error` event passed to `onDownloadProgress` carries the same text.
+- `BaseFabricAdapter.writeASC()` and `readRiskSummary()` encode `agentId` as one path segment, so an `agentId` containing `/`, `?`, `#` or `../` no longer reaches another registry path. An empty `agentId`, `.` or `..` is refused with a `TypeError` before any request is sent.
+- New tests: a 429 body's `error` code takes precedence over the `Retry-After` header in both directions, and `nanomind-daemon status` prints its `Refused:` line only when the daemon reports `refusals`.
 
 ### Tests
 

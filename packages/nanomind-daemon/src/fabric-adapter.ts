@@ -64,7 +64,7 @@ export class BaseFabricAdapter implements FabricAdapter {
   }
 
   async writeASC(agentId: string, signals: Record<string, unknown>): Promise<void> {
-    const url = `${this.registryUrl}/internal/asc/${agentId}`;
+    const url = `${this.registryUrl}/internal/asc/${agentIdSegment(agentId)}`;
     const resp = await fetch(url, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -76,7 +76,7 @@ export class BaseFabricAdapter implements FabricAdapter {
   }
 
   async readRiskSummary(agentId: string): Promise<RiskSummary | null> {
-    const url = `${this.registryUrl}/api/v1/asc/${agentId}/risk-summary`;
+    const url = `${this.registryUrl}/api/v1/asc/${agentIdSegment(agentId)}/risk-summary`;
     const resp = await fetch(url);
     if (!resp.ok) return null;
     return resp.json() as Promise<RiskSummary>;
@@ -102,6 +102,19 @@ export class BaseFabricAdapter implements FabricAdapter {
 
     return resp.json() as Promise<InferResponse>;
   }
+}
+
+/**
+ * `agentId` as one segment of a registry path. encodeURIComponent keeps `/`,
+ * `?` and `#` inside the segment. The empty string, `.` and `..` would still
+ * move the request to another path once the URL is resolved, so they are
+ * refused.
+ */
+function agentIdSegment(agentId: string): string {
+  if (agentId === '' || agentId === '.' || agentId === '..') {
+    throw new TypeError(`Invalid agentId: ${JSON.stringify(agentId)}`);
+  }
+  return encodeURIComponent(agentId);
 }
 
 /**
