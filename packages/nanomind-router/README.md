@@ -1,6 +1,6 @@
 # @nanomind/router
 
-Intent classification and command mapping for CLI security tools. Classifies natural language into 17 intent types including 6 security scanning intents.
+Intent classification and command mapping for CLI security tools. `IntentType` names 22 intents plus `UNKNOWN`, 6 of them security scanning intents.
 
 ## Install
 
@@ -19,9 +19,9 @@ const result = classifyIntent('scan this project for vulnerabilities');
 const cmd = mapToCommand(result, 'hma');
 // { command: 'hma secure', args: ['.'], description: 'Run security scan' }
 
-// Check if an intent is a security scan (needs full model inference)
-isScanIntent('SCAN_SKILL'); // true
-isScanIntent('EXPLAIN');     // false
+// Check if an intent is one of the 6 security scanning intents
+isScanIntent('SCAN_SKILL_INTENT'); // true
+isScanIntent('EXPLAIN');           // false
 ```
 
 ## Intent Types
@@ -49,16 +49,16 @@ EXPLAIN, GENERATE, COMPARE, CONFIG, NAVIGATE, RISK_SCORE, REVOCATION and EXPOSUR
 
 ### Security Scanning Intents (SCAN_*)
 
-These intents require full NanoMind model inference via the daemon. Used by HackMyAgent's Semantic Compiler.
+`isScanIntent(intent)` returns `true` for these 6 intents. None of them has a route in `COMMAND_TABLES` or in the default routes, so `mapToCommand` maps each of them to `null`.
 
-| Intent | Purpose | Used By |
-|--------|---------|---------|
-| SCAN_SKILL | Classify skill artifacts for attack patterns | SemanticCompiler |
-| SCAN_MCP | Analyze MCP server configurations | SemanticCompiler |
-| SCAN_SOUL | Evaluate governance document completeness | SemanticCompiler |
-| SCAN_CREDENTIAL | Detect credential exposure in context | SemanticCompiler |
-| SCAN_CODE | Identify code injection patterns | SemanticCompiler |
-| COMPILE_AST | Full AST compilation (all analyzers) | SemanticCompiler |
+| Intent | Purpose | Example input |
+|--------|---------|---------------|
+| SCAN_SKILL_INTENT | Skill malicious intent classification | "scan skill intent malicious" |
+| SCAN_SOUL_COMPLETENESS | SOUL.md governance completeness analysis | "soul governance completeness gaps" |
+| SCAN_MCP_SCOPE | MCP tool description scope analysis | "mcp tool description scope analysis" |
+| SCAN_PROMPT_INTENT | System prompt behavioral envelope analysis | "system prompt behavioral envelope" |
+| SCAN_VERSION_DELTA | Semantic diff between skill versions | "version delta semantic diff" |
+| SCAN_EXPLAIN | Human-readable explanation of any finding | "explain finding SKILL-007" |
 
 ## Confidence Scoring
 

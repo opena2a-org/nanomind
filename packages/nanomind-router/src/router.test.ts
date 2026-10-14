@@ -317,3 +317,44 @@ describe('Per-CLI command tables', () => {
     });
   }
 });
+
+// The README's intent count, isScanIntent examples and SCAN_* table, read from
+// the README itself and checked against IntentType and the router functions.
+describe('Router README', () => {
+  const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
+  const source = readFileSync(new URL('./index.ts', import.meta.url), 'utf8');
+  const intentNames = [...(source.match(/export type IntentType =([\s\S]*?);/)?.[1] ?? '').matchAll(/\|\s*'([A-Z_]+)'/g)]
+    .map((m) => m[1] as IntentType);
+  const scanIntents = intentNames.filter((name) => isScanIntent(name));
+
+  it('states how many intents IntentType names', () => {
+    assert.ok(intentNames.includes('UNKNOWN'), 'IntentType is read from index.ts');
+    const stated = readme.match(/`IntentType` names (\d+) intents plus `UNKNOWN`, (\d+) of them security scanning intents/);
+    assert.ok(stated, 'README states the IntentType count');
+    assert.strictEqual(Number(stated[1]), intentNames.length - 1);
+    assert.strictEqual(Number(stated[2]), scanIntents.length);
+  });
+
+  it('shows the value isScanIntent returns in each example', () => {
+    const examples = [...readme.matchAll(/isScanIntent\('([A-Z_]+)'\);\s*\/\/\s*(true|false)/g)];
+    assert.ok(examples.length > 0, 'README has isScanIntent examples');
+    for (const [, name, shown] of examples) {
+      assert.strictEqual(String(isScanIntent(name as IntentType)), shown, `README: isScanIntent('${name}'); // ${shown}`);
+    }
+  });
+
+  it('lists the scanning intents isScanIntent accepts, each with an input that classifies to it', () => {
+    const start = readme.indexOf('### Security Scanning Intents');
+    assert.notStrictEqual(start, -1, 'README has a Security Scanning Intents section');
+    const end = readme.indexOf('\n## ', start);
+    const rows = [...readme.slice(start, end === -1 ? undefined : end).matchAll(/^\| (\w+) \| [^|]+ \| "([^"]+)" \|$/gm)];
+    assert.deepStrictEqual(rows.map((row) => row[1]).sort(), [...scanIntents].sort());
+    for (const [, name, input] of rows) {
+      const classification = classifyIntent(input);
+      assert.strictEqual(classification.intent, name, `"${input}" classifies to ${name}`);
+      for (const cliName of [...Object.keys(COMMAND_TABLES), 'acme']) {
+        assert.strictEqual(mapToCommand(classification, cliName), null, `${name} has no ${cliName} route`);
+      }
+    }
+  });
+});
