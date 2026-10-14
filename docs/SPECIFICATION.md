@@ -357,6 +357,23 @@ Every tool that uses NanoMind MUST:
 | aibrowserguard | Planned | security-classifier | Browser-level detection |
 | ARP | Planned | runtime-guard | Behavioral anomaly |
 
+### 5.2 Open Protocol
+
+NanoMind is an open protocol (MIT). Any CLI tool can implement the adapter interface:
+
+```typescript
+interface NanoMindCLIAdapter {
+  cliName: string;
+  cliVersion: string;
+  getCommandManifest(): CommandManifest;
+  executeCommand(cmd: string): Promise<ExecutionResult>;
+  getScanHistory(): ScanHistoryEntry[];
+  getATCData?(): ATCData;
+}
+```
+
+See [NANOMIND-SPEC.md](../spec/NANOMIND-SPEC.md) for the full specification.
+
 ## 6. Data Governance
 
 ### 6.1 Training Data Sources

@@ -1,0 +1,17 @@
+# Trained Models
+
+| Model | Visibility | Architecture | Accuracy | Status |
+|-------|-----------|--------------|----------|--------|
+| [nanomind-security-classifier](https://huggingface.co/opena2a/nanomind-security-classifier) | Public | Mamba TME (10 classes) | Recall 100%, Precision 79.6%, F1 88.7%, Benign FPR 9.1% (oracle-verified, TME v5 2026-04-15) | Production (v0.5.0: terminal classifier release; no successor on this architecture) |
+| [nanomind-security-analyst](https://huggingface.co/opena2a/nanomind-security-analyst) | Public | Qwen3-1.7B SFT LoRA r=64 (10 classes) | Oracle 10-way 70.0%, binary 97.8%, attack-only 9-way 67.3%, internal mixed-task 92.88% (295 scored of 332; off-topic handled by the v3.1 input gate) | Production (v3.0.0, published 2026-05-11) |
+| nanomind-mcp-analyzer | Internal | Planned | N/A | Planned |
+| nanomind-trust-scorer | Internal | Planned | N/A | Planned |
+| nanomind-runtime-guard | Internal | Planned | N/A | Planned |
+
+> **Two production model lines.** The Mamba TME **classifier** (v0.5.0) handles inline classification at the NLM tier (~2M params, ONNX). The Qwen3-1.7B **analyst** (v3.0.0) handles generative threat reasoning at the SLM tier (~1.7B params, MPS bf16, structured Analysis/Verdict/Evidence/Remediation output). Both are public on HuggingFace under Apache-2.0 (analyst inherits Qwen3 license on base weights). How long a request takes depends on the machine and the backend, so this README gives no timing figure for either line. Each daemon times every request on your machine and returns what it measured: `@nanomind/daemon` as `latencyMs` on each classifier reply, and the `nanomind-analyst` daemon as `nlmLatencyMs` and `nlmTokenCount` on each reply the analyst generated.
+>
+> **v3.0.0: FP-suppression on benign security code (corrected 2026-06-03).** The analyst can over-classify legitimate JWT validators, RBAC middleware, parameterized queries, rate limiters, and OAuth/crypto code as threats. On a repaired 82-sample gate of *real* security-library source it correctly clears **77%** (63/82) as benign; the originally documented 57% / 43%-FP figure was measured on a gate later found to be 41% placeholder filler, which understated reliability. On ordinary benign artifacts the false-positive rate is ~1%; the over-flagging is concentrated on dual-use security code, where roughly 1 in 4 may still be over-flagged, so spot-checking findings on dedicated security libraries remains advisable. A corpus retrain (v3.1) was a no-go; the scoped fix is a benign-security pre-pass, not corpus expansion. See model card §Known Limitations §2.
+>
+> **Off-topic refusal requires the v3.1 input-classifier gate.** The analyst alone refuses only 34% of off-topic inputs (specialist model trained exclusively on security artifacts). The v3.1 input-classifier gate (PR #13, 1e90bf8: sentence-transformers/all-MiniLM-L6-v2 + sklearn LogisticRegression + byte-level BIDI/stego pre-filter) runs in front of the NLM and ships at threshold 0.90 (raised from 0.65, prioritizing attack recall). An earlier 92% end-to-end off-topic-refusal figure was measured at threshold 0.65 and is not the current operating point. The gate ships with the NanoMind-Guard daemon (PR #14, f98e649) and is REQUIRED for any consumer surface that may receive non-security inputs. Serving runtime: `/tmp/nanomind-guard.sock`.
+
+Model versions tracked in [`nanomind-models.json`](../nanomind-models.json). Publishing automated via GitHub Actions.
