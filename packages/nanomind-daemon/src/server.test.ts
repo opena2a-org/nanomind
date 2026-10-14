@@ -2,7 +2,7 @@ import { describe, it, before, after, afterEach } from 'node:test';
 import assert from 'node:assert';
 import { spawnSync } from 'node:child_process';
 import { once } from 'node:events';
-import { existsSync, lstatSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { request } from 'node:http';
 import { createRequire } from 'node:module';
 import { createServer as createNetServer, connect } from 'node:net';
@@ -19,15 +19,28 @@ import { OnnxEngine } from './onnx-engine.ts';
 const SOCKET_DIR = mkdtempSync(join(tmpdir(), 'nmd-'));
 after(() => rmSync(SOCKET_DIR, { recursive: true, force: true }));
 
+// Suites stub the engine or set noAutoDownload, and the real-model tests run
+// only when the model files are already there. This check fails the file when
+// a run adds or removes files in the home directory's model folder.
+const HOME_MODELS_DIR = join(homedir(), '.nanomind', 'models');
+const listHomeModels = (): string[] => (existsSync(HOME_MODELS_DIR) ? readdirSync(HOME_MODELS_DIR).sort() : []);
+const HOME_MODELS_BEFORE = listHomeModels();
+after(() => {
+  assert.deepStrictEqual(listHomeModels(), HOME_MODELS_BEFORE, `the daemon tests wrote model files into ${HOME_MODELS_DIR}`);
+});
+
 describe('NanoMindDaemon', () => {
   let daemon: NanoMindDaemon;
   const TEST_PORT = 47299; // Use non-default port for tests
 
   before(async () => {
+    // A stub engine: with the default OnnxEngine, start() downloads the
+    // model files into the home directory when they are missing.
     daemon = new NanoMindDaemon({
       httpPort: TEST_PORT,
       ipcPath: join(SOCKET_DIR, 'main.sock'),
       idleUnloadSeconds: 60,
+      engine: { ensureReady: async () => {}, infer: async () => ({ text: 'stub-result' }) },
     });
     await daemon.start();
     // Wait for server to be ready

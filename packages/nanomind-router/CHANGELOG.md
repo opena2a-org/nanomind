@@ -33,6 +33,12 @@
   "detect" classifies as SCAN.
 - The `license` field in `package.json` reads `Apache-2.0`, the license in
   the repository's LICENSE file. Earlier releases declared `MIT`.
+- The README lists the six scanning intents `isScanIntent` accepts
+  (`SCAN_SKILL_INTENT`, `SCAN_SOUL_COMPLETENESS`, `SCAN_MCP_SCOPE`,
+  `SCAN_PROMPT_INTENT`, `SCAN_VERSION_DELTA`, `SCAN_EXPLAIN`) and says
+  `IntentType` names 22 intents plus `UNKNOWN`. It listed `SCAN_SKILL`,
+  `SCAN_MCP`, `SCAN_SOUL`, `SCAN_CREDENTIAL`, `SCAN_CODE` and `COMPILE_AST`,
+  which `IntentType` does not define, and a count of 17.
 
 ## 0.1.3 — 2026-04-28
 
