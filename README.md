@@ -49,7 +49,7 @@ Your agent billing-agent is trust level 2 because:
 | [@nanomind/runtime](https://www.npmjs.com/package/@nanomind/runtime) | Behavioral anomaly detection | `npm i @nanomind/runtime` |
 | [@nanomind/daemon](https://www.npmjs.com/package/@nanomind/daemon) | Persistent inference server (localhost:47200) | `npm i @nanomind/daemon` |
 
-The daemon is a persistent inference server. It loads the model once and serves all requests via HTTP ([daemon README](packages/nanomind-daemon/README.md)). `nanomind-daemon start` downloads any missing model files into `~/.nanomind/models/` (or `NANOMIND_MODEL_DIR`); `--no-download` turns that off.
+The daemon is a persistent inference server. It loads the model once and serves all requests via HTTP ([daemon README](packages/nanomind-daemon/README.md)). `nanomind-daemon start` downloads any missing model files into `~/.nanomind/models/`; `--no-download` turns that off.
 
 ```bash
 nanomind-daemon start    # localhost:47200
