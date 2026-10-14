@@ -1,15 +1,17 @@
 # NanoMind
 
-[![Status: beta](https://img.shields.io/badge/status-beta-yellow)](./STATUS.md)
+[![Status: beta](https://img.shields.io/badge/status-beta-yellow)](STATUS.md)
+[![npm version](https://img.shields.io/npm/v/@nanomind/cli.svg)](https://www.npmjs.com/package/@nanomind/cli)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-> **[OpenA2A](https://github.com/opena2a-org/opena2a)**: [CLI](https://github.com/opena2a-org/opena2a) · [HackMyAgent](https://github.com/opena2a-org/hackmyagent) · [Secretless](https://github.com/opena2a-org/secretless-ai) · [AIM](https://github.com/opena2a-org/agent-identity-management) · [Browser Guard](https://github.com/opena2a-org/AI-BrowserGuard) · [DVAA](https://github.com/opena2a-org/damn-vulnerable-ai-agent)
+> **[OpenA2A](https://github.com/opena2a-org)**: [CLI](https://github.com/opena2a-org/opena2a) · [HackMyAgent](https://github.com/opena2a-org/hackmyagent) · [Secretless](https://github.com/opena2a-org/secretless-ai) · [AIM](https://github.com/opena2a-org/agent-identity-management) · [Browser Guard](https://github.com/opena2a-org/ai-browserguard) · [DVAA](https://github.com/opena2a-org/damn-vulnerable-ai-agent)
+
+[Website](https://nanomind.dev) · [Discord](https://discord.gg/uRZa3KXgEn)
 
 Embedded intelligence layer for AI security tools. Two deployment modes, one package:
 
 - **CLI Mode**: Natural language intent routing for security CLIs (HackMyAgent, secretless-ai, OpenA2A)
 - **Runtime Mode**: Behavioral anomaly detection for AI agent runtime protection (ARP)
-
-[![npm version](https://img.shields.io/npm/v/@nanomind/cli.svg)](https://www.npmjs.com/package/@nanomind/cli) [![License](https://img.shields.io/github/license/opena2a-org/nanomind)](LICENSE)
 
 ```bash
 npm install @nanomind/cli
@@ -34,10 +36,6 @@ Your agent billing-agent is trust level 2 because:
   Present: Threshold signatures (+70 pts cryptographic proof)
   Projected level 4 after fixes: 500 pts (230 present + 270 from fixes)
 ```
-
-**Spec:** [nanomind.dev](https://nanomind.dev) | **npm:** [@nanomind](https://www.npmjs.com/org/nanomind)
-
----
 
 ## Packages
 
