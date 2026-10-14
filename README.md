@@ -47,11 +47,9 @@ Your agent billing-agent is trust level 2 because:
 | [@nanomind/atc](https://www.npmjs.com/package/@nanomind/atc) | ATC trust queries | `npm i @nanomind/atc` |
 | [@nanomind/cli](https://www.npmjs.com/package/@nanomind/cli) | Interactive security assistant | `npm i @nanomind/cli` |
 | [@nanomind/runtime](https://www.npmjs.com/package/@nanomind/runtime) | Behavioral anomaly detection | `npm i @nanomind/runtime` |
-| **@nanomind/daemon** (NEW) | Persistent inference server (localhost:47200) | In packages/ |
+| [@nanomind/daemon](https://www.npmjs.com/package/@nanomind/daemon) | Persistent inference server (localhost:47200) | `npm i @nanomind/daemon` |
 
-## Daemon Server (NEW)
-
-Persistent inference server. Loads model once, serves all requests via HTTP.
+The daemon is a persistent inference server. It loads the model once and serves all requests via HTTP ([daemon README](packages/nanomind-daemon/README.md)). `nanomind-daemon start` downloads any missing model files into `~/.nanomind/models/` (or `NANOMIND_MODEL_DIR`); `--no-download` turns that off.
 
 ```bash
 nanomind-daemon start    # localhost:47200
@@ -59,34 +57,11 @@ nanomind-daemon status
 nanomind-daemon stop
 ```
 
-## SCAN Intents (NEW)
-
-6 security scanning intents: `SCAN_SKILL_INTENT`, `SCAN_SOUL_COMPLETENESS`, `SCAN_MCP_SCOPE`, `SCAN_PROMPT_INTENT`, `SCAN_VERSION_DELTA`, `SCAN_EXPLAIN`
-
-## Trained Models
-
-| Model | Visibility | Architecture | Accuracy | Status |
-|-------|-----------|--------------|----------|--------|
-| [nanomind-security-classifier](https://huggingface.co/opena2a/nanomind-security-classifier) | Public | Mamba TME (10 classes) | Recall 100%, Precision 79.6%, F1 88.7%, Benign FPR 9.1% (oracle-verified, TME v5 2026-04-15) | Production (v0.5.0: terminal classifier release; no successor on this architecture) |
-| [nanomind-security-analyst](https://huggingface.co/opena2a/nanomind-security-analyst) | Public | Qwen3-1.7B SFT LoRA r=64 (10 classes) | Oracle 10-way 70.0%, binary 97.8%, attack-only 9-way 67.3%, internal mixed-task 92.88% (295 scored of 332; off-topic handled by the v3.1 input gate) | Production (v3.0.0, published 2026-05-11) |
-| nanomind-mcp-analyzer | Internal | Planned | N/A | Planned |
-| nanomind-trust-scorer | Internal | Planned | N/A | Planned |
-| nanomind-runtime-guard | Internal | Planned | N/A | Planned |
-
-> **Two production model lines.** The Mamba TME **classifier** (v0.5.0) handles inline classification at the NLM tier (~2M params, ONNX). The Qwen3-1.7B **analyst** (v3.0.0) handles generative threat reasoning at the SLM tier (~1.7B params, MPS bf16, structured Analysis/Verdict/Evidence/Remediation output). Both are public on HuggingFace under Apache-2.0 (analyst inherits Qwen3 license on base weights). How long a request takes depends on the machine and the backend, so this README gives no timing figure for either line. Each daemon times every request on your machine and returns what it measured: `@nanomind/daemon` as `latencyMs` on each classifier reply, and the `nanomind-analyst` daemon as `nlmLatencyMs` and `nlmTokenCount` on each reply the analyst generated.
->
-> **v3.0.0: FP-suppression on benign security code (corrected 2026-06-03).** The analyst can over-classify legitimate JWT validators, RBAC middleware, parameterized queries, rate limiters, and OAuth/crypto code as threats. On a repaired 82-sample gate of *real* security-library source it correctly clears **77%** (63/82) as benign; the originally documented 57% / 43%-FP figure was measured on a gate later found to be 41% placeholder filler, which understated reliability. On ordinary benign artifacts the false-positive rate is ~1%; the over-flagging is concentrated on dual-use security code, where roughly 1 in 4 may still be over-flagged, so spot-checking findings on dedicated security libraries remains advisable. A corpus retrain (v3.1) was a no-go; the scoped fix is a benign-security pre-pass, not corpus expansion. See model card §Known Limitations §2.
->
-> **Off-topic refusal requires the v3.1 input-classifier gate.** The analyst alone refuses only 34% of off-topic inputs (specialist model trained exclusively on security artifacts). The v3.1 input-classifier gate (PR #13, 1e90bf8: sentence-transformers/all-MiniLM-L6-v2 + sklearn LogisticRegression + byte-level BIDI/stego pre-filter) runs in front of the NLM and ships at threshold 0.90 (raised from 0.65, prioritizing attack recall). An earlier 92% end-to-end off-topic-refusal figure was measured at threshold 0.65 and is not the current operating point. The gate ships with the NanoMind-Guard daemon (PR #14, f98e649) and is REQUIRED for any consumer surface that may receive non-security inputs. Serving runtime: `/tmp/nanomind-guard.sock`.
-
-Model versions tracked in [`nanomind-models.json`](nanomind-models.json). Publishing automated via GitHub Actions.
-
-
----
+The router also carries 6 security scanning intents: `SCAN_SKILL_INTENT`, `SCAN_SOUL_COMPLETENESS`, `SCAN_MCP_SCOPE`, `SCAN_PROMPT_INTENT`, `SCAN_VERSION_DELTA`, `SCAN_EXPLAIN` ([router README](packages/nanomind-router/README.md)).
 
 ## CLI Mode
 
-NanoMind replaces the help screen when a CLI tool is run with no arguments. It classifies natural language into one of 16 intent types and maps the intent to a command through a per-CLI routing table in `@nanomind/router`. The tables for `hma`, `secretless-ai` and `opena2a` are listed in the [router README](packages/nanomind-router/README.md#general-intents-and-routes); an intent with no route there maps to no command, and the session says that CLI has no command for it.
+NanoMind replaces the help screen when a CLI tool is run with no arguments. It classifies natural language into one of 16 intent types and maps the intent to a command through a per-CLI routing table in `@nanomind/router` ([routing tables](docs/cli-mode.md#intent-routing)).
 
 ### Intent Classification
 
@@ -111,7 +86,7 @@ const cmd = mapToCommand(result, 'hma');
 
 ### Prompt Injection Guard
 
-Input that does not come from a terminal is screened before routing. Piped stdin is screened as `piped` and a file redirected to stdin as `file`. Agent output reaches a session the same way, through a pipe or a file. A caller that passes agent output to `screenInput` directly labels it `agent-output`. Output from the commands a session runs is printed and never routed.
+Input that does not come from a terminal is screened before routing. Piped stdin is screened as `piped` and a file redirected to stdin as `file`. Output from the commands a session runs is printed and never routed. [How agent output is labelled](docs/cli-mode.md#prompt-injection-guard).
 
 ```typescript
 import { screenInput } from '@nanomind/guard';
@@ -141,8 +116,6 @@ Detects: instruction override, role switching, permission escalation, zero-width
 ### CI/CD Artifact Generation
 
 9 artifact types: GitHub Actions, GitLab CI, Azure Pipelines, CircleCI, Docker Compose, Dockerfile, pre-commit, Makefile, ATC build-action.
-
----
 
 ## Runtime Mode
 
@@ -199,63 +172,17 @@ await submitGradient(noisy, eventCount, loss);
 - Gaussian noise (ε=1.0, δ=1e-5)
 - Gradient clipping (L2 norm ≤ 1.0)
 
----
+## Documentation
 
-## Integration Adapters
-
-| Tool | Adapter | What Happens |
-|------|---------|-------------|
-| HackMyAgent | `integrations/hma/` | `hma` with no args → NanoMind interactive |
-| secretless-ai | `integrations/secretless-ai/` | `secretless-ai` with no args → NanoMind |
-| OpenA2A CLI | `integrations/opena2a/` | Cross-product router |
-| ARP | `integrations/arp/` | NanoMindL1 attaches to EventEngine |
-
-`--no-smart` always restores raw CLI behavior. `--help` is never intercepted.
-
----
-
-## Open Protocol
-
-NanoMind is an open protocol (MIT). Any CLI tool can implement the adapter interface:
-
-```typescript
-interface NanoMindCLIAdapter {
-  cliName: string;
-  cliVersion: string;
-  getCommandManifest(): CommandManifest;
-  executeCommand(cmd: string): Promise<ExecutionResult>;
-  getScanHistory(): ScanHistoryEntry[];
-  getATCData?(): ATCData;
-}
-```
-
-See [NANOMIND-SPEC.md](spec/NANOMIND-SPEC.md) for the full specification.
-
----
-
-## Testing
-
-The package test scripts need Node.js 22.6.0 or later, the first release with `--experimental-strip-types`; `engines` in the root `package.json` declares this minimum.
-
-```bash
-# All tests (56 total)
-npx tsx --test packages/nanomind-guard/src/guard.test.ts \
-  packages/nanomind-router/src/router.test.ts \
-  packages/nanomind-cli/src/cli.test.ts \
-  packages/nanomind-runtime/src/runtime.test.ts \
-  packages/nanomind-runtime/src/fleet.test.ts
-
-# E2E: full runtime lifecycle including production gradient submission
-npx tsx --test packages/nanomind-runtime/src/e2e.test.ts
-```
-
----
-
-## Related
-
-- [OpenA2A Registry](https://github.com/opena2a-org/opena2a-registry): issues ATCs, hosts fleet intelligence
-- [HackMyAgent](https://github.com/opena2a-org/hackmyagent): security scanner with 310 static checks across 69 categories, 29 NanoMind semantic checks across 7 analyzers, 164 adversarial payloads, as of 2026-08-25 (hackmyagent 0.32.0; static counts: `npx hackmyagent check-metadata --json`)
-- [Agent Threat Matrix](https://github.com/opena2a-org/agent-threat-matrix): 61 techniques, 40 attack classes, 9 tactics, as of 2026-08-25 (Matrix v1.1; live counts: `curl -s https://api.oa2a.org/api/v1/threat-matrix/stats`)
+- [Trained models](docs/models.md): the classifier and the analyst, their accuracy and known limits. Each daemon times every request on your machine and returns what it measured: `@nanomind/daemon` as `latencyMs` on each classifier reply, and the `nanomind-analyst` daemon as `nlmLatencyMs` and `nlmTokenCount` on each reply the analyst generated.
+- [Daemon](packages/nanomind-daemon/README.md): HTTP API, response schema and model files.
+- [CLI mode](docs/cli-mode.md): intent routing per CLI and how agent output is screened.
+- [Integration adapters](docs/integrations.md): the `hma`, `secretless-ai` and `opena2a` adapters; `--no-smart` restores raw CLI behavior.
+- [Specification](docs/SPECIFICATION.md): architecture, model inventory and the open adapter protocol ([NANOMIND-SPEC.md](spec/NANOMIND-SPEC.md)).
+- [Evaluation standard](docs/EVALUATION-STANDARD.md) and [status](STATUS.md).
+- [Contributing](CONTRIBUTING.md): running the tests.
+- [Security policy](SECURITY.md).
+- Related tools: [HackMyAgent](https://github.com/opena2a-org/hackmyagent), the security scanner, and the [Agent Threat Matrix](https://github.com/opena2a-org/agent-threat-matrix); their counts are under [Related](docs/integrations.md#related).
 
 ## License
 

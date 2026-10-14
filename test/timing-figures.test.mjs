@@ -44,15 +44,21 @@ function timingHits(path) {
   return timingMatches(path).map(formatHit);
 }
 
-test('the README states no timing figure for a model or the runtime scorer', () => {
-  assert.deepEqual(timingHits('README.md'), []);
+// The README links the models page, which carries the model lines the README
+// used to describe in full; both name the reply fields that carry the time.
+const MODEL_DOCS = ['README.md', 'docs/models.md'];
+
+test('the README and the models page state no timing figure for a model or the runtime scorer', () => {
+  assert.deepEqual(MODEL_DOCS.flatMap(timingHits), []);
 });
 
-test('the classifier daemon the README names measures each request as latencyMs', () => {
-  const readme = read('README.md');
+test('the classifier daemon the README and the models page name measures each request as latencyMs', () => {
   const name = JSON.parse(read('packages/nanomind-daemon/package.json')).name;
-  assert.ok(readme.includes(`\`${name}\``), `README does not name ${name}`);
-  assert.ok(readme.includes('`latencyMs`'), 'README does not name latencyMs');
+  for (const path of MODEL_DOCS) {
+    const doc = read(path);
+    assert.ok(doc.includes(`\`${name}\``), `${path} does not name ${name}`);
+    assert.ok(doc.includes('`latencyMs`'), `${path} does not name latencyMs`);
+  }
 
   const server = read('packages/nanomind-daemon/src/server.ts');
   const reply = server.match(/export interface InferResponse \{[\s\S]*?\n\}/);
@@ -61,15 +67,16 @@ test('the classifier daemon the README names measures each request as latencyMs'
   assert.match(server, /latencyMs: Date\.now\(\) - startMs,/);
 });
 
-test('the analyst daemon the README names reports nlmLatencyMs and nlmTokenCount', () => {
-  const readme = read('README.md');
+test('the analyst daemon the README and the models page name reports nlmLatencyMs and nlmTokenCount', () => {
   const name = read('packages/nanomind-analyst/pyproject.toml').match(/^name = "([^"]+)"/m)[1];
-  assert.ok(readme.includes(`\`${name}\``), `README does not name ${name}`);
-
   const nlm = read('packages/nanomind-analyst/src/nanomind_analyst/daemon/_nlm.py');
-  for (const field of ['nlmLatencyMs', 'nlmTokenCount']) {
-    assert.ok(readme.includes(`\`${field}\``), `README does not name ${field}`);
-    assert.ok(nlm.includes(`"${field}":`), `the analyst daemon reply carries no ${field}`);
+  for (const path of MODEL_DOCS) {
+    const doc = read(path);
+    assert.ok(doc.includes(`\`${name}\``), `${path} does not name ${name}`);
+    for (const field of ['nlmLatencyMs', 'nlmTokenCount']) {
+      assert.ok(doc.includes(`\`${field}\``), `${path} does not name ${field}`);
+      assert.ok(nlm.includes(`"${field}":`), `the analyst daemon reply carries no ${field}`);
+    }
   }
 });
 
