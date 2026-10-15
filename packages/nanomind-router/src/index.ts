@@ -87,7 +87,8 @@ const INTENT_PATTERNS: Array<{ pattern: RegExp; intent: IntentType }> = [
 
 // Entity extraction patterns
 const ENTITY_PATTERNS: Array<{ pattern: RegExp; entity: string }> = [
-  { pattern: /\b([A-Z]+-\d{3})\b/, entity: 'checkId' },
+  // A finding ID such as CRED-001 or SKILL-SEMANTIC-007, taken whole
+  { pattern: /\b([A-Z]+(?:-[A-Z]+)*-\d{3})\b/, entity: 'checkId' },
   { pattern: /\bagent[:\s]+(\S+)/i, entity: 'agentId' },
   { pattern: /\bpackage[:\s]+(\S+)/i, entity: 'packageName' },
   { pattern: /\b(did:[a-z]+:[a-z_]+:[^\s]+)/, entity: 'did' },
@@ -190,6 +191,7 @@ export const COMMAND_TABLES: Record<string, CommandTable> = {
       { command: 'detect', args: ['.'], match: DETECT_WORD, description: 'Detect AI agents in project' },
       SECURE_SCAN,
     ],
+    EXPLAIN: [{ command: 'explain', entities: ['checkId'], description: 'Explain a security finding' }],
   },
   'secretless-ai': {
     SCAN: [{ command: 'scan', description: 'Scan for exposed secrets' }],

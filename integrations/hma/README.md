@@ -2,7 +2,7 @@
 
 NanoMind adapter for [HackMyAgent](https://www.npmjs.com/package/hackmyagent).
 
-When `hma` is invoked with no arguments, this adapter launches NanoMind's interactive mode: natural-language routing into `hma secure`, `hma detect` and `hma check`. The routes are the `hma` table in [`@nanomind/router`](https://github.com/opena2a-org/nanomind/blob/main/packages/nanomind-router/README.md#general-intents-and-routes).
+When `hma` is invoked with no arguments, this adapter launches NanoMind's interactive mode: natural-language routing into `hma secure`, `hma detect`, `hma check` and `hma explain`. The routes are the `hma` table in [`@nanomind/router`](https://github.com/opena2a-org/nanomind/blob/main/packages/nanomind-router/README.md#general-intents-and-routes).
 
 ## Install
 

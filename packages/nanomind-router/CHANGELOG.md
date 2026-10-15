@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- `hma` EXPLAIN runs `hma explain <id>` when the input names a finding
+  ID, so "what does CRED-001 mean" runs `hma explain CRED-001`. EXPLAIN
+  without a finding ID, and EXPLAIN on `secretless-ai` and `opena2a`,
+  still maps to `null`. The `checkId` entity takes a finding ID with more
+  than one prefix whole: "explain SKILL-SEMANTIC-007" gives
+  `SKILL-SEMANTIC-007`, where it gave `SEMANTIC-007`.
 - `mapToCommand` appends a package name or agent id from the input to the
   command's arguments only when it is a plain argument (`isPlainArgument`:
   ASCII letters, digits and `@ . : / + - _`, starting with a letter, digit
