@@ -505,6 +505,32 @@ describe('NanoMindDaemon idle unload', () => {
   });
 });
 
+describe('NanoMindDaemon idle timer and a request longer than idleUnloadSeconds', () => {
+  it('releases the model once that request has finished', async () => {
+    let unloads = 0;
+    const daemon = new NanoMindDaemon({
+      idleUnloadSeconds: 0.1,
+      engine: {
+        ensureReady: async () => {},
+        // Three idle periods long, so the idle timer fires while it runs.
+        infer: async () => {
+          await new Promise(resolve => setTimeout(resolve, 300));
+          return { text: 'benign', attackClass: '' as const, confidence: 0.99 };
+        },
+        unload: async () => { unloads++; },
+      },
+    });
+    try {
+      await daemon.infer({ input: 'list files' });
+      assert.strictEqual(unloads, 0, 'no release while the request ran');
+      await waitFor(() => unloads === 1, 'the idle unload after the request');
+      assert.strictEqual(daemon.getStatus().modelLoaded, false);
+    } finally {
+      await daemon.stop();
+    }
+  });
+});
+
 describe('NanoMindDaemon idle timer with an engine that cannot unload', () => {
   it('keeps reporting the model as loaded and the daemon as ready', async () => {
     const port = 47296;

@@ -209,12 +209,15 @@ curl http://127.0.0.1:47200/health
 
 The model loads at start: `start()` calls `engine.ensureReady()` before
 binding HTTP, so the daemon accepts no requests until the classifier has
-loaded, and `modelLoaded` is `true` on the first `/health` response. After
-`idleUnloadSeconds` without a request the daemon releases the model (the
-inference session and the vocabulary) and `modelLoaded` turns `false`; the
-next `/v1/infer` loads it again and re-verifies the SHA-256 of each file. The
-process's resident memory does not necessarily fall after a release, because
-the memory allocator can keep the freed pages for reuse.
+loaded, and `modelLoaded` is `true` on the first `/health` response. The
+classifier runs in a child process of the daemon: that process loads the
+model files, verifies their SHA-256 and runs each inference, and the daemon
+process does not load the ONNX runtime. After `idleUnloadSeconds` without a
+request the daemon ends the child process, so the operating system takes back
+the memory the model used, and `modelLoaded` turns `false`. The next
+`/v1/infer` starts a new child process, which loads the model and re-verifies
+the SHA-256 of each file before it answers. `stop()` ends the child process
+too.
 
 ### GET /health/ready
 
@@ -271,7 +274,7 @@ A retrain to v0.6.0 with broader corpus coverage is tracked separately. The 5-va
 | `httpPort` | `47200` | HTTP server port |
 | `ipcPath` | `/tmp/nanomind.sock` (`\\.\pipe\nanomind` on Windows) | Unix socket path, mode 0600; serves the same routes as HTTP |
 | `maxConcurrent` | `4` | Max concurrent inference requests |
-| `idleUnloadSeconds` | `300` | Release the model after N seconds without a request; the next request reloads it |
+| `idleUnloadSeconds` | `300` | Release the model (end its child process) after N seconds without a request; the next request reloads it |
 
 ## Programmatic Usage
 
@@ -361,6 +364,10 @@ interface OnnxEngineConfig {
   onDownloadProgress?: (event: DownloadProgressEvent) => void;
 }
 ```
+
+`OnnxProcessEngine`, the daemon's default engine, takes the same settings and
+applies them in its child process; `onDownloadProgress` runs in the daemon
+process and receives the child's progress events.
 
 ## Security
 
