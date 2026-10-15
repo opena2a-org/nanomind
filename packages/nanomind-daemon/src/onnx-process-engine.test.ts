@@ -120,7 +120,15 @@ describe('OnnxProcessEngine', () => {
     const pid = engine.hostPid;
     assert.ok(pid);
 
-    await idle;
+    // Neither the idle timer nor the idle host keeps the process open, and
+    // the Node 22 test runner cancels a test once nothing does, so this
+    // interval holds the process open while the test waits for the timer.
+    const keepOpen = setInterval(() => {}, 1_000);
+    try {
+      await idle;
+    } finally {
+      clearInterval(keepOpen);
+    }
     await waitForExit(pid);
     assert.strictEqual(daemon.getStatus().modelLoaded, false);
 
