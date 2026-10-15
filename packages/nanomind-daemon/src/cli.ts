@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { NanoMindDaemon, DEFAULT_CONFIG } from './server.js';
-import { OnnxEngine } from './onnx-engine.js';
+import { OnnxProcessEngine } from './onnx-process-engine.js';
 import { errorMessage } from './error-message.js';
 import { existsSync, readFileSync, writeFileSync, rmSync, unlinkSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -79,7 +79,7 @@ async function startDaemon(): Promise<void> {
     httpPort: port,
     ipcPath,
     idleUnloadSeconds: idleSeconds,
-    engine: new OnnxEngine({ noAutoDownload, modelDir }),
+    engine: new OnnxProcessEngine({ noAutoDownload, modelDir }),
   });
 
   daemon.on('started', ({ port, ipcPath }: { port: number; ipcPath: string }) => {

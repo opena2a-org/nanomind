@@ -64,6 +64,17 @@ The README and `--help` described these; the daemon now does them.
 - `BaseFabricAdapter.writeASC()` and `readRiskSummary()` encode `agentId` as one path segment, so an `agentId` containing `/`, `?`, `#` or `../` no longer reaches another registry path. An empty `agentId`, `.` or `..` is refused with a `TypeError` before any request is sent.
 - New tests: a 429 body's `error` code takes precedence over the `Retry-After` header in both directions, and `nanomind-daemon status` prints its `Refused:` line only when the daemon reports `refusals`.
 
+### Idle unload returns the model's memory (#108)
+
+The classifier runs in a child process of the daemon. `OnnxProcessEngine`, the engine `NanoMindDaemon` and `nanomind-daemon start` now use, starts that process to load the model and ends it to unload the model, so an idle unload lets the operating system take back the memory the model used. Before, the idle unload released the ONNX session inside the daemon process; on macOS the process kept the freed pages, and each reload added to them.
+
+- The child process downloads the model files when they are missing, verifies their SHA-256 and runs inference; the daemon process does not load onnxruntime-node. The child's load and inference errors reach the daemon with the message the child gave, its download progress lines print to the daemon's stderr, and an `onDownloadProgress` callback receives its progress events.
+- The child process keeps only these Node flags of the daemon process: `-r`/`--require`, `--import`, `--experimental-strip-types` and `--experimental-transform-types` (and their `--no-` forms), `--no-warnings` and `--no-deprecation`. A flag such as `-e <script>` or `--inspect-brk` is not passed on.
+- `stop()` releases the model through `engine.unload()`, which ends the child process.
+- The idle period starts when the last running request finishes. An idle timer that fired while a request ran released nothing and was not armed again, so a request longer than `idleUnloadSeconds` kept the model loaded until the next request.
+- `ensureReady()` calls made while the model loads share one child process.
+- An idle child process does not keep a script that only calls `daemon.infer()` running.
+
 ### Tests
 
 - 21/21 pass (was 18; +3: a no-confidence engine result abstains; sub-floor confidence abstains and blanks attackClass; a verdict exactly at the inclusive floor classifies through).

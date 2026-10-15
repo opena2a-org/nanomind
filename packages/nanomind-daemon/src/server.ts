@@ -3,7 +3,7 @@ import { connect } from 'node:net';
 import { chmodSync, lstatSync, unlinkSync } from 'node:fs';
 import { classifyIntent } from '@nanomind/router';
 import { EventEmitter } from 'node:events';
-import { OnnxEngine } from './onnx-engine.ts';
+import { OnnxProcessEngine } from './onnx-process-engine.ts';
 import { manifest } from './manifest.mts';
 
 const SERVICE_NAME = 'nanomind-daemon';
@@ -277,10 +277,11 @@ export class NanoMindDaemon extends EventEmitter {
     super();
     const { engine, ...daemonConfig } = config;
     this.config = { ...DEFAULT_CONFIG, ...daemonConfig };
-    // Default to ONNX (production NanoMind v0.5.0). Tests inject stubs;
+    // Default to ONNX (production NanoMind v0.5.0), run in a child process
+    // so an idle unload returns the model's memory. Tests inject stubs;
     // legacy `NanoMindEngine` (llamafile) still satisfies DaemonEngine
     // structurally for callers that need it.
-    this.engine = engine ?? new OnnxEngine();
+    this.engine = engine ?? new OnnxProcessEngine();
   }
 
   async start(): Promise<void> {
@@ -372,6 +373,13 @@ export class NanoMindDaemon extends EventEmitter {
     this.modelLoaded = false;
     this.idleUnloaded = false;
     this.startedAt = null;
+    // A stopped daemon holds no model: with the default engine that ends the
+    // model host process.
+    try {
+      await this.engine.unload?.();
+    } catch {
+      // A failed release does not keep the daemon from stopping.
+    }
     this.emit('stopped');
   }
 
@@ -566,6 +574,12 @@ export class NanoMindDaemon extends EventEmitter {
       return response;
     } finally {
       this.activeTasks--;
+      // The idle period starts when the last request finishes. An idle timer
+      // that fired while a request ran released nothing and is not re-armed
+      // by itself, so a request longer than idleUnloadSeconds (a first load
+      // that downloads the model, say) would otherwise keep the model loaded
+      // until the next request.
+      if (this.activeTasks === 0) this.resetIdleTimer();
     }
   }
 
