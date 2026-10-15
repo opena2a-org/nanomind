@@ -39,6 +39,8 @@ isScanIntent('EXPLAIN');           // false
 | EXPLAIN, input names a finding ID | "what does CRED-001 mean" | `hma explain CRED-001` | no route | no route |
 | FIX | "fix the credential issue" | `hma secure --fix` | no route | no route |
 | STATUS | "show status" | `hma secure --summary` | `secretless-ai verify` | `opena2a review` |
+| NAVIGATE | "open the dashboard" | no route | no route | `opena2a review` |
+| CONFIG | "show config" | no route | no route | `opena2a config show` |
 | TRUST_QUERY | "trust level of agent: my-agent" | `opena2a trust my-agent` | `opena2a trust my-agent` | `opena2a trust my-agent` |
 | ATC_STATUS | "why is my score low" | `opena2a trust explain` | `opena2a trust explain` | `opena2a trust explain` |
 | ATTEST | "add trust attestation to my CI" | `opena2a attest` | `opena2a attest` | `opena2a attest` |
@@ -46,7 +48,7 @@ isScanIntent('EXPLAIN');           // false
 
 A package name or agent id taken from the input is appended to the command only when it is a plain argument (`isPlainArgument`: ASCII letters, digits and `@ . : / + - _`, starting with a letter, digit or `@`). Otherwise that route is skipped and the next route for the intent applies, or the intent maps to `null` when there is none, so "check package: x;echo" runs `hma secure .` in `hma`.
 
-A finding ID is taken whole, so "explain SKILL-SEMANTIC-007" runs `hma explain SKILL-SEMANTIC-007`. EXPLAIN without a finding ID maps to `null`. GENERATE, COMPARE, CONFIG, NAVIGATE, RISK_SCORE, REVOCATION and EXPOSURE are classified but have no route in these tables, and UNKNOWN never has one. A CLI without a table gets `<cli> secure .` for SCAN and SECRETS_EXPOSE, `<cli> secure --fix` for FIX, `<cli> secure --summary` for STATUS, and the ATC and HELP routes above.
+A finding ID is taken whole, so "explain SKILL-SEMANTIC-007" runs `hma explain SKILL-SEMANTIC-007`. EXPLAIN without a finding ID maps to `null`. The NAVIGATE pattern, "open", "show", "view" or "display" before "dashboard" or "report", is tried after the SECRETS_EXPOSE patterns and before SCAN, so "show the scan report" classifies as NAVIGATE. NAVIGATE runs `opena2a review` (in its help: "Run all security checks and open unified HTML dashboard"). CONFIG runs `opena2a config show` (in its help: "Display current configuration"). `hma` and `secretless-ai` have no route for NAVIGATE or CONFIG. GENERATE, COMPARE, RISK_SCORE, REVOCATION and EXPOSURE are classified but have no route in these tables, and UNKNOWN never has one. A CLI without a table gets `<cli> secure .` for SCAN and SECRETS_EXPOSE, `<cli> secure --fix` for FIX, `<cli> secure --summary` for STATUS, and the ATC and HELP routes above.
 
 ### Security Scanning Intents (SCAN_*)
 

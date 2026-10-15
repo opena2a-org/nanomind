@@ -185,6 +185,17 @@ describe('NanoMind Router', () => {
     assert.strictEqual(classifyIntent('is my api key exposed').intent, 'SECRETS_EXPOSE');
   });
 
+  it('classifies "open the dashboard" and "show the report" as NAVIGATE', () => {
+    assert.strictEqual(classifyIntent('open the dashboard').intent, 'NAVIGATE');
+    assert.strictEqual(classifyIntent('show the report').intent, 'NAVIGATE');
+    assert.strictEqual(classifyIntent('view reports').intent, 'NAVIGATE');
+  });
+
+  it('classifies a request to open the scan report as NAVIGATE, not SCAN', () => {
+    assert.strictEqual(classifyIntent('show the scan report').intent, 'NAVIGATE');
+    assert.strictEqual(classifyIntent('scan the report').intent, 'SCAN');
+  });
+
   it('classifies "detect agents in this project" as SCAN', () => {
     assert.strictEqual(classifyIntent('detect agents in this project').intent, 'SCAN');
   });
@@ -300,6 +311,26 @@ describe('Per-CLI command tables', () => {
     assert.deepStrictEqual(mapToCommand(intent('TRUST_QUERY', { agentId: 'my-agent' }), 'opena2a')?.args, ['my-agent']);
   });
 
+  it('routes opena2a NAVIGATE to opena2a review and CONFIG to opena2a config show', () => {
+    assert.deepStrictEqual(route('open the dashboard', 'opena2a'), {
+      command: 'opena2a review',
+      args: [],
+      description: 'Run all security checks and open the HTML dashboard',
+    });
+    assert.deepStrictEqual(route('show config', 'opena2a'), {
+      command: 'opena2a config',
+      args: ['show'],
+      description: 'Show OpenA2A configuration',
+    });
+  });
+
+  it('maps NAVIGATE and CONFIG to null on hma and secretless-ai', () => {
+    for (const cliName of ['hma', 'secretless-ai']) {
+      assert.strictEqual(route('open the dashboard', cliName), null, `${cliName} NAVIGATE`);
+      assert.strictEqual(route('show config', cliName), null, `${cliName} CONFIG`);
+    }
+  });
+
   it('returns null for an intent a CLI has no command for', () => {
     assert.strictEqual(mapToCommand(intent('FIX'), 'secretless-ai'), null);
     assert.strictEqual(mapToCommand(intent('NAVIGATE'), 'hma'), null);
@@ -362,6 +393,27 @@ describe('Router README', () => {
     assert.ok(examples.length > 0, 'README has isScanIntent examples');
     for (const [, name, shown] of examples) {
       assert.strictEqual(String(isScanIntent(name as IntentType)), shown, `README: isScanIntent('${name}'); // ${shown}`);
+    }
+  });
+
+  it('lists in the route table the command each example runs on each CLI', () => {
+    const start = readme.indexOf('### General Intents and Routes');
+    assert.notStrictEqual(start, -1, 'README has a General Intents and Routes section');
+    const end = readme.indexOf('\n### ', start + 1);
+    const header = readme.slice(start, end).match(/^\| Intent \| Example \|(.+)\|$/m);
+    assert.ok(header, 'README route table has a header row');
+    const clis = header[1].split('|').map((cell) => cell.trim().replaceAll('`', ''));
+    assert.deepStrictEqual(clis, Object.keys(COMMAND_TABLES));
+    const rows = [...readme.slice(start, end).matchAll(/^\| ([^|]+) \| "([^"]+)" \|(.+)\|$/gm)];
+    assert.ok(rows.length > 0, 'README route table has rows');
+    for (const [, intentCell, input, cells] of rows) {
+      const classification = classifyIntent(input);
+      assert.strictEqual(classification.intent, intentCell.split(',')[0], `"${input}" classifies to ${intentCell}`);
+      cells.split('|').forEach((cell, i) => {
+        const mapping = mapToCommand(classification, clis[i]);
+        const actual = mapping ? [mapping.command, ...mapping.args].join(' ') : 'no route';
+        assert.strictEqual(actual, cell.trim().replaceAll('`', ''), `README: "${input}" on ${clis[i]}`);
+      });
     }
   });
 
