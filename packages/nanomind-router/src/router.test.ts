@@ -68,6 +68,12 @@ describe('NanoMind Router', () => {
     assert.strictEqual(result.entities.checkId, 'CRED-001');
   });
 
+  it('takes a finding ID with more than one prefix whole', () => {
+    const result = classifyIntent('explain SKILL-SEMANTIC-007');
+    assert.strictEqual(result.intent, 'EXPLAIN');
+    assert.strictEqual(result.entities.checkId, 'SKILL-SEMANTIC-007');
+  });
+
   // ATC intents
   it('classifies "what is the trust level of my-agent" as TRUST_QUERY', () => {
     const result = classifyIntent('what is the trust level of agent: my-agent');
@@ -264,6 +270,22 @@ describe('Per-CLI command tables', () => {
     assert.deepStrictEqual(route('auto-fix all findings', 'hma'), { command: 'hma secure', args: ['--fix'], description: 'Auto-fix findings' });
     assert.deepStrictEqual(route('show status', 'hma'), { command: 'hma secure', args: ['--summary'], description: 'Show scan summary' });
     assert.deepStrictEqual(route('help', 'hma'), { command: 'hma --help', args: [], description: 'Show help' });
+  });
+
+  it('routes hma EXPLAIN with a finding ID to hma explain <id>', () => {
+    assert.deepStrictEqual(route('what does CRED-001 mean', 'hma'), {
+      command: 'hma explain',
+      args: ['CRED-001'],
+      description: 'Explain a security finding',
+    });
+    assert.deepStrictEqual(route('explain SKILL-SEMANTIC-007', 'hma')?.args, ['SKILL-SEMANTIC-007']);
+  });
+
+  it('maps EXPLAIN to null when no finding ID is named or the CLI has no explain command', () => {
+    assert.strictEqual(classifyIntent('what does this mean').intent, 'EXPLAIN');
+    assert.strictEqual(route('what does this mean', 'hma'), null);
+    assert.strictEqual(route('what does CRED-001 mean', 'secretless-ai'), null);
+    assert.strictEqual(route('what does CRED-001 mean', 'opena2a'), null);
   });
 
   it('routes hma SECRETS_EXPOSE to the hma credential scan', () => {
