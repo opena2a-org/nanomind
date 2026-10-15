@@ -66,6 +66,7 @@ export function getCommandManifest() {
       { name: 'opena2a identity', description: 'Manage agent identity' },
       { name: 'opena2a secretless', description: 'Check credential exposure' },
       { name: 'opena2a review', description: 'Review project security' },
+      { name: 'opena2a config', description: 'Manage OpenA2A configuration' },
     ],
   };
 }

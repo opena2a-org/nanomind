@@ -67,6 +67,8 @@ const INTENT_PATTERNS: Array<{ pattern: RegExp; intent: IntentType }> = [
   // Secrets (before SCAN, which also matches "check"); the noun may come before or after the verb
   { pattern: /\b(secrets?|credentials?|keys?|tokens?|passwords?|env)\b.*\b(exposed?|leak(s|ed|ing)?|find|check)\b/i, intent: 'SECRETS_EXPOSE' },
   { pattern: /\b(exposed?|leak(s|ed|ing)?|find|check)\b.*\b(secrets?|credentials?|keys?|tokens?|passwords?|env)\b/i, intent: 'SECRETS_EXPOSE' },
+  // Navigate (before SCAN, so "show the scan report" opens the report)
+  { pattern: /\b(open|show|view|display)\b.*\b(dashboards?|reports?)\b/i, intent: 'NAVIGATE' },
   // Scan
   { pattern: /\b(scan|check|audit|inspect|analyze|secure|detect)\b/i, intent: 'SCAN' },
   // Fix
@@ -207,6 +209,8 @@ export const COMMAND_TABLES: Record<string, CommandTable> = {
     ],
     SECRETS_EXPOSE: [{ command: 'secretless', description: 'Check credential exposure' }],
     STATUS: [{ command: 'review', description: 'Review project security' }],
+    NAVIGATE: [{ command: 'review', description: 'Run all security checks and open the HTML dashboard' }],
+    CONFIG: [{ command: 'config', args: ['show'], description: 'Show OpenA2A configuration' }],
     ...ATC_ROUTES,
     ...HELP_ROUTE,
   },
