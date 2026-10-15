@@ -25,6 +25,13 @@ import time
 
 from . import artifacts, launchd, paths, protocol
 
+# How long install waits for a started daemon to bind the socket and pass
+# healthz. The README states this window. install's failure message does not,
+# because the wait can stop before the window ends, at the first reply that is
+# not a JSON object or announces a protocol version this client does not read;
+# the probe names the window only when the window is what ran out.
+HEALTHZ_WAIT_SEC = 60.0
+
 
 class InstallError(Exception):
     """Raised when the install cannot complete."""
@@ -100,7 +107,7 @@ def _pause_before_retry(deadline: float) -> bool:
     return time.monotonic() < deadline
 
 
-def _healthz_probe(timeout_sec: float = 60.0) -> bool:
+def _healthz_probe(timeout_sec: float = HEALTHZ_WAIT_SEC) -> bool:
     """Connect to the daemon's Unix socket and ask for healthz.
 
     Returns True if the daemon binds the socket and reports `daemonState=ready`
@@ -281,7 +288,7 @@ def run_install(
         launchd.kickstart(restart=False)
 
     _emit("waiting for daemon to bind socket and pass healthz probe")
-    if _healthz_probe(timeout_sec=60.0):
+    if _healthz_probe(timeout_sec=HEALTHZ_WAIT_SEC):
         elapsed = time.monotonic() - started
         _emit(
             f"daemon ready at {paths.SOCK_PATH} after {elapsed:.1f}s "

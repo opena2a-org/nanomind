@@ -81,9 +81,9 @@ after upgrading to regenerate the plist.
   is not a number is a configuration error at boot.
 - `install --help` lists `--resident` and states its effect in user
   terms before naming the plist key. There is no `--on-demand` flag.
-- README: the "~30 seconds" cold-boot figure is gone (boot time varies
-  by machine; `install` reports what it measured), and hackmyagent is
-  named as the socket's consumer.
+- README: the fixed cold-boot time is gone (boot time varies by machine;
+  `install` reports what it measured), and hackmyagent is named as the
+  socket's consumer.
 - README: the per-token, per-request and per-finding timing figures and
   the gate's bypass rate under Known limitations are gone. Nothing in the
   package recorded where they were measured, and a per-token time does
