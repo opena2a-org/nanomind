@@ -76,7 +76,7 @@ def stubbed_install(tmp_path, monkeypatch):
 
     monkeypatch.setattr(artifacts, "fetch_nlm", stub_fetch_nlm)
 
-    rec = SimpleNamespace(launchctl=[], probes=0, probe_result=True)
+    rec = SimpleNamespace(launchctl=[], probes=0, waits=[], probe_result=True)
 
     class FakeResult:
         returncode = 0
@@ -87,8 +87,9 @@ def stubbed_install(tmp_path, monkeypatch):
         rec.launchctl.append(args[1:])
         return FakeResult()
 
-    def fake_probe(timeout_sec=60.0):
+    def fake_probe(timeout_sec=None):
         rec.probes += 1
+        rec.waits.append(timeout_sec)
         return rec.probe_result
 
     monkeypatch.setattr("subprocess.run", fake_run)
@@ -120,6 +121,19 @@ class TestInstallModes:
     ):
         stubbed_install.probe_result = False
         assert install.run_install() == 1
+
+    def test_install_waits_the_configured_window_and_its_failure_names_none(
+        self, stubbed_install, monkeypatch, capsys
+    ):
+        # The wait can stop at its first reply, before the window ends, so
+        # install's failure line states no window.
+        monkeypatch.setattr(install, "HEALTHZ_WAIT_SEC", 7.0)
+        stubbed_install.probe_result = False
+        assert install.run_install() == 1
+        assert stubbed_install.waits == [7.0]
+        out = capsys.readouterr().out
+        assert "install completed but daemon did not pass healthz\n" in out
+        assert "7s" not in out
 
     def test_skip_healthz_wait_neither_starts_nor_probes(self, stubbed_install):
         rc = install.run_install(skip_healthz_wait=True)
