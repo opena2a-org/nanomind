@@ -47,9 +47,13 @@ export interface CommandMapping {
   description: string;
 }
 
+const FIX_PATTERN = /\b(fix|repair|patch|remediate|auto-?fix)\b/i;
+const STATUS_PATTERN = /\b(status|how (secure|safe)|summary|overview)\b/i;
+
 // Pattern-based fast classification (no LLM needed for obvious intents)
 // Order matters: more specific patterns first, general patterns last.
-const INTENT_PATTERNS: Array<{ pattern: RegExp; intent: IntentType }> = [
+// A pattern is skipped when the input matches one of its `unless` patterns.
+const INTENT_PATTERNS: Array<{ pattern: RegExp; intent: IntentType; unless?: RegExp[] }> = [
   // SCAN intents (programmatic, invoked by HMA --semantic flag)
   { pattern: /\bscan.*(skill|intent).*malicious\b/i, intent: 'SCAN_SKILL_INTENT' },
   { pattern: /\b(soul|governance).*(complet|coverage|gap)/i, intent: 'SCAN_SOUL_COMPLETENESS' },
@@ -67,18 +71,21 @@ const INTENT_PATTERNS: Array<{ pattern: RegExp; intent: IntentType }> = [
   // Secrets (before SCAN, which also matches "check"); the noun may come before or after the verb
   { pattern: /\b(secrets?|credentials?|keys?|tokens?|passwords?|env)\b.*\b(exposed?|leak(s|ed|ing)?|find|check)\b/i, intent: 'SECRETS_EXPOSE' },
   { pattern: /\b(exposed?|leak(s|ed|ing)?|find|check)\b.*\b(secrets?|credentials?|keys?|tokens?|passwords?|env)\b/i, intent: 'SECRETS_EXPOSE' },
-  // Navigate (before SCAN, so "show the scan report" opens the report)
-  { pattern: /\b(open|show|view|display)\b.*\b(dashboards?|reports?)\b/i, intent: 'NAVIGATE' },
+  // Navigate (before SCAN, so "show the scan report" opens the report). An input
+  // that also matches the FIX or STATUS pattern skips it and is classified by the
+  // patterns below, so "show the status report" stays STATUS and "open the report
+  // and fix issues" stays FIX.
+  { pattern: /\b(open|show|view|display)\b.*\b(dashboards?|reports?)\b/i, intent: 'NAVIGATE', unless: [FIX_PATTERN, STATUS_PATTERN] },
   // Scan
   { pattern: /\b(scan|check|audit|inspect|analyze|secure|detect)\b/i, intent: 'SCAN' },
   // Fix
-  { pattern: /\b(fix|repair|patch|remediate|auto-?fix)\b/i, intent: 'FIX' },
+  { pattern: FIX_PATTERN, intent: 'FIX' },
   // Generate
   { pattern: /\b(generate|create|make|build|setup|configure)\b.*\b(action|docker|ci|yaml|config)\b/i, intent: 'GENERATE' },
   // Compare
   { pattern: /\b(compare|diff|changed|difference|delta)\b/i, intent: 'COMPARE' },
   // Status
-  { pattern: /\b(status|how (secure|safe)|summary|overview)\b/i, intent: 'STATUS' },
+  { pattern: STATUS_PATTERN, intent: 'STATUS' },
   // Config
   { pattern: /\b(set|configure|config|setting|preference)\b/i, intent: 'CONFIG' },
   // Explain (general — after specific ATC intents)
@@ -113,7 +120,8 @@ export function classifyIntent(input: string): IntentClassification {
   }
 
   // Pattern-based classification
-  for (const { pattern, intent } of INTENT_PATTERNS) {
+  for (const { pattern, intent, unless } of INTENT_PATTERNS) {
+    if (unless?.some((skip) => skip.test(trimmed))) continue;
     if (pattern.test(trimmed)) {
       return {
         intent,
