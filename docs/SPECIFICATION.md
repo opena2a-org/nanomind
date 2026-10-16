@@ -245,7 +245,7 @@ Agent events → NanoMind-Runtime (local, Welford's online algorithm)
 - Gaussian noise: σ = sensitivity × √(2ln(1.25/δ)) / ε
 - Server rejects submissions with ε > 2.0
 
-**Files:** `nanomind/packages/nanomind-runtime/src/fleet.ts`, `index.ts`
+**Files:** `nanomind/packages/nanomind-runtime-core/src/index.ts` (`RuntimeTwin`, the clipping and noise inline in its gradient submission)
 
 ### 3.6 Local Training Pipeline
 

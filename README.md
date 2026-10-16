@@ -46,7 +46,7 @@ Your agent billing-agent is trust level 2 because:
 | [@nanomind/guard](https://www.npmjs.com/package/@nanomind/guard) | Prompt injection detection | `npm i @nanomind/guard` |
 | [@nanomind/atc](https://www.npmjs.com/package/@nanomind/atc) | ATC trust queries | `npm i @nanomind/atc` |
 | [@nanomind/cli](https://www.npmjs.com/package/@nanomind/cli) | Interactive security assistant | `npm i @nanomind/cli` |
-| [@nanomind/runtime](https://www.npmjs.com/package/@nanomind/runtime) | Behavioral anomaly detection | `npm i @nanomind/runtime` |
+| [@nanomind/runtime-core](https://www.npmjs.com/package/@nanomind/runtime-core) | Behavioral anomaly detection | `npm i @nanomind/runtime-core` |
 | [@nanomind/daemon](https://www.npmjs.com/package/@nanomind/daemon) | Persistent inference server (localhost:47200) | `npm i @nanomind/daemon` |
 
 The daemon is a persistent inference server. It loads the model once and serves all requests via HTTP ([daemon README](packages/nanomind-daemon/README.md)). `nanomind-daemon start` downloads any missing model files into `~/.nanomind/models/`; `--no-download` turns that off.
@@ -119,25 +119,26 @@ Detects: instruction override, role switching, permission escalation, zero-width
 
 ## Runtime Mode
 
-NanoMind-Runtime is the L1 behavioral anomaly detection layer for ARP. It does not use a language model: it scores each event with a lightweight statistical model, in the calling process.
+`RuntimeTwin` from `@nanomind/runtime-core` is the L1 behavioral anomaly detection layer for ARP. It does not use a language model: it scores each event with a lightweight statistical model, in the calling process. The earlier `@nanomind/runtime` package on npm is not built from this repository.
 
 ### Three-Tier ARP Model
 
 | Tier | Layer | Latency | What |
 |------|-------|---------|------|
 | L0 | Rule-based | microseconds | Capability enforcement |
-| **L1** | **NanoMind-Runtime** | **milliseconds** | **Behavioral anomaly detection** |
+| **L1** | **RuntimeTwin** | **milliseconds** | **Behavioral anomaly detection** |
 | L2 | Fleet intelligence | continuous | Federated model improvement |
 
 ### Anomaly Detection
 
+The package's `main` is its TypeScript source, which Node does not load from `node_modules`, so import the compiled `dist/index.js`:
+
 ```typescript
-import { NanoMindRuntime } from '@nanomind/runtime';
+import { RuntimeTwin } from '@nanomind/runtime-core/dist/index.js';
 
-const runtime = new NanoMindRuntime('my-agent');
-await runtime.initialize();
+const twin = new RuntimeTwin('my-agent');
 
-const result = runtime.processEvent({
+const result = twin.processEvent({
   agentId: 'my-agent',
   eventType: 'TOOL_CALL',
   capability: 'db:read',
@@ -150,6 +151,8 @@ const result = runtime.processEvent({
 // result.action: 'allow' | 'alert' | 'throttle' | 'suspend' | 'kill'
 ```
 
+`processEvent` appends each event to `~/.opena2a/arp/events.jsonl`. `twin.attach(engine)` scores the events an ARP event engine emits; `twin.scoreARPEvent(event)` scores one event without changing the baseline and returns `null` until the baseline holds 100 events.
+
 ### How It Works
 
 1. **Baseline learning**: First 100 events build a behavioral baseline using Welford's online algorithm
@@ -159,16 +162,15 @@ const result = runtime.processEvent({
 
 ### Federated Learning
 
-Gradients submitted with differential privacy to the OpenA2A Registry for fleet-wide model improvement:
+Off by default. With `fleetEnabled: true`, the twin posts a 9-value gradient with differential privacy to the OpenA2A Registry after every 300 events and on `shutdown()`. A failed post does not stop scoring.
 
 ```typescript
-import { addDifferentialPrivacy, submitGradient } from '@nanomind/runtime/fleet';
-
-const noisy = addDifferentialPrivacy(gradient, { epsilon: 1.0 });
-await submitGradient(noisy, eventCount, loss);
+const twin = new RuntimeTwin('my-agent', { fleetEnabled: true, agentCategory: 'financial' });
+// ...
+await twin.shutdown(); // posts what accumulated since the last gradient
 ```
 
-- Raw behavioral events never leave the endpoint
+- Raw behavioral events never leave the endpoint; a gradient carries `agentCategory`, not `agentId`
 - Gaussian noise (ε=1.0, δ=1e-5)
 - Gradient clipping (L2 norm ≤ 1.0)
 

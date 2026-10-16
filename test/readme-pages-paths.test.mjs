@@ -51,15 +51,47 @@ function fencedCommands(text) {
     .filter((line) => line && !line.startsWith('#'));
 }
 
-function workspaces() {
+// Each workspace as its directory and its manifest.
+function workspacePackages() {
   return readJson('package.json').workspaces.flatMap((pattern) => {
     assert.match(pattern, /^[^*]+\/\*$/, `unsupported workspace pattern ${pattern}`);
     const parent = pattern.slice(0, -2);
     return [...new Set(tracked.filter((file) => file.startsWith(`${parent}/`)).map((file) => file.split('/')[1]))]
-      .map((name) => `${parent}/${name}/package.json`)
-      .filter((path) => existsSync(join(root, path)))
-      .map((path) => readJson(path));
+      .map((name) => `${parent}/${name}`)
+      .filter((dir) => existsSync(join(root, dir, 'package.json')))
+      .map((dir) => ({ dir, manifest: readJson(`${dir}/package.json`) }));
   });
+}
+
+const workspaces = () => workspacePackages().map(({ manifest }) => manifest);
+
+// A package an import or an npm install line names, split into the package
+// name and the subpath after it.
+const IMPORT = /\bfrom\s+['"](@nanomind\/[^'"]+)['"]/g;
+const INSTALL = /\bnpm\s+(?:i|install)\s+(@nanomind\/[^\s`'"@]+)/g;
+
+function packageSpecifiers(text, pattern) {
+  return [...new Set([...text.matchAll(pattern)].map((match) => match[1]))].map((specifier) => {
+    const [scope, name, ...subpath] = specifier.split('/');
+    return { specifier, name: `${scope}/${name}`, subpath: subpath.join('/') };
+  });
+}
+
+// Node refuses to strip types from a file under node_modules, so an entry
+// point a reader imports from an installed package has to be JavaScript.
+const TYPESCRIPT = /\.[cm]?ts$/;
+
+// The tracked file a published subpath is built from: a .js file under the
+// package's tsconfig outDir comes from the .ts file at the same place under
+// rootDir. Any other subpath is published as it is tracked.
+function sourceOf(dir, subpath) {
+  const tsconfig = `${dir}/tsconfig.json`;
+  const { outDir, rootDir } = existsSync(join(root, tsconfig)) ? (readJson(tsconfig).compilerOptions ?? {}) : {};
+  const out = outDir && normalize(outDir).replace(/\/+$/, '');
+  if (out && rootDir && subpath.startsWith(`${out}/`) && subpath.endsWith('.js')) {
+    return `${dir}/${normalize(rootDir).replace(/\/+$/, '')}/${subpath.slice(out.length + 1, -'.js'.length)}.ts`;
+  }
+  return `${dir}/${subpath}`;
 }
 
 test('the pages name repository paths', () => {
@@ -74,7 +106,57 @@ for (const page of PAGES) {
   test(`every relative link in ${page} resolves to a path in this repository`, () => {
     assert.deepEqual(linkedPaths(page, read(page)).filter((path) => !inRepository(path)), []);
   });
+
+  test(`every @nanomind package ${page} imports or installs is a workspace of this repository`, () => {
+    const names = new Set(workspaces().map((manifest) => manifest.name));
+    const specifiers = [IMPORT, INSTALL].flatMap((pattern) => packageSpecifiers(read(page), pattern));
+    const outside = specifiers.filter(({ name }) => !names.has(name)).map(({ specifier }) => specifier);
+    assert.deepEqual([...new Set(outside)], []);
+  });
+
+  test(`every @nanomind import in ${page} names a JavaScript file the package publishes`, () => {
+    const packages = new Map(workspacePackages().map((pkg) => [pkg.manifest.name, pkg]));
+    const problems = [];
+    for (const { specifier, name, subpath } of packageSpecifiers(read(page), IMPORT)) {
+      if (!packages.has(name)) continue;
+      const { dir, manifest } = packages.get(name);
+      if (!subpath) {
+        if (TYPESCRIPT.test(manifest.main ?? '')) problems.push(`${specifier}: main is TypeScript source ${manifest.main}`);
+        continue;
+      }
+      if (manifest.exports) {
+        if (!(`./${subpath}` in manifest.exports)) problems.push(`${specifier}: exports has no ./${subpath}`);
+        continue;
+      }
+      if (TYPESCRIPT.test(subpath)) problems.push(`${specifier}: TypeScript source`);
+      if (!(manifest.files ?? []).some((entry) => subpath === trim(entry) || subpath.startsWith(`${trim(entry)}/`))) {
+        problems.push(`${specifier}: not in the package's files`);
+      }
+      if (!tracked.includes(sourceOf(dir, subpath))) problems.push(`${specifier}: ${sourceOf(dir, subpath)} is not tracked`);
+    }
+    assert.deepEqual(problems, []);
+  });
 }
+
+// The specification's **File:** and **Files:** lines name a source file of
+// this repository by the repository's name (nanomind/packages/...) and then
+// bare file names (a name with an extension) in the same directory.
+test('every source file a Files line of the specification names in this repository is in this repository', () => {
+  const named = [];
+  for (const line of read('docs/SPECIFICATION.md').split('\n').filter((text) => /^\*\*Files?:\*\*/.test(text))) {
+    let dir = null;
+    for (const [, span] of line.matchAll(/`([^`]+)`/g)) {
+      if (span.startsWith('nanomind/')) {
+        named.push(span.slice('nanomind/'.length));
+        dir = dirname(span.slice('nanomind/'.length));
+      } else if (dir && /^[\w-][\w.-]*\.\w+$/.test(span)) {
+        named.push(`${dir}/${span}`);
+      }
+    }
+  }
+  assert.ok(named.length > 0, 'the specification names no source file of this repository');
+  assert.deepEqual(named.filter((path) => !tracked.includes(path)), []);
+});
 
 test('the test commands CONTRIBUTING.md gives run scripts and tools this repository declares', () => {
   const commands = fencedCommands(read('CONTRIBUTING.md'));
