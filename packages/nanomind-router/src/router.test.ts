@@ -196,6 +196,14 @@ describe('NanoMind Router', () => {
     assert.strictEqual(classifyIntent('scan the report').intent, 'SCAN');
   });
 
+  it('keeps STATUS and FIX for a request that also names a report or dashboard', () => {
+    assert.strictEqual(classifyIntent('show the status report').intent, 'STATUS');
+    assert.strictEqual(classifyIntent('show status dashboard').intent, 'STATUS');
+    assert.strictEqual(classifyIntent('display the summary report').intent, 'STATUS');
+    assert.strictEqual(classifyIntent('open the report and fix issues').intent, 'FIX');
+    assert.strictEqual(classifyIntent('view the report and remediate').intent, 'FIX');
+  });
+
   it('classifies "detect agents in this project" as SCAN', () => {
     assert.strictEqual(classifyIntent('detect agents in this project').intent, 'SCAN');
   });
@@ -329,6 +337,22 @@ describe('Per-CLI command tables', () => {
       assert.strictEqual(route('open the dashboard', cliName), null, `${cliName} NAVIGATE`);
       assert.strictEqual(route('show config', cliName), null, `${cliName} CONFIG`);
     }
+  });
+
+  it('routes a STATUS or FIX request that names a report to the STATUS or FIX command', () => {
+    assert.deepStrictEqual(route('show the status report', 'hma'), {
+      command: 'hma secure',
+      args: ['--summary'],
+      description: 'Show scan summary',
+    });
+    assert.deepStrictEqual(route('open the report and fix issues', 'hma'), {
+      command: 'hma secure',
+      args: ['--fix'],
+      description: 'Auto-fix findings',
+    });
+    assert.strictEqual(route('show status dashboard', 'hma')?.command, 'hma secure');
+    assert.strictEqual(route('show the status report', 'secretless-ai')?.command, 'secretless-ai verify');
+    assert.strictEqual(route('show the status report', 'opena2a')?.command, 'opena2a review');
   });
 
   it('returns null for an intent a CLI has no command for', () => {

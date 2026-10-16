@@ -6,7 +6,11 @@
   "dashboard" or "report", tried after the SECRETS_EXPOSE patterns and
   before SCAN. "open the dashboard" and "show the report" give NAVIGATE
   where they gave UNKNOWN, and "show the scan report" gives NAVIGATE
-  where it gave SCAN. `opena2a` NAVIGATE runs
+  where it gave SCAN. An input that also matches the FIX or STATUS
+  pattern skips NAVIGATE: "show the status report" and "show status
+  dashboard" still give STATUS, so `hma` runs `hma secure --summary`,
+  and "open the report and fix issues" still gives FIX, so `hma` runs
+  `hma secure --fix`. `opena2a` NAVIGATE runs
   `opena2a review` and CONFIG runs `opena2a config show`; both mapped to
   `null` before. The `opena2a` adapter manifest lists `config`. `hma`
   and `secretless-ai` still map NAVIGATE and CONFIG to `null`.
