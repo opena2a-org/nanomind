@@ -281,7 +281,7 @@ Fallback: If ONNX runtime is unavailable, vocabulary-based scoring provides degr
 | CLI Threat Classification | @nanomind/engine | Classify agent configs, prompts, skills | <10ms |
 | Intent Routing | @nanomind/router | Map natural language to CLI commands | <5ms |
 | Prompt Injection Guard | @nanomind/guard | Screen non-direct input for injection | <2ms |
-| Runtime Anomaly Detection | @nanomind/runtime | Behavioral anomaly scoring (L1 ARP) | <2ms |
+| Runtime Anomaly Detection | @nanomind/runtime-core | Behavioral anomaly scoring (L1 ARP) | <2ms |
 | Daemon Server | @nanomind/daemon | Persistent inference server (port 47200) | <5ms |
 
 ## 4. Model Inventory
