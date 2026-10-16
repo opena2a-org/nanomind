@@ -5,13 +5,14 @@
 The package test scripts need Node.js 22.6.0 or later, the first release with `--experimental-strip-types`; `engines` in the root `package.json` declares this minimum.
 
 ```bash
-# All tests (56 total)
-npx tsx --test packages/nanomind-guard/src/guard.test.ts \
-  packages/nanomind-router/src/router.test.ts \
-  packages/nanomind-cli/src/cli.test.ts \
-  packages/nanomind-runtime/src/runtime.test.ts \
-  packages/nanomind-runtime/src/fleet.test.ts
+# The docs prose check, the tests in test/, then each workspace's test script
+npm test
 
-# E2E: full runtime lifecycle including production gradient submission
-npx tsx --test packages/nanomind-runtime/src/e2e.test.ts
+# The tests in test/ only
+npm run test:root
+
+# One workspace's tests, by package name
+npm test --workspace=@nanomind/guard
 ```
+
+The Python analyst in `packages/nanomind-analyst/` is not an npm workspace, so `npm test` does not run its tests. They are in `packages/nanomind-analyst/tests/`, and the `pyproject.toml` there configures pytest.
