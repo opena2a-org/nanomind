@@ -158,6 +158,14 @@ test('every source file a Files line of the specification names in this reposito
   assert.deepEqual(named.filter((path) => !tracked.includes(path)), []);
 });
 
+// The specification names each deployment mode's package by its npm name.
+test('every @nanomind package the specification names is a workspace of this repository', () => {
+  const names = new Set(workspaces().map((manifest) => manifest.name));
+  const named = [...new Set(read('docs/SPECIFICATION.md').match(/@nanomind\/[\w-]+/g) ?? [])];
+  assert.ok(named.length > 0, 'the specification names no @nanomind package');
+  assert.deepEqual(named.filter((name) => !names.has(name)), []);
+});
+
 test('the test commands CONTRIBUTING.md gives run scripts and tools this repository declares', () => {
   const commands = fencedCommands(read('CONTRIBUTING.md'));
   const manifests = [readJson('package.json'), ...workspaces()];

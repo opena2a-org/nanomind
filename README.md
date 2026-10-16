@@ -8,33 +8,30 @@
 
 [Website](https://nanomind.dev) · [Discord](https://discord.gg/uRZa3KXgEn)
 
-Embedded intelligence layer for AI security tools. Two deployment modes, one package:
+Embedded intelligence layer for AI security tools. Two deployment modes:
 
 - **CLI Mode**: Natural language intent routing for security CLIs (HackMyAgent, secretless-ai, OpenA2A)
 - **Runtime Mode**: Behavioral anomaly detection for AI agent runtime protection (ARP)
 
 ```bash
-npm install @nanomind/cli
+npm install @nanomind/router
+```
+
+```typescript
+import { classifyIntent, mapToCommand } from '@nanomind/router';
+
+const intent = classifyIntent('scan this project for vulnerabilities');
+console.log(intent.intent, intent.confidence);
+console.log(mapToCommand(intent, 'hma'));
 ```
 
 ```
-hma > scan this project
-  > Running: hma secure .
-
-hma > why is agent billing-agent level 2
-
-Your agent billing-agent is trust level 2 because:
-  Present: HMA scan (+160 pts vulnerability surface)
-  Missing: Build attestation (+80 pts supply chain)
-    Fix: Add opena2a/build-action to your CI pipeline.
-         Run: opena2a > "add OpenA2A to my pipeline"
-  Missing: Publisher verified (+40 pts identity governance)
-    Fix: Verify your publisher identity at registry.opena2a.org/auth/github
-  Missing: Runtime behavioral data (+150 pts runtime behavior)
-    Fix: Install ARP alongside your agent.
-         Run: npm install @opena2a/arp
-  Present: Threshold signatures (+70 pts cryptographic proof)
-  Projected level 4 after fixes: 500 pts (230 present + 270 from fixes)
+SCAN 0.85
+{
+  command: 'hma secure',
+  args: [ '.' ],
+  description: 'Run security scan'
+}
 ```
 
 ## Packages
@@ -62,18 +59,6 @@ The router also carries 6 security scanning intents: `SCAN_SKILL_INTENT`, `SCAN_
 ## CLI Mode
 
 NanoMind replaces the help screen when a CLI tool is run with no arguments. It classifies natural language into one of 16 intent types and maps the intent to a command through a per-CLI routing table in `@nanomind/router` ([routing tables](docs/cli-mode.md#intent-routing)).
-
-### Intent Classification
-
-```typescript
-import { classifyIntent, mapToCommand } from '@nanomind/router';
-
-const result = classifyIntent('scan this project for vulnerabilities');
-// { intent: 'SCAN', confidence: 0.85, entities: {} }
-
-const cmd = mapToCommand(result, 'hma');
-// { command: 'hma secure', args: ['.'], description: 'Run security scan' }
-```
 
 ### 16 Intent Types
 
