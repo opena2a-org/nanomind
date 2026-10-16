@@ -8,6 +8,8 @@
 
 `--no-smart` always restores raw CLI behavior. `--help` is never intercepted.
 
+ARP has no adapter in this repository. The `RuntimeTwin` class in `packages/nanomind-runtime-core/` attaches to an ARP EventEngine itself: `attach(engine)` registers an `onEvent` handler that scores each event it receives, scheduled with `setImmediate`. A twin created with `enabled: false` registers no handler.
+
 ## Related
 
 - OpenA2A Registry: issues ATCs, hosts fleet intelligence. Its source repository is private; its public API answers at `https://api.oa2a.org`, for example `curl -s https://api.oa2a.org/api/v1/nanomind/stats`
