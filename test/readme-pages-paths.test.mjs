@@ -10,7 +10,7 @@ const read = (path) => readFileSync(join(root, path), 'utf8');
 const readJson = (path) => JSON.parse(read(path));
 
 // The README and the pages that hold the text moved out of it.
-const PAGES = ['README.md', 'CONTRIBUTING.md', 'docs/integrations.md', 'docs/cli-mode.md', 'docs/models.md'];
+const PAGES = ['README.md', 'CONTRIBUTING.md', 'docs/integrations.md', 'docs/cli-mode.md', 'docs/models.md', 'docs/how-it-works.md'];
 
 // "In this repository" means tracked by git, as in training-playbook-paths.test.mjs.
 const tracked = execFileSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'utf8' })
