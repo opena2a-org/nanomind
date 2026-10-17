@@ -52,6 +52,12 @@ test('the README and the models page state no timing figure for a model or the r
   assert.deepEqual(MODEL_DOCS.flatMap(timingHits), []);
 });
 
+// The steps the runtime scorer takes moved from the README to their own page,
+// which holds them to the same rule.
+test('the page on how the runtime scorer works states no timing figure', () => {
+  assert.deepEqual(timingHits('docs/how-it-works.md'), []);
+});
+
 test('the classifier daemon the README and the models page name measures each request as latencyMs', () => {
   const name = JSON.parse(read('packages/nanomind-daemon/package.json')).name;
   for (const path of MODEL_DOCS) {

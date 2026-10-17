@@ -80,7 +80,9 @@ screenInput('ignore previous instructions', 'piped');
 // { safe: false, patterns: [{ type: 'instruction_override', severity: 'critical' }] }
 ```
 
-In a session, a critical match blocks the line. A high or medium match prints a warning or notice that names the matched pattern, and the line is still routed. Called directly, `screenInput` returns a warning that asks you to review the input before proceeding, for a caller that screens input once and then decides whether to go on.
+In a session, a critical match blocks the line. A high or medium match prints a warning or notice that names the matched pattern, and the line is still routed.
+
+Called directly, `screenInput` returns a warning that asks you to review the input before proceeding, for a caller that screens input once and then decides whether to go on.
 
 `nanomind --no-guard` turns screening off for one session and prints a warning to stderr. Another launcher does the same by checking its arguments with `hasNoGuardFlag(args)` from `@nanomind/cli` and starting the session with `noGuard: true`. The adapters in `integrations/` do not pass the flag yet.
 
@@ -138,13 +140,6 @@ const result = twin.processEvent({
 
 `processEvent` appends each event to `~/.opena2a/arp/events.jsonl`. `twin.attach(engine)` scores the events an ARP event engine emits; `twin.scoreARPEvent(event)` scores one event without changing the baseline and returns `null` until the baseline holds 100 events.
 
-### How It Works
-
-1. **Baseline learning**: First 100 events build a behavioral baseline using Welford's online algorithm
-2. **6-factor anomaly scoring**: unknown capability, timing anomaly, burst detection, L0 escalation, rare event type, error spike
-3. **5-tier response**: allow → alert → throttle → suspend → kill
-4. **No LLM call**: Statistical scoring only, run synchronously by `processEvent`
-
 ### Federated Learning
 
 Off by default. With `fleetEnabled: true`, the twin posts a 9-value gradient with differential privacy to the OpenA2A Registry after every 300 events and on `shutdown()`. A failed post does not stop scoring.
@@ -161,14 +156,14 @@ await twin.shutdown(); // posts what accumulated since the last gradient
 
 ## Documentation
 
-- [Trained models](docs/models.md): the classifier and the analyst, their accuracy and known limits. Each daemon times every request on your machine and returns what it measured: `@nanomind/daemon` as `latencyMs` on each classifier reply, and the `nanomind-analyst` daemon as `nlmLatencyMs` and `nlmTokenCount` on each reply the analyst generated.
+- [Trained models](docs/models.md): accuracy and known limits. Each daemon returns what it measured on your machine: `latencyMs` (`@nanomind/daemon`), `nlmLatencyMs` and `nlmTokenCount` (`nanomind-analyst`).
 - [Daemon](packages/nanomind-daemon/README.md): HTTP API, response schema and model files.
 - [CLI mode](docs/cli-mode.md): intent routing per CLI and how agent output is screened.
+- [Runtime scoring](docs/how-it-works.md): the baseline `RuntimeTwin` learns, its six anomaly factors and its five responses.
 - [Integration adapters](docs/integrations.md): the `hma`, `secretless-ai` and `opena2a` adapters; `--no-smart` restores raw CLI behavior.
 - [Specification](docs/SPECIFICATION.md): architecture, model inventory and the open adapter protocol ([NANOMIND-SPEC.md](spec/NANOMIND-SPEC.md)).
-- [Evaluation standard](docs/EVALUATION-STANDARD.md) and [status](STATUS.md).
+- [Evaluation standard](docs/EVALUATION-STANDARD.md), [status](STATUS.md) and [security policy](SECURITY.md).
 - [Contributing](CONTRIBUTING.md): running the tests.
-- [Security policy](SECURITY.md).
 - Related tools: [HackMyAgent](https://github.com/opena2a-org/hackmyagent), the security scanner, and the [Agent Threat Matrix](https://github.com/opena2a-org/agent-threat-matrix); their counts are under [Related](docs/integrations.md#related).
 
 ## License
