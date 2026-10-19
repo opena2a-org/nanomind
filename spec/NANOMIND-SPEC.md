@@ -10,7 +10,7 @@
 
 NanoMind is an open protocol for embedding intelligence into CLI security tools and runtime protection systems. Any tool can implement the NanoMind adapter interfaces to gain:
 
-- **CLI Mode:** Natural language intent routing, 16 intent types, cross-product command mapping
+- **CLI Mode:** Natural language intent routing, 22 intent types, cross-product command mapping
 - **Runtime Mode:** Behavioral anomaly detection by statistical scoring in the calling process, federated learning
 
 ## 2. CLI Adapter Contract
@@ -47,6 +47,14 @@ interface NanoMindCLIAdapter {
 | REVOCATION | local-fast | Check revocation status |
 | EXPOSURE | local-fast | Show exposure ceiling |
 | ATTEST | local-full | Generate build attestation |
+| SCAN_SKILL_INTENT | not specified | Classify a skill's intent as malicious, benign or edge case |
+| SCAN_SOUL_COMPLETENESS | not specified | Analyze SOUL.md governance completeness |
+| SCAN_MCP_SCOPE | not specified | Analyze MCP tool description scope |
+| SCAN_PROMPT_INTENT | not specified | Analyze a system prompt's behavioral envelope |
+| SCAN_VERSION_DELTA | not specified | Semantic diff between skill versions |
+| SCAN_EXPLAIN | not specified | Explain a scan finding |
+
+`classifyIntent()` returns one of the intents above, or `UNKNOWN` when no pattern matches the input. The six `SCAN_*` intents are the security scanning intents `isScanIntent()` reports. The router documents them as invoked programmatically by HMA during scanning rather than typed by an interactive CLI user. No tier is specified for them: the router assigns no tier to an intent, and the daemon's infer response has no tier field.
 
 ## 3. Runtime Adapter Contract
 
