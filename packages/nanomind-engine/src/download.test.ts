@@ -1,10 +1,10 @@
 import { describe, it, before, after, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert';
-import { execFile } from 'node:child_process';
+import { execFile, spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { once } from 'node:events';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -27,6 +27,8 @@ interface Route {
   status?: number;
   redirect?: string;
   delay?: number;
+  /** Send `body` and leave the response open. */
+  hang?: boolean;
 }
 
 // A file server on 127.0.0.1 that records the path of every request.
@@ -42,6 +44,8 @@ async function startServer(routes: Record<string, Route>) {
     setTimeout(() => {
       if (route.redirect) {
         res.writeHead(302, { location: route.redirect }).end();
+      } else if (route.hang) {
+        res.writeHead(200, { 'content-type': 'application/octet-stream' }).write(route.body ?? '');
       } else {
         res.writeHead(route.status ?? 200, { 'content-type': 'application/octet-stream' }).end(route.body ?? '');
       }
@@ -64,6 +68,35 @@ async function startServer(routes: Record<string, Route>) {
 function source(base: string, path: string, body: string): DownloadSource {
   return { url: `${base}${path}`, sha256: sha256(body), size: Buffer.byteLength(body) };
 }
+
+// Starts another process that runs downloadVerified(pinned, path, 0o644).
+function downloadInChild(pinned: DownloadSource, path: string): ChildProcess {
+  const download = JSON.stringify(new URL('./download.ts', import.meta.url).href);
+  const script = `const { downloadVerified } = await import(${download});
+await downloadVerified(${JSON.stringify(pinned)}, ${JSON.stringify(path)}, 0o644);`;
+  return spawn(process.execPath, ['--experimental-strip-types', '--input-type=module', '--eval', script], { stdio: 'ignore' });
+}
+
+// Sends `signal` to `child` and resolves once it has exited.
+async function stop(child: ChildProcess, signal: NodeJS.Signals = 'SIGTERM'): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  const exited = once(child, 'exit');
+  child.kill(signal);
+  await exited;
+}
+
+// Resolves to the name of the partial file in `dir` once it holds `bytes` bytes.
+async function partialFile(dir: string, bytes: number): Promise<string> {
+  for (const deadline = Date.now() + 10_000; Date.now() < deadline; ) {
+    const name = readdirSync(dir).find((entry) => entry.endsWith('.part') && statSync(join(dir, entry)).size === bytes);
+    if (name) return name;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(`no partial file of ${bytes} bytes appeared in ${dir}`);
+}
+
+// The ID of a process that has exited.
+const exitedPid = () => spawnSync(process.execPath, ['--eval', '']).pid;
 
 describe('downloadVerified', () => {
   const body = 'file contents';
@@ -181,6 +214,117 @@ describe('downloadVerified', () => {
       return true;
     });
     assert.deepStrictEqual(readdirSync(dir), []);
+  });
+});
+
+describe('downloadVerified and the partial files of earlier downloads', () => {
+  const body = 'file contents';
+  let server: Awaited<ReturnType<typeof startServer>>;
+  let dir: string;
+  let path: string;
+
+  before(async () => {
+    server = await startServer({
+      '/file': { body },
+      '/hang': { body: body.slice(0, 4), hang: true },
+    });
+  });
+
+  after(() => server.close());
+
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'nanomind-partial-'));
+    path = join(dir, 'file');
+  });
+
+  afterEach(() => rm(dir, { recursive: true, force: true }));
+
+  const pinned = () => source(server.base, '/file', body);
+  // Sends the first 4 bytes of the file and never ends.
+  const hanging = () => ({ ...pinned(), url: `${server.base}/hang` });
+
+  it('deletes the partial file of a download whose process was interrupted, before it downloads', async () => {
+    const interrupted = downloadInChild(hanging(), path);
+    const partial = await partialFile(dir, 4).finally(() => stop(interrupted, 'SIGINT'));
+    assert.deepStrictEqual(readdirSync(dir), [partial], 'the interrupted download left its partial file');
+
+    await downloadVerified(pinned(), path, 0o644);
+
+    assert.deepStrictEqual(readdirSync(dir), ['file']);
+  });
+
+  it('names the partial file for the process that writes it, and leaves it while that process runs', async () => {
+    const running = downloadInChild(hanging(), path);
+    try {
+      const partial = await partialFile(dir, 4);
+      assert.match(partial, new RegExp(`^file\\.${running.pid}\\.[0-9a-f]{12}\\.part$`));
+
+      await downloadVerified(pinned(), path, 0o644);
+
+      assert.deepStrictEqual(readdirSync(dir).sort(), ['file', partial].sort());
+    } finally {
+      await stop(running);
+    }
+  });
+
+  it('leaves the partial file of another download in this process', async () => {
+    const other = await startServer({ '/hang': { body: body.slice(0, 4), hang: true } });
+    const first = downloadVerified({ ...pinned(), url: `${other.base}/hang` }, path, 0o644);
+    const firstRejects = assert.rejects(first);
+    try {
+      const partial = await partialFile(dir, 4);
+      assert.match(partial, new RegExp(`^file\\.${process.pid}\\.[0-9a-f]{12}\\.part$`));
+
+      await downloadVerified(pinned(), path, 0o644);
+
+      assert.deepStrictEqual(readdirSync(dir).sort(), ['file', partial].sort());
+    } finally {
+      // Closing its connection fails the first download, which deletes its own file.
+      await other.close();
+      await firstRejects;
+    }
+    assert.deepStrictEqual(readdirSync(dir), ['file']);
+  });
+
+  it('deletes a partial file named for this process that no download in it is writing', async () => {
+    // As a process that ran before this one, with the same ID, leaves it.
+    await writeFile(join(dir, `file.${process.pid}.0123456789ab.part`), 'file');
+
+    await downloadVerified(pinned(), path, 0o644);
+
+    assert.deepStrictEqual(readdirSync(dir), ['file']);
+  });
+
+  it('leaves files that are not partial files of its path as they are', async () => {
+    const pid = exitedPid();
+    const others = ['file.part', 'file.0123456789ab.part', `file.${pid}.0123456789ab.part.old`, `other.${pid}.0123456789ab.part`];
+    for (const name of others) await writeFile(join(dir, name), 'kept');
+
+    await downloadVerified(pinned(), path, 0o644);
+
+    assert.deepStrictEqual(readdirSync(dir).sort(), ['file', ...others].sort());
+  });
+
+  it('downloads when a partial file it would delete cannot be deleted', async () => {
+    // rm fails on a directory, as it is not asked to remove one.
+    const left = `file.${exitedPid()}.0123456789ab.part`;
+    await mkdir(join(dir, left));
+    await writeFile(join(dir, left, 'inside'), 'kept');
+
+    await downloadVerified(pinned(), path, 0o644);
+
+    assert.deepStrictEqual(readdirSync(dir).sort(), ['file', left].sort());
+  });
+
+  it('downloads into a directory it cannot list', { skip: process.platform === 'win32' || process.getuid?.() === 0 }, async () => {
+    await chmod(dir, 0o300);
+    try {
+      await downloadVerified(pinned(), path, 0o644);
+    } finally {
+      await chmod(dir, 0o700);
+    }
+
+    assert.strictEqual(readFileSync(path, 'utf8'), body);
   });
 });
 

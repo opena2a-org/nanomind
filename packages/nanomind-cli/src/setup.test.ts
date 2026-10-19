@@ -1,5 +1,6 @@
 import { describe, it, before, after, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { once } from 'node:events';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
@@ -12,6 +13,25 @@ import type { DownloadSource } from './download.ts';
 import { runSetup, type SetupOptions } from './setup.ts';
 
 const sha256 = (text: string) => createHash('sha256').update(text).digest('hex');
+
+// Sends `signal` to `child` and resolves once it has exited.
+async function stop(child: ChildProcess, signal: NodeJS.Signals): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  const exited = once(child, 'exit');
+  child.kill(signal);
+  await exited;
+}
+
+// Resolves to the name of the partial file in `dir` once it holds `bytes` bytes.
+async function partialFile(dir: string, bytes: number): Promise<string> {
+  for (const deadline = Date.now() + 10_000; Date.now() < deadline; ) {
+    const names = existsSync(dir) ? readdirSync(dir) : [];
+    const name = names.find((entry) => entry.endsWith('.part') && statSync(join(dir, entry)).size === bytes);
+    if (name) return name;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(`no partial file of ${bytes} bytes appeared in ${dir}`);
+}
 
 describe('runSetup', () => {
   const llamafileBody = '#!/bin/sh\necho llamafile\n';
@@ -26,6 +46,11 @@ describe('runSetup', () => {
   const requests: string[] = [];
   const server = createServer((req, res) => {
     requests.push(req.url ?? '');
+    if (req.url === '/hang-llamafile') {
+      // The first 4 bytes of the llamafile, in a response that never ends.
+      res.writeHead(200).write(llamafileBody.slice(0, 4));
+      return;
+    }
     const body = bodies[req.url ?? ''];
     res.writeHead(body === undefined ? 404 : 200).end(body ?? '');
   });
@@ -130,5 +155,26 @@ describe('runSetup', () => {
     assert.strictEqual(existsSync(modelPath), false);
     assert.deepStrictEqual(readdirSync(dirname(modelPath)), []);
     assert.strictEqual(readFileSync(llamafilePath, 'utf8'), llamafileBody, 'the llamafile saved before it stays');
+  });
+
+  it('deletes the partial file that a setup interrupted during a download left, when it downloads that file', async () => {
+    const setupModule = JSON.stringify(new URL('./setup.ts', import.meta.url).href);
+    const options = JSON.stringify({
+      home,
+      llamafileDownload: { ...source('/llamafile', llamafileBody), url: `${base}/hang-llamafile` },
+      modelDownload: source('/model', modelBody),
+    });
+    // Setup runs in another process, which SIGINT ends as Ctrl+C would.
+    const interrupted = spawn(
+      process.execPath,
+      ['--experimental-strip-types', '--input-type=module', '--eval', `const { runSetup } = await import(${setupModule});\nawait runSetup(${options});`],
+      { stdio: 'ignore' },
+    );
+    const partial = await partialFile(dirname(llamafilePath), 4).finally(() => stop(interrupted, 'SIGINT'));
+    assert.deepStrictEqual(readdirSync(dirname(llamafilePath)), [partial], 'the interrupted setup left its partial file');
+
+    assert.strictEqual(await setup(), true);
+
+    assert.deepStrictEqual(readdirSync(dirname(llamafilePath)), ['llamafile']);
   });
 });
