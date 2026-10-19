@@ -201,6 +201,9 @@ API:
 
   GET  http://127.0.0.1:47200/v1/status
   GET  http://127.0.0.1:47200/health
+  GET  http://127.0.0.1:47200/health/ready
+    200 while the model is loaded, or was released after the idle timeout
+    and reloads on the next request; 503 when a model load has failed
 
   The same routes are served over the Unix socket (mode 0600, owner only):
     curl --unix-socket ${DEFAULT_CONFIG.ipcPath} http://localhost/v1/status
