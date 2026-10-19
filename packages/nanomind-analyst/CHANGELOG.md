@@ -81,6 +81,10 @@
   the package's LICENSE file holds the Apache-2.0 text and the README's
   License section names Apache-2.0. Earlier releases declared MIT and
   carried the MIT text.
+- README: the install steps are listed in the order `install` runs them.
+  The list put the classifier copy before the NLM fetch; `install`
+  verifies the bundled classifier first, fetches and verifies the NLM,
+  and then copies the classifier.
 
 ## 0.1.4
 
