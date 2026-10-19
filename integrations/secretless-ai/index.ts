@@ -41,6 +41,19 @@ export async function launchNanoMind(): Promise<void> {
   await startSession(session);
 }
 
+/**
+ * Launch NanoMind interactive mode for the arguments secretless-ai was run
+ * with, without the node and script paths. With none, it starts the session
+ * and resolves true once the prompt is shown. Otherwise it resolves false and
+ * starts nothing.
+ */
+export async function launchSecretlessInteractive(args: string[]): Promise<boolean> {
+  // shouldLaunchNanoMind reads a full argv, node and script path first
+  if (!shouldLaunchNanoMind(['node', 'secretless-ai', ...args])) return false;
+  await launchNanoMind();
+  return true;
+}
+
 export function getCommandManifest() {
   return {
     commands: [

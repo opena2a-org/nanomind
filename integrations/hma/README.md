@@ -17,13 +17,17 @@ Normally consumed transitively by `hackmyagent`. Direct install is only needed w
 ```ts
 import { launchHmaInteractive } from "@nanomind/hma-adapter";
 
-await launchHmaInteractive(process.argv.slice(2));
+const interactive = await launchHmaInteractive(process.argv.slice(2));
+if (!interactive) {
+  // hma was given arguments: parse them as usual
+}
 ```
+
+`launchHmaInteractive` takes the arguments `hma` was run with. With none, it starts the session and resolves `true` once the prompt is shown; the session exits the process when the user types `exit`. When `hma` was given arguments, `--help` and `--no-smart` among them, it resolves `false` and starts nothing.
 
 ## Requires
 
-- `@nanomind/cli` (peer).
-- A running NanoMind runtime (either inline or via `@nanomind/daemon`).
+- `@nanomind/cli` 0.1.0, a peer dependency.
 
 ## License
 

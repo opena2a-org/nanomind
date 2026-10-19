@@ -17,13 +17,17 @@ Normally consumed transitively by `secretless-ai`. Direct install is only needed
 ```ts
 import { launchSecretlessInteractive } from "@nanomind/secretless-adapter";
 
-await launchSecretlessInteractive(process.argv.slice(2));
+const interactive = await launchSecretlessInteractive(process.argv.slice(2));
+if (!interactive) {
+  // secretless-ai was given arguments: parse them as usual
+}
 ```
+
+`launchSecretlessInteractive` takes the arguments `secretless-ai` was run with. With none, it starts the session and resolves `true` once the prompt is shown; the session exits the process when the user types `exit`. When `secretless-ai` was given arguments, `--help` and `--no-smart` among them, it resolves `false` and starts nothing.
 
 ## Requires
 
-- `@nanomind/cli` (peer).
-- A running NanoMind runtime (either inline or via `@nanomind/daemon`).
+- `@nanomind/cli` 0.1.0, a peer dependency.
 
 ## License
 
