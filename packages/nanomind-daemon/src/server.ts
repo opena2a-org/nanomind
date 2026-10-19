@@ -5,7 +5,7 @@ import { classifyIntent } from '@nanomind/router';
 import { EventEmitter } from 'node:events';
 import { OnnxProcessEngine } from './onnx-process-engine.ts';
 import { errorMessage } from './error-message.ts';
-import { manifest } from './manifest.mts';
+import { manifest } from './manifest.cts';
 
 const SERVICE_NAME = 'nanomind-daemon';
 const SERVICE_COMMIT: string | null =

@@ -75,6 +75,14 @@ The classifier runs in a child process of the daemon. `OnnxProcessEngine`, the e
 - `ensureReady()` calls made while the model loads share one child process.
 - An idle child process does not keep a script that only calls `daemon.infer()` running.
 
+### Loads without require(esm) (#138)
+
+No CommonJS file in `dist/` requires an ES module of the package. Before, `dist/server.js` required `manifest.mjs` and `dist/onnx-process-engine.js` required `onnx-host.mjs`, ES modules that CommonJS can load only through require(esm). With require(esm) turned off by `node --no-experimental-require-module`, `nanomind-daemon --version` exited 1 with `ERR_REQUIRE_ESM`, and `require('@nanomind/daemon')` and `nanomind-daemon start` failed with the same error.
+
+- The manifest is read by `dist/manifest.cjs`, and `dist/onnx-host-path.cjs` gives the path of the model host and its argument.
+- The model host `dist/onnx-host.mjs` stays an ES module. The daemon starts it as a separate process and does not require it.
+- New tests run the built package under `--no-experimental-require-module`: `nanomind-daemon --version`, `require()` of the entry point, and `nanomind-daemon start` up to the model host's load error.
+
 ### Configurable rate limit (#107)
 
 - `DaemonConfig.rateLimitPerSecond` sets the requests per second each client address may make, which is also the bucket size. It defaults to 100 (`DEFAULT_CONFIG.rateLimitPerSecond`). The 429 `rate_limited` message names the configured rate.
