@@ -64,6 +64,17 @@
   `nanomind-analyst logs`. The daemon's log line for loading the NLM no
   longer states how long the load takes; the `boot ok` line still
   reports the boot time measured on this machine.
+- `status`, when the agent is loaded and the socket is missing, now reads
+  the service's `state` and `last exit code` from `launchctl print`. When
+  launchd reports the daemon `not running`, status prints `daemon: not
+  running`, with launchd's last exit code when it has one, and says to
+  run `nanomind-analyst start`; before, it said the daemon may still be
+  booting and did not name `start`. A last exit code of 0 is reported as
+  a stop or an idle exit, and a non-zero one as an error, with a pointer
+  to `nanomind-analyst logs`. While launchd reports the daemon `running`,
+  status still says it serves once its log shows `listening on`; when
+  launchd reports neither state, status gives both steps. The exit code
+  (1) and the `status --json` output on this path are unchanged.
 
 ## 0.1.4
 

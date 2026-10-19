@@ -41,6 +41,32 @@ def fake_sock(monkeypatch):
         sock_path.unlink()
 
 
+def _launchctl_print(state: str, last_exit: str | None = None) -> str:
+    """`launchctl print gui/<uid>/<label>` text in the layout macOS prints:
+    the service's own fields one tab deep, and a coalition block whose own
+    `state = active` sits two tabs deep."""
+    lines = [
+        f"gui/501/{paths.LABEL} = {{",
+        "\tactive count = 0",
+        "\ttype = LaunchAgent",
+        f"\tstate = {state}",
+        "",
+        "\truns = 2",
+    ]
+    if last_exit is not None:
+        lines.append(f"\tlast exit code = {last_exit}")
+    lines += [
+        "",
+        "\tresource coalition = {",
+        "\t\ttype = resource",
+        "\t\tstate = active",
+        "\t\tactive count = 1",
+        "\t}",
+        "}",
+    ]
+    return "\n".join(lines) + "\n"
+
+
 class TestStatus:
     def test_agent_not_loaded(self, monkeypatch, capsys):
         monkeypatch.setattr(launchd, "print_state", lambda: (1, "not found"))
@@ -60,6 +86,96 @@ class TestStatus:
         # Points at the log line the daemon writes once it serves, not at a
         # time to wait.
         assert "its log shows `listening on`" in out
+
+    def test_stopped_daemon_is_not_reported_as_booting(
+        self, monkeypatch, capsys, tmp_path, no_drift
+    ):
+        """`stop` and the on-demand idle exit leave the agent loaded with no
+        daemon and no socket. No `listening on` line follows, so status must
+        name the step that starts the daemon instead of saying to wait."""
+        monkeypatch.setattr(
+            launchd, "print_state", lambda: (0, _launchctl_print("not running", "0"))
+        )
+        monkeypatch.setattr(paths, "SOCK_PATH", str(tmp_path / "missing.sock"))
+        rc = lifecycle.run_status()
+        assert rc == 1
+        out = capsys.readouterr().out
+        assert "socket: missing" in out
+        assert "daemon: not running (last exit code 0)\n" in out
+        assert "  it was stopped, or exited after its idle window\n" in out
+        assert "  run `nanomind-analyst start`, then rerun status\n" in out
+        assert "booting" not in out
+        assert "listening on" not in out
+
+    def test_daemon_that_exited_with_an_error_points_at_logs(
+        self, monkeypatch, capsys, tmp_path, no_drift
+    ):
+        monkeypatch.setattr(
+            launchd, "print_state", lambda: (0, _launchctl_print("not running", "2"))
+        )
+        monkeypatch.setattr(paths, "SOCK_PATH", str(tmp_path / "missing.sock"))
+        monkeypatch.setattr(paths, "log_path", lambda: tmp_path / "daemon.log")
+        rc = lifecycle.run_status()
+        assert rc == 1
+        out = capsys.readouterr().out
+        assert "daemon: not running (last exit code 2)\n" in out
+        assert (
+            "  it exited with an error: check `nanomind-analyst logs` "
+            f"(tail {tmp_path / 'daemon.log'})\n"
+        ) in out
+        assert "  run `nanomind-analyst start`, then rerun status\n" in out
+        assert "idle window" not in out
+        assert "booting" not in out
+
+    def test_not_running_without_an_exit_code_names_start(
+        self, monkeypatch, capsys, tmp_path, no_drift
+    ):
+        monkeypatch.setattr(
+            launchd,
+            "print_state",
+            lambda: (0, _launchctl_print("not running", "(never exited)")),
+        )
+        monkeypatch.setattr(paths, "SOCK_PATH", str(tmp_path / "missing.sock"))
+        rc = lifecycle.run_status()
+        assert rc == 1
+        out = capsys.readouterr().out
+        assert "daemon: not running\n" in out
+        assert "last exit code" not in out
+        assert "  run `nanomind-analyst start`, then rerun status\n" in out
+        assert "booting" not in out
+
+    def test_running_daemon_without_socket_is_booting(
+        self, monkeypatch, capsys, tmp_path, no_drift
+    ):
+        monkeypatch.setattr(
+            launchd,
+            "print_state",
+            lambda: (0, _launchctl_print("running", "(never exited)")),
+        )
+        monkeypatch.setattr(paths, "SOCK_PATH", str(tmp_path / "missing.sock"))
+        rc = lifecycle.run_status()
+        assert rc == 1
+        out = capsys.readouterr().out
+        assert "daemon may still be booting" in out
+        assert "its log shows `listening on`" in out
+        assert "nanomind-analyst start" not in out
+        assert "not running" not in out
+
+    def test_unread_launchd_state_names_booting_and_start(
+        self, monkeypatch, capsys, tmp_path, no_drift
+    ):
+        """With no state line to read, status cannot tell booting from
+        stopped, so it gives the step for each."""
+        monkeypatch.setattr(launchd, "print_state", lambda: (0, "loaded"))
+        monkeypatch.setattr(paths, "SOCK_PATH", str(tmp_path / "missing.sock"))
+        rc = lifecycle.run_status()
+        assert rc == 1
+        out = capsys.readouterr().out
+        assert "its log shows `listening on`" in out
+        assert (
+            "  if it was stopped, or exited after its idle window, run "
+            "`nanomind-analyst start`\n"
+        ) in out
 
     def test_agent_loaded_socket_ready(
         self, monkeypatch, capsys, fake_sock, no_drift
@@ -180,6 +296,23 @@ class TestStatusJson:
 
     def test_socket_missing_json(self, monkeypatch, capsys, tmp_path, no_drift):
         monkeypatch.setattr(launchd, "print_state", lambda: (0, "loaded"))
+        sock_path = str(tmp_path / "missing.sock")
+        monkeypatch.setattr(paths, "SOCK_PATH", sock_path)
+        rc = lifecycle.run_status(json_output=True)
+        assert rc == 1
+        payload = json.loads(capsys.readouterr().out.strip())
+        assert payload == {
+            "agent": {"loaded": True},
+            "socket": {"path": sock_path, "present": False},
+            "artifact": {"classifierMatchesWheel": True},
+        }
+
+    def test_socket_missing_json_is_the_same_for_a_stopped_daemon(
+        self, monkeypatch, capsys, tmp_path, no_drift
+    ):
+        monkeypatch.setattr(
+            launchd, "print_state", lambda: (0, _launchctl_print("not running", "0"))
+        )
         sock_path = str(tmp_path / "missing.sock")
         monkeypatch.setattr(paths, "SOCK_PATH", sock_path)
         rc = lifecycle.run_status(json_output=True)
@@ -523,6 +656,40 @@ class TestInstalledClassifierDrift:
             "classifier.joblib",
             "meta.json",
         ]
+
+
+class TestLaunchctlPrintFields:
+    def test_service_state_reads_the_service_line(self):
+        assert launchd.service_state(_launchctl_print("not running")) == (
+            "not running"
+        )
+        assert launchd.service_state(_launchctl_print("running")) == "running"
+
+    def test_service_state_skips_nested_block_state(self):
+        text = (
+            "gui/501/x = {\n"
+            "\tjetsam coalition = {\n"
+            "\t\tstate = active\n"
+            "\t}\n"
+            "\tstate = not running\n"
+            "}\n"
+        )
+        assert launchd.service_state(text) == "not running"
+
+    def test_service_state_is_none_without_a_state_line(self):
+        assert launchd.service_state("loaded") is None
+        assert launchd.service_state("") is None
+
+    @pytest.mark.parametrize(
+        "value, expected",
+        [("0", 0), ("2", 2), ("78: EX_CONFIG", 78), ("(never exited)", None)],
+    )
+    def test_last_exit_code(self, value, expected):
+        text = _launchctl_print("not running", value)
+        assert launchd.last_exit_code(text) == expected
+
+    def test_last_exit_code_is_none_without_the_line(self):
+        assert launchd.last_exit_code(_launchctl_print("running")) is None
 
 
 class TestStartStopRestart:
