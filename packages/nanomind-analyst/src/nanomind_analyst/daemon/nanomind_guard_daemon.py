@@ -35,6 +35,7 @@ import datetime as _dt
 import hashlib
 import json
 import logging
+import math
 import os
 import re
 import secrets
@@ -87,6 +88,9 @@ RECV_CHUNK = 64 * 1024  # 64 KB recv chunks; loop until we have a full line
 ENVELOPE_OVERHEAD = 4096  # JSON wrapper around `text` field
 DEFAULT_CONN_TIMEOUT_SEC = 5.0  # slowloris cutoff for accepted connections
 DEFAULT_IDLE_EXIT_SEC = 900.0  # exit after this long with no request
+# How long serve() waits in accept() before it wakes to check for a stop and
+# for the idle window. It checks the idle window only on that timeout.
+ACCEPT_POLL_SEC = 0.25
 SHA256_HEX_RE = re.compile(r"^[0-9a-f]{64}$")
 
 log = logging.getLogger("nanomind_guard")
@@ -143,10 +147,14 @@ class Config:
             idle_exit_sec = (
                 float(raw_idle) if raw_idle.strip() else DEFAULT_IDLE_EXIT_SEC
             )
+            # float() also accepts nan and inf. The idle check in serve() is
+            # never true for either, so the daemon would never idle out.
+            if not math.isfinite(idle_exit_sec):
+                raise ValueError(raw_idle)
         except ValueError:
             raise ConfigError(
-                "NANOMIND_GUARD_IDLE_EXIT_SEC must be a number of seconds "
-                "(0 keeps the daemon running)."
+                "NANOMIND_GUARD_IDLE_EXIT_SEC must be a finite number of "
+                "seconds (0 keeps the daemon running)."
             ) from None
         return cls(
             sock_path=e.get("NANOMIND_GUARD_SOCK", DEFAULT_SOCK_PATH),
@@ -642,7 +650,7 @@ def serve(
     """
     cfg = state.cfg
     server = _bind_socket(cfg.sock_path)
-    server.settimeout(0.25)  # poll for stop_event between accepts
+    server.settimeout(ACCEPT_POLL_SEC)  # poll for a stop and the idle window
     log.info("listening on %s", cfg.sock_path)
     hard_cap = cfg.max_bytes + ENVELOPE_OVERHEAD
 

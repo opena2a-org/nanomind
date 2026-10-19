@@ -158,7 +158,7 @@ def run_status(*, json_output: bool = False) -> int:
     """Report whether the agent is loaded and whether the daemon answers.
 
     With json_output=True, emit a single JSON line with camelCase keys
-    suitable for parsing by downstream tools (HMA, opena2a-cli, ai-trust).
+    for other tools to parse.
     Exit codes match the human-formatted mode: 0 when fully ready, 1
     otherwise.
     """
