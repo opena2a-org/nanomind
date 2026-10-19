@@ -7,12 +7,15 @@
  *
  * Usage in opena2a CLI's router.ts:
  *
- *   import { shouldLaunchNanoMind, launchNanoMind } from '@nanomind/opena2a-adapter';
+ *   import { launchOpena2aInteractive } from '@nanomind/opena2a-adapter';
  *
- *   if (shouldLaunchNanoMind(process.argv)) {
- *     await launchNanoMind();
- *     process.exit(0);
+ *   const interactive = await launchOpena2aInteractive(process.argv.slice(2));
+ *   if (!interactive) {
+ *     // proceed with normal command parsing
  *   }
+ *
+ * It resolves as soon as the prompt is shown, and the session exits the
+ * process itself when it ends, so the caller does not call process.exit.
  */
 
 import { execSync } from 'node:child_process';
@@ -54,6 +57,19 @@ export async function launchNanoMind(): Promise<void> {
   };
 
   await startSession(session);
+}
+
+/**
+ * Launch NanoMind interactive mode for the arguments opena2a was run with,
+ * without the node and script paths. With none, it starts the session and
+ * resolves true once the prompt is shown. Otherwise it resolves false and
+ * starts nothing.
+ */
+export async function launchOpena2aInteractive(args: string[]): Promise<boolean> {
+  // shouldLaunchNanoMind reads a full argv, node and script path first
+  if (!shouldLaunchNanoMind(['node', 'opena2a', ...args])) return false;
+  await launchNanoMind();
+  return true;
 }
 
 export function getCommandManifest() {

@@ -17,13 +17,17 @@ Normally consumed transitively by `opena2a-cli`. Direct install is only needed w
 ```ts
 import { launchOpena2aInteractive } from "@nanomind/opena2a-adapter";
 
-await launchOpena2aInteractive(process.argv.slice(2));
+const interactive = await launchOpena2aInteractive(process.argv.slice(2));
+if (!interactive) {
+  // opena2a was given arguments: parse them as usual
+}
 ```
+
+`launchOpena2aInteractive` takes the arguments `opena2a` was run with. With none, it starts the session and resolves `true` once the prompt is shown; the session exits the process when the user types `exit`. When `opena2a` was given arguments, `--help` and `--no-smart` among them, it resolves `false` and starts nothing.
 
 ## Requires
 
-- `@nanomind/cli` (peer).
-- A running NanoMind runtime (either inline or via `@nanomind/daemon`).
+- `@nanomind/cli` 0.1.0, a peer dependency.
 
 ## License
 
