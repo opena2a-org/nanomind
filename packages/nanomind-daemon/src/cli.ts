@@ -197,7 +197,9 @@ Model:
 API:
   POST http://127.0.0.1:47200/v1/infer
     Body: { intent, input, context: { agentId, driftScore, declaredPurpose }, priority }
-    Response: { intent, result, confidence, attackClass, evidence, remediation, latencyMs, modelVersion }
+    Response: { intent, result, confidence, attackClass, classification, evidence?, latencyMs, modelVersion }
+      evidence is the raw model label, sent when the model returns one.
+      remediation is reserved: the daemon does not send it.
 
   GET  http://127.0.0.1:47200/v1/status
   GET  http://127.0.0.1:47200/health

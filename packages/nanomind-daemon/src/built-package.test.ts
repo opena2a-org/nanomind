@@ -10,7 +10,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
-import { ABSTAIN_CONFIDENCE_FLOOR } from './server.ts';
+import { ABSTAIN_CONFIDENCE_FLOOR, NanoMindDaemon } from './server.ts';
+import type { DaemonEngine } from './server.ts';
 
 // These tests run the built package, the files a consumer installs: the entry
 // point package.json names in `main` and `types`, and the `nanomind-daemon`
@@ -242,5 +243,43 @@ describe('nanomind-daemon --help: API routes', { skip: !CLI_BUILT && 'dist/ is n
     const listed = [...run.stdout.matchAll(/^ {2}([A-Z]+) +http:\/\/127\.0\.0\.1:\d+(\/\S*)$/gm)]
       .map(([, method, path]) => `${method} ${path}`);
     assert.deepStrictEqual([...listed].sort(), [...served].sort(), run.stdout);
+  });
+});
+
+describe('nanomind-daemon --help: /v1/infer response', { skip: !CLI_BUILT && 'dist/ is not built' }, () => {
+  type EngineResult = Awaited<ReturnType<DaemonEngine['infer']>>;
+
+  // The fields daemon.infer() returns when the engine answers with `result`.
+  async function fieldsSent(result: EngineResult): Promise<string[]> {
+    const daemon = new NanoMindDaemon({ engine: { ensureReady: async () => {}, infer: async () => result } });
+    try {
+      return Object.keys(await daemon.infer({ intent: 'INTENT_CHECK', input: 'list files' }));
+    } finally {
+      await daemon.stop();
+    }
+  }
+
+  it('lists the fields the daemon sends and names remediation as reserved', async () => {
+    const run = spawnSync(process.execPath, [CLI, '--help'], {
+      env: { PATH: process.env.PATH ?? '' },
+      encoding: 'utf-8',
+      timeout: 60_000,
+    });
+    assert.strictEqual(run.status, 0, run.stderr);
+    const line = run.stdout.match(/^\s*Response: \{([^}]*)\}$/m);
+    assert.ok(line, `--help prints no Response line:\n${run.stdout}`);
+    const listed = line[1].split(',').map(field => field.trim());
+
+    // `evidence` is sent only when the engine returns a raw label, so the
+    // help marks it `?`; every other field is in every response infer() returns.
+    const verdict: EngineResult = { text: 'benign', attackClass: '', confidence: 0.9 };
+    const always = await fieldsSent(verdict);
+    const withLabel = await fieldsSent({ ...verdict, rawLabel: 'benign' });
+    const sent = withLabel.map(field => (always.includes(field) ? field : `${field}?`));
+    assert.deepStrictEqual(new Set(listed), new Set(sent), run.stdout);
+
+    // InferResponse declares `remediation`, and the daemon does not send it.
+    assert.ok(!withLabel.includes('remediation'), `the daemon sends remediation: ${withLabel.join(', ')}`);
+    assert.match(run.stdout, /\bremediation\b[^\n]*\breserved\b/, `--help does not name remediation as reserved:\n${run.stdout}`);
   });
 });
