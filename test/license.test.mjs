@@ -63,6 +63,17 @@ function readmeLicenseStatement(dir) {
   return section ? section[1] : null;
 }
 
+// The text under a README's "## License" heading up to the next heading, or
+// null when the README has no such heading.
+function licenseSection(readme) {
+  const lines = readme.split('\n');
+  const start = lines.findIndex((line) => /^## License\s*$/.test(line));
+  if (start === -1) return null;
+  const rest = lines.slice(start + 1);
+  const end = rest.findIndex((line) => /^#{1,6}\s/.test(line));
+  return rest.slice(0, end === -1 ? rest.length : end).join('\n').trim();
+}
+
 const packages = [root, ...packageDirs('package.json')].map((dir) => ({
   dir,
   name: relative(root, dir) || '.',
@@ -84,6 +95,16 @@ for (const { dir, name, expected } of packages) {
       assert.deepEqual(licensesNamed(statement), [expected], `License section reads: ${statement}`);
     });
   }
+
+  // The test above reads the first line of a License section and is not run
+  // for a README without one. Every package README needs the section, and a
+  // later line of it that names another license fails as well.
+  test(`${name}/README.md has a License section that names the license its LICENSE file grants`, () => {
+    const section = licenseSection(readFileSync(join(dir, 'README.md'), 'utf8'));
+    assert.notEqual(section, null, `${name}/README.md has no "## License" section`);
+    assert.notEqual(section, '', `${name}/README.md has nothing under its "## License" heading`);
+    assert.deepEqual(licensesNamed(section), [expected], `License section reads: ${section}`);
+  });
 }
 
 // npm adds a LICENSE file in the package directory to the tarball although
@@ -132,6 +153,30 @@ for (const path of ['spec/NANOMIND-SPEC.md', 'docs/SPECIFICATION.md']) {
     assert.deepEqual(licensesNamed(readFileSync(join(root, path), 'utf8')), [rootLicense]);
   });
 }
+
+// The top-level Markdown files and the rest of docs/ and spec/ are covered by
+// the root LICENSE as well.
+test('top-level Markdown files, docs/ and spec/ name no license other than the one the root LICENSE file grants', () => {
+  const docs = [
+    ...readdirSync(root).filter((file) => file.endsWith('.md')),
+    ...['docs', 'spec'].flatMap((dir) =>
+      readdirSync(join(root, dir), { recursive: true })
+        .filter((file) => file.endsWith('.md'))
+        .map((file) => join(dir, file))),
+  ];
+  assert.ok(
+    docs.includes('README.md') && docs.includes(join('spec', 'NANOMIND-SPEC.md')),
+    'README.md or spec/NANOMIND-SPEC.md is not among the files checked',
+  );
+  const others = docs.flatMap((file) =>
+    readFileSync(join(root, file), 'utf8')
+      .split('\n')
+      .flatMap((line, index) =>
+        licensesNamed(line)
+          .filter((spdx) => spdx !== rootLicense)
+          .map((spdx) => `${file}:${index + 1} names ${spdx}: ${line.trim()}`)));
+  assert.deepEqual(others, []);
+});
 
 test('package-lock.json records the license each workspace package declares', () => {
   const lock = readJson(join(root, 'package-lock.json'));
