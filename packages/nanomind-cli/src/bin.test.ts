@@ -2,7 +2,7 @@ import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -150,6 +150,46 @@ describe('nanomind command', () => {
     assert.strictEqual(run.status, 0, run.stderr);
     assert.ok(run.stdout.includes('Running: hackmyagent secure .'), run.stdout);
     assert.ok(run.stdout.includes('fake-hackmyagent secure .'), run.stdout);
+  });
+
+  // npm links a dependency on another package in this repository only when
+  // that package's version satisfies the pin in package.json. Otherwise it
+  // installs the published release under this package's node_modules, and the
+  // built command runs that copy instead of the code here.
+  it('resolves each dependency that is a package in this repository to that package', () => {
+    const packagesDir = join(packageDir, '..');
+    const here = new Map<string, string>();
+    for (const dir of readdirSync(packagesDir)) {
+      const file = join(packagesDir, dir, 'package.json');
+      if (existsSync(file)) here.set(JSON.parse(readFileSync(file, 'utf8')).name, realpathSync(file));
+    }
+    const names = Object.keys(manifest.dependencies).filter((name) => here.has(name));
+    assert.ok(names.includes('@nanomind/router'), names.join(', '));
+    const fromBin = createRequire(bin);
+    for (const name of names) {
+      const resolved = realpathSync(fromBin.resolve(`${name}/package.json`));
+      const { version } = JSON.parse(readFileSync(resolved, 'utf8'));
+      assert.strictEqual(resolved, here.get(name), `${name} resolves to ${version} at ${resolved}`);
+    }
+  });
+
+  // Adapters start the session from this file under their own cliName.
+  it('takes no agent id from "why is my agent level 2" and runs hma explain CRED-001 for "what does cred-001 mean" in a session started as hma', () => {
+    const script = `require(${JSON.stringify(bin)}).startSession({
+      cliName: 'hma',
+      cliVersion: '0.0.0',
+      registryUrl: 'http://127.0.0.1:9',
+      onCommand: async (cmd, args) => { console.log('RAN ' + [cmd, ...args].join(' ')); return ''; },
+    });`;
+    const run = spawnSync(process.execPath, ['-e', script], {
+      input: 'why is my agent level 2\nwhat does cred-001 mean\n',
+      encoding: 'utf8',
+      timeout: 30_000,
+    });
+    assert.strictEqual(run.status, 0, run.stderr);
+    assert.ok(!run.stdout.includes('No ATC found for agent level'), run.stdout);
+    assert.ok(run.stdout.includes('No ATC found for agent current.'), run.stdout);
+    assert.ok(run.stdout.includes('RAN hma explain CRED-001'), run.stdout);
   });
 
   it('says how to install the scanner when it is not on PATH', { skip: process.platform === 'win32' }, () => {
