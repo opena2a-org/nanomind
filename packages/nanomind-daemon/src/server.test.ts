@@ -1099,6 +1099,114 @@ describe('NanoMindDaemon rate limit', () => {
   });
 });
 
+describe('NanoMindDaemon error bodies', () => {
+  // Specification §3.4.1 puts attackClass and classification on every
+  // response. Each error answer carries attackClass "" and classification
+  // "abstain", so a consumer that reads the body without the status code
+  // finds an abstain, not two absent fields.
+  let daemon: NanoMindDaemon;
+  const ERRORS_PORT = 47290; // distinct from the other suites' ports
+
+  // Input "throw" makes inference fail. Input "hold" keeps the call pending
+  // until release() runs, so a test can take the only slot.
+  let release: () => void = () => {};
+  const engine: DaemonEngine = {
+    ensureReady: async () => {},
+    infer: async (prompt: string) => {
+      if (prompt === 'throw') throw new Error('simulated ORT failure');
+      if (prompt === 'hold') await new Promise<void>((resolve) => { release = resolve; });
+      return { text: 'benign', attackClass: '', confidence: 0.99, rawLabel: 'benign' };
+    },
+  };
+
+  before(async () => {
+    daemon = new NanoMindDaemon({
+      httpPort: ERRORS_PORT,
+      ipcPath: join(SOCKET_DIR, 'errors.sock'),
+      idleUnloadSeconds: 60,
+      maxConcurrent: 1,
+      engine,
+    });
+    await daemon.start();
+    await new Promise(resolve => setTimeout(resolve, 100));
+  });
+
+  after(async () => {
+    await daemon.stop();
+  });
+
+  // One request with node:http, which sends the body's Content-Length.
+  function send(method: string, path: string, body?: string | Buffer): Promise<{ status: number; body: string }> {
+    return new Promise((resolve) => {
+      let responded = false;
+      const headers: Record<string, string | number> = { 'Content-Type': 'application/json' };
+      if (body !== undefined) headers['Content-Length'] = Buffer.byteLength(body);
+      const req = request({ host: '127.0.0.1', port: ERRORS_PORT, path, method, headers }, (res) => {
+        responded = true;
+        let text = '';
+        res.setEncoding('utf-8');
+        res.on('data', (c: string) => { text += c; });
+        res.on('end', () => resolve({ status: res.statusCode ?? 0, body: text }));
+      });
+      req.on('error', (err: NodeJS.ErrnoException) => {
+        if (!responded) resolve({ status: 0, body: `client error ${err.code ?? err.message}` });
+      });
+      req.end(body);
+    });
+  }
+  const postInfer = (body: string | Buffer) => send('POST', '/v1/infer', body);
+
+  function assertAbstainBody(resp: { status: number; body: string }, status: number, error: string, label: string): void {
+    assert.strictEqual(resp.status, status, `${label}: expected ${status}, got ${resp.status} ${resp.body.slice(0, 120)}`);
+    const body = JSON.parse(resp.body) as Record<string, unknown>;
+    assert.strictEqual(body.error, error, `${label}: error code`);
+    assert.strictEqual(typeof body.message, 'string', `${label}: message`);
+    assert.strictEqual(body.attackClass, '', `${label}: attackClass`);
+    assert.strictEqual(body.classification, 'abstain', `${label}: classification`);
+  }
+
+  it('carries attackClass "" and classification "abstain" on the 400, 404, 413 and 500 bodies', async () => {
+    const overCap = Buffer.from(JSON.stringify({ intent: 'X', input: 'a'.repeat(1_048_577) }));
+    const cases: Array<[string, number, string, () => Promise<{ status: number; body: string }>]> = [
+      ['a body that is not JSON', 400, 'invalid_request', () => postInfer('not json')],
+      ['a JSON body that is not an object', 400, 'invalid_request', () => postInfer('null')],
+      ['a request without input', 400, 'invalid_request', () => postInfer('{"intent":"X"}')],
+      ['whitespace-only input', 400, 'invalid_request', () => postInfer('{"intent":"X","input":"  "}')],
+      ['GET /v1/infer', 404, 'not_found', () => send('GET', '/v1/infer')],
+      ['an unknown route', 404, 'not_found', () => send('GET', '/unknown')],
+      ['a body over 1 MB', 413, 'request_too_large', () => postInfer(overCap)],
+      ['an inference failure', 500, 'inference_error', () => postInfer('{"intent":"X","input":"throw"}')],
+    ];
+    for (const [label, status, error, call] of cases) {
+      assertAbstainBody(await call(), status, error, label);
+    }
+  });
+
+  it('carries them on the 429 queue_full body', async () => {
+    const held = daemon.infer({ intent: 'INTENT_CHECK', input: 'hold' });
+    try {
+      assertAbstainBody(await postInfer('{"intent":"X","input":"list users"}'), 429, 'queue_full', 'queue_full');
+    } finally {
+      release();
+      await held;
+    }
+  });
+
+  it('carries them on the 429 rate_limited body', async () => {
+    const limited = daemon as unknown as { rateLimiter: TokenBucketRateLimiter };
+    const saved = limited.rateLimiter;
+    // One token on a clock that never moves: the first request spends it.
+    limited.rateLimiter = new TokenBucketRateLimiter(1, () => 0);
+    try {
+      assert.strictEqual((await send('GET', '/unknown')).status, 404);
+      assertAbstainBody(await send('GET', '/unknown'), 429, 'rate_limited', 'rate_limited on GET /unknown');
+      assertAbstainBody(await postInfer('{"intent":"X","input":"list users"}'), 429, 'rate_limited', 'rate_limited on POST /v1/infer');
+    } finally {
+      limited.rateLimiter = saved;
+    }
+  });
+});
+
 describe('TokenBucketRateLimiter', () => {
   it('keeps one bucket per client', () => {
     const limiter = new TokenBucketRateLimiter(3, () => 0);
@@ -1451,6 +1559,8 @@ describe('NanoMindDaemon.infer() direct inference', () => {
       assert.deepStrictEqual(await resp.json(), {
         error: 'invalid_request',
         message: 'intent or input is required',
+        attackClass: '',
+        classification: 'abstain',
       });
     }
     assert.deepStrictEqual(engine.inputs, []);
@@ -1490,6 +1600,8 @@ describe('NanoMindDaemon.infer() direct inference', () => {
       error: 'queue_full',
       message: 'Maximum 1 concurrent requests. Try again shortly.',
       activeTasks: 1,
+      attackClass: '',
+      classification: 'abstain',
     });
     assert.strictEqual(daemon.getStatus().activeTasks, 0);
     assert.deepStrictEqual(daemon.getStatus().refusals, { rateLimited: 0, queueFull: 1 }, 'the refusal is counted');

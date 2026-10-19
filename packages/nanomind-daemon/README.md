@@ -158,9 +158,9 @@ Added in 0.4.0 (FGA Step 5 Stage 1, issue #131). `classification` tells the cons
 | Value | Meaning |
 |---|---|
 | `"classified"` | The model produced a usable verdict (benign OR an attack class) at or above `ABSTAIN_CONFIDENCE_FLOOR` (0.5). `attackClass` is authoritative. |
-| `"abstain"` | The model could not produce a usable verdict: inference threw (the HTTP 500 path), the engine reported no usable confidence (a missing or `NaN` score), or the predicted-class confidence was below the floor. `attackClass` is forced to `""` so a low-confidence guess is never actionable; the raw guess is preserved in `evidence`. A non-classifying engine abstains rather than reporting a confident benign. |
+| `"abstain"` | The model could not produce a usable verdict: the daemon answered with an HTTP 400, 404, 413 or 429 error before the model ran, inference threw (the HTTP 500 path), the engine reported no usable confidence (a missing or `NaN` score), or the predicted-class confidence was below the floor. `attackClass` is forced to `""` so a low-confidence guess is never actionable; the raw guess is preserved in `evidence`. A non-classifying engine abstains rather than reporting a confident benign. |
 
-The daemon never emits a transport-level `"fail_open"`. That is the consumer's status for "couldn't reach / couldn't decode the daemon". The HTTP 500 error body also carries `classification: "abstain"` so a consumer that reads the body without checking the status code still sees an explicit abstain.
+The daemon never emits a transport-level `"fail_open"`. That is the consumer's status for "couldn't reach / couldn't decode the daemon". Every error body in [Error responses](#error-responses), HTTP 400, 404, 413, 429 and 500 alike, also carries `attackClass: ""` and `classification: "abstain"` so a consumer that reads the body without checking the status code still sees an explicit abstain.
 
 `ABSTAIN_CONFIDENCE_FLOOR` (0.5) is a conservative Stage-1 heuristic, not a calibrated value. Because the v0.5.0 classifier saturates confidence near 1.0 on most inputs, it rarely trips today; Stage 2 (selective-risk calibration) replaces it.
 
@@ -176,7 +176,7 @@ The fields are required (always present); `attackClass` is empty when the model 
 
 ### Error responses
 
-Each response in this table has a JSON body with an `error` code and a `message`.
+Each response in this table has a JSON body with an `error` code, a `message`, `attackClass: ""` and `classification: "abstain"`.
 
 | Status | `error` | When |
 |---|---|---|
@@ -185,7 +185,7 @@ Each response in this table has a JSON body with an `error` code and a `message`
 | 413 | `request_too_large` | The `/v1/infer` request body is larger than 1MB (1,048,576 bytes). The input is not classified. |
 | 429 | `rate_limited` | The client address sent more than `rateLimitPerSecond` requests/second (100 by default). Applies to every route except `GET /health`, `GET /health/ready` and `GET /v1/status`, and carries a `Retry-After` header. |
 | 429 | `queue_full` | `maxConcurrent` inference requests are already running. Applies to `/v1/infer` only. |
-| 500 | `inference_error` | The engine failed. The body also carries `classification: "abstain"`. |
+| 500 | `inference_error` | The engine failed. The body also carries `confidence: 0` and `latencyMs`. |
 
 The one other error status is 503 from `GET /health/ready`. Its body is the readiness body, with `"ready":false` and a `reason`, and has no `error` or `message`; see [GET /health/ready](#get-healthready).
 

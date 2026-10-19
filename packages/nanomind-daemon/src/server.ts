@@ -245,6 +245,22 @@ export class InferRequestError extends Error {
   }
 }
 
+/**
+ * Serializes the body of an HTTP error answer: the `error` code, the
+ * `message`, the answer's own `fields`, then `attackClass: ""` and
+ * `classification: "abstain"`. Specification §3.4.1 puts those two fields on
+ * every response, so a consumer that reads an error body without its status
+ * code finds an explicit abstain, not two absent fields. They are spread after
+ * `fields`, so `fields` cannot replace them.
+ */
+function errorBody(error: string, message: string, fields: Record<string, unknown> = {}): string {
+  const abstain: Pick<InferResponse, 'attackClass' | 'classification'> = {
+    attackClass: '',
+    classification: 'abstain',
+  };
+  return JSON.stringify({ error, message, ...fields, ...abstain });
+}
+
 export const DEFAULT_CONFIG: DaemonConfig = {
   httpPort: 47200,
   ipcPath: process.platform === 'win32'
@@ -432,10 +448,10 @@ export class NanoMindDaemon extends EventEmitter {
       this.refusals.rateLimited++;
       res.setHeader('Retry-After', '1');
       res.writeHead(429);
-      res.end(JSON.stringify({
-        error: 'rate_limited',
-        message: `Rate limit of ${this.config.rateLimitPerSecond} requests/second exceeded. Try again shortly.`,
-      }));
+      res.end(errorBody(
+        'rate_limited',
+        `Rate limit of ${this.config.rateLimitPerSecond} requests/second exceeded. Try again shortly.`,
+      ));
       return;
     }
 
@@ -486,7 +502,7 @@ export class NanoMindDaemon extends EventEmitter {
 
     // 404
     res.writeHead(404);
-    res.end(JSON.stringify({ error: 'not_found', message: `${method} ${url} not found` }));
+    res.end(errorBody('not_found', `${method} ${url} not found`));
   }
 
   /**
@@ -616,15 +632,11 @@ export class NanoMindDaemon extends EventEmitter {
   private respondRefused(res: ServerResponse, err: InferRequestError): void {
     if (err.code === 'queue_full') {
       res.writeHead(429);
-      res.end(JSON.stringify({
-        error: 'queue_full',
-        message: err.message,
-        activeTasks: this.activeTasks,
-      }));
+      res.end(errorBody('queue_full', err.message, { activeTasks: this.activeTasks }));
       return;
     }
     res.writeHead(400);
-    res.end(JSON.stringify({ error: 'invalid_request', message: err.message }));
+    res.end(errorBody('invalid_request', err.message));
   }
 
   private async handleInfer(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -646,14 +658,11 @@ export class NanoMindDaemon extends EventEmitter {
         // resets a connection that still has unread bytes, and the client
         // then sees EPIPE or ECONNRESET instead of this 413.
         res.writeHead(413);
-        res.end(JSON.stringify({
-          error: 'request_too_large',
-          message: `Request body exceeds ${MAX_REQUEST_BODY_BYTES} bytes`,
-        }));
+        res.end(errorBody('request_too_large', `Request body exceeds ${MAX_REQUEST_BODY_BYTES} bytes`));
         return;
       }
       res.writeHead(400);
-      res.end(JSON.stringify({ error: 'invalid_request', message: 'Invalid JSON body' }));
+      res.end(errorBody('invalid_request', 'Invalid JSON body'));
       return;
     }
 
@@ -672,19 +681,13 @@ export class NanoMindDaemon extends EventEmitter {
       // on every address of a host as an AggregateError with an empty message.
       const message = err instanceof Error ? errorMessage(err) : 'Inference failed';
       res.writeHead(500);
-      // Bug 1 wire contract: attackClass is ALWAYS a string. Even on the
-      // engine-error path the response carries `attackClass: ''` so FGA
-      // Step 5 doesn't have to special-case missing fields. The 500
-      // status code is what tells the consumer that classification did
-      // not run; the empty attackClass is a no-block hint. Stage 1 (#131)
-      // adds `classification: "abstain"` to the body so a consumer that
-      // reads the body without checking the status code STILL sees an
-      // explicit abstain instead of a clean benign.
-      res.end(JSON.stringify({
-        error: 'inference_error',
-        message,
-        attackClass: '',
-        classification: 'abstain' as ClassificationStatus,
+      // The 500 status code is what tells the consumer that classification
+      // did not run. Like every error body, this one carries
+      // `attackClass: ''`, a no-block hint, and `classification: "abstain"`,
+      // so a consumer that reads the body without checking the status code
+      // sees an explicit abstain instead of a clean benign. It also reports
+      // confidence 0 and the latency.
+      res.end(errorBody('inference_error', message, {
         confidence: 0,
         latencyMs: Date.now() - startMs,
       }));

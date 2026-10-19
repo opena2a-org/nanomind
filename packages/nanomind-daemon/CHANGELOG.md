@@ -99,6 +99,14 @@ The classifier runs in a child process of the daemon. `OnnxProcessEngine`, the e
 - The `Response:` line of `nanomind-daemon --help` lists `classification` and marks `evidence` with `?`, as the daemon sends `evidence` only when the model returns a raw label. It listed `remediation` and left out `classification`. A line under it names `remediation` as reserved: `InferResponse` declares it and the daemon does not send it.
 - New test: it runs the built `nanomind-daemon --help` and compares its `Response:` line with the fields `daemon.infer()` returns. It skips until `npm run build` has written `dist/`.
 
+### Error bodies carry `attackClass` and `classification` (#114)
+
+Specification §3.4.1 says `attackClass` and `classification` are emitted on every `/v1/infer` response, but only the success body and the HTTP 500 body carried them. The 400 (`invalid_request`), 404 (`not_found`), 413 (`request_too_large`) and 429 (`rate_limited`, `queue_full`) bodies now carry `attackClass: ""` and `classification: "abstain"` as well, so a consumer that reads an error body without its status code sees an explicit abstain instead of two absent fields.
+
+- The status codes, `error` codes, messages and other fields of each error body are unchanged; the two fields are added.
+- The specification and the README "Error responses" section say what an error body carries, and `abstain` now also covers a request the daemon answered with an error before the model ran.
+- New tests: each error body carries both fields over HTTP, and `spec-conformance.test.ts` checks that `server.ts` writes every error body through the one function that adds them, called with the `error` codes the README lists.
+
 ### Tests
 
 - New tests: a no-confidence engine result abstains; sub-floor confidence abstains and blanks attackClass; a verdict exactly at the inclusive floor classifies through.
