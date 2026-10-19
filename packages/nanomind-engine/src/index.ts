@@ -1,7 +1,8 @@
 /**
  * @nanomind/engine — Core inference backend
  *
- * Wraps llamafile for local LLM inference. Downloads model on first use.
+ * Wraps llamafile for local LLM inference. It downloads nothing: the
+ * llamafile and the model must already be on disk (see ensureReady).
  * Target model: SmolLM2-135M (Q4_K_M quantization, ~80MB)
  *
  * Inference tiers:
@@ -60,7 +61,7 @@ export class NanoMindEngine {
   }
 
   /**
-   * Check if the engine is ready (model + llamafile downloaded).
+   * Check if the engine is ready (model + llamafile on disk).
    */
   async isReady(): Promise<boolean> {
     if (this.ready) return true;
@@ -71,8 +72,10 @@ export class NanoMindEngine {
   }
 
   /**
-   * Ensure model and llamafile are downloaded.
-   * Called automatically on first inference.
+   * Check that the llamafile and the model are on disk. infer() calls this
+   * before it runs the llamafile. It downloads nothing. When a file is
+   * missing, it creates ~/.nanomind/bin and ~/.nanomind/models if they do not
+   * exist, then throws an error that names the path it checked.
    */
   async ensureReady(): Promise<void> {
     if (await this.isReady()) return;
@@ -81,17 +84,16 @@ export class NanoMindEngine {
     await mkdir(LLAMAFILE_DIR, { recursive: true });
 
     if (!existsSync(this.config.llamafilePath)) {
-      console.log('NanoMind: Downloading llamafile runtime...');
-      // Placeholder — actual download URL would be set at build time
       throw new Error(
-        'llamafile not found. Run: nanomind setup (or download manually to ~/.nanomind/bin/llamafile)',
+        `llamafile not found at ${this.config.llamafilePath}. The engine does not download it: ` +
+          'put an executable llamafile at that path, or pass llamafilePath to the NanoMindEngine constructor.',
       );
     }
 
     if (!existsSync(this.config.modelPath)) {
-      console.log('NanoMind: Downloading SmolLM2-135M model...');
       throw new Error(
-        `Model not found at ${this.config.modelPath}. Run: nanomind setup`,
+        `Model not found at ${this.config.modelPath}. The engine does not download it: ` +
+          'put a GGUF model file at that path, or pass modelPath to the NanoMindEngine constructor.',
       );
     }
 
