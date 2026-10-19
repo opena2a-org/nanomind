@@ -86,9 +86,17 @@ The classifier runs in a child process of the daemon. `OnnxProcessEngine`, the e
 - `nanomind-daemon --help` lists `GET /health/ready` with the other routes and says when it answers 200 and when it answers 503. The daemon served the route and the README documented it, but the help listed only `POST /v1/infer`, `GET /v1/status` and `GET /health`.
 - New test in `src/built-package.test.ts`: it runs the built `nanomind-daemon --help` and compares the routes it lists with the route checks in `src/server.ts`.
 
+### Registry key, agentId checks and inference error text (#167)
+
+- `BaseFabricAdapter` takes an `internalApiKey` option, the registry's `INTERNAL_API_KEY`, and `writeASC()` sends it in the `X-Internal-Key` header. docs/SPECIFICATION.md section 11.2 says the internal endpoints, `PATCH /internal/asc/{agentId}` among them, require that key, and `writeASC()` sent no credential. `readRiskSummary()` does not send the key.
+- `writeASC()` does not follow a redirect. A redirect that fetch follows carries the `X-Internal-Key` header on to the address it names, so a 301, 302, 303, 307 or 308 answer now rejects with `ASC write failed:` and its status.
+- `writeASC()` and `readRiskSummary()` refuse an `agentId` that is not a string, and one that contains a lone surrogate, with a `TypeError` before any request is sent. `['..']` and an object whose `toString()` returns `..` reached the parent registry path (`GET /api/v1/risk-summary`, `PATCH /internal/`), and `'a\uD800'` rejected with `URIError: URI malformed`.
+- `POST /v1/infer` answers an engine error that is an `AggregateError` with an empty message, Node's error for a connection refused on every address of a host, with the reasons in the 500 body's `message`, for example `connect ECONNREFUSED ::1:443; connect ECONNREFUSED 127.0.0.1:443`. The `message` was empty.
+- The `nanomind-daemon status` test for a daemon that does not report `refusals` compares the whole output, so a `status` that prints "Daemon is not running" after the Uptime line fails it.
+
 ### Tests
 
-- 21/21 pass (was 18; +3: a no-confidence engine result abstains; sub-floor confidence abstains and blanks attackClass; a verdict exactly at the inclusive floor classifies through).
+- New tests: a no-confidence engine result abstains; sub-floor confidence abstains and blanks attackClass; a verdict exactly at the inclusive floor classifies through.
 - New tests cover the rate limit, `NANOMIND_MODEL_DIR` and the entry-point exports. The last two run the built package and skip until `npm run build` has written `dist/`.
 
 ---

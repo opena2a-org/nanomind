@@ -193,6 +193,32 @@ describe('NanoMindDaemon', () => {
     assert.strictEqual(body.classification, 'abstain', '500 response must carry classification:"abstain"');
   });
 
+  it('puts the reasons of an AggregateError with an empty message into the 500 message', async () => {
+    // Node reports a connection refused on every address of a host as an
+    // AggregateError with an empty message and one error per address.
+    const refused = new AggregateError(
+      [new Error('connect ECONNREFUSED ::1:443'), new Error('connect ECONNREFUSED 127.0.0.1:443')],
+      '',
+    );
+    (daemon as unknown as { engine: DaemonEngine }).engine = {
+      ensureReady: async () => { throw refused; },
+      infer: async () => ({ text: 'stub-result' }),
+    };
+    // Not loaded, so the request loads the model first, as after an idle unload.
+    (daemon as unknown as { modelLoaded: boolean }).modelLoaded = false;
+
+    const resp = await fetch(`http://127.0.0.1:${TEST_PORT}/v1/infer`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ intent: 'INTENT_CHECK', input: 'list secrets' }),
+    });
+    assert.strictEqual(resp.status, 500);
+    const body = await resp.json() as { error: string; message: string; classification: string };
+    assert.strictEqual(body.error, 'inference_error');
+    assert.strictEqual(body.message, 'connect ECONNREFUSED ::1:443; connect ECONNREFUSED 127.0.0.1:443');
+    assert.strictEqual(body.classification, 'abstain');
+  });
+
   it('abstains (and blanks attackClass) below the confidence floor (Stage 1 #131)', async () => {
     // Stub an engine whose argmax confidence is below ABSTAIN_CONFIDENCE_FLOOR.
     // Even though it guesses an attack class, the daemon must downgrade to an

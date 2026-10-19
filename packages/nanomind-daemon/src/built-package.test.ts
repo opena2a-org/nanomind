@@ -210,8 +210,17 @@ describe('nanomind-daemon status: refusals', { skip: !CLI_BUILT && 'dist/ is not
   it('prints no Refused line when the daemon does not report refusals', async () => {
     status = running();
     const stdout = await runStatus();
-    assert.match(stdout, /^ {2}Uptime: +5s$/m, stdout);
-    assert.doesNotMatch(stdout, /Refused/, stdout);
+    // The whole output, so a status that throws after the Uptime line and then
+    // prints "Daemon is not running" fails here.
+    assert.strictEqual(stdout, [
+      'NanoMind Daemon Status:',
+      '  Running:      true',
+      `  Port:         ${port}`,
+      '  Active tasks: 0',
+      '  Model loaded: false',
+      '  Uptime:       5s',
+      '',
+    ].join('\n'));
   });
 });
 
