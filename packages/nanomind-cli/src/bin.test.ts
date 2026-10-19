@@ -17,10 +17,13 @@ describe('nanomind command', () => {
   let scratch: string;
   let emptyPath: string;
   let fakeToolPath: string;
+  let findingToolPath: string;
+  let projectPath: string;
 
-  function nanomind(args: string[], options: { input?: string; path?: string } = {}) {
+  function nanomind(args: string[], options: { input?: string; path?: string; cwd?: string } = {}) {
     return spawnSync(process.execPath, [bin, ...args], {
       input: options.input ?? '',
+      cwd: options.cwd,
       encoding: 'utf8',
       timeout: 30_000,
       env: {
@@ -41,6 +44,14 @@ describe('nanomind command', () => {
     const fakeTool = join(fakeToolPath, 'hackmyagent');
     writeFileSync(fakeTool, '#!/bin/sh\necho "fake-hackmyagent $*"\n');
     chmodSync(fakeTool, 0o755);
+    // Also prints a finding, so that teach mode offers its auto-fix.
+    findingToolPath = join(scratch, 'finding-tools');
+    mkdirSync(findingToolPath);
+    const findingTool = join(findingToolPath, 'hackmyagent');
+    writeFileSync(findingTool, '#!/bin/sh\necho "fake-hackmyagent $*"\necho "[CRED-001] Hardcoded API key (critical)"\n');
+    chmodSync(findingTool, 0o755);
+    projectPath = join(scratch, 'project');
+    mkdirSync(projectPath);
   });
 
   after(() => rmSync(scratch, { recursive: true, force: true }));
@@ -143,6 +154,46 @@ describe('nanomind command', () => {
     assert.strictEqual(run.status, 0, run.stderr);
     assert.ok(run.stdout.includes('hackmyagent was not found on PATH'), run.stdout);
     assert.ok(run.stdout.includes('npm install -g hackmyagent'), run.stdout);
+  });
+
+  it('runs teach mode with nanomind teach and reads its answers from standard input', { skip: process.platform === 'win32' }, () => {
+    const run = nanomind(['teach'], { input: 'y\nn\nn\n', path: findingToolPath, cwd: projectPath });
+    assert.strictEqual(run.status, 0, run.stderr);
+    for (let step = 1; step <= 7; step++) {
+      assert.ok(run.stdout.includes(`Step ${step}/7`), run.stdout);
+    }
+    assert.ok(run.stdout.includes('fake-hackmyagent detect .'), run.stdout);
+    assert.ok(run.stdout.includes('Running: hackmyagent secure . --fix'), run.stdout);
+    assert.ok(run.stdout.includes('fake-hackmyagent secure . --fix'), run.stdout);
+    assert.ok(run.stdout.includes('=== Teach Mode Complete ==='), run.stdout);
+    assert.ok(!run.stdout.includes('nanomind > '), 'teach mode must not start a session');
+  });
+
+  it('starts teach mode when teach is typed in the session', { skip: process.platform === 'win32' }, () => {
+    const run = nanomind([], { input: 'teach\nn\nn\nn\n', path: findingToolPath, cwd: projectPath });
+    assert.strictEqual(run.status, 0, run.stderr);
+    assert.ok(run.stdout.includes('fake-hackmyagent detect .'), run.stdout);
+    assert.ok(run.stdout.includes('[CRED-001] Hardcoded API key (critical)'), run.stdout);
+    assert.ok(run.stdout.includes('Skipping auto-fix.'), run.stdout);
+    assert.ok(run.stdout.includes('=== Teach Mode Complete ==='), run.stdout);
+    assert.ok(!run.stdout.includes("I'm not sure how to help"), run.stdout);
+  });
+
+  it('says how to install the scanner when nanomind teach cannot find it', { skip: process.platform === 'win32' }, () => {
+    const run = nanomind(['teach'], { cwd: projectPath });
+    assert.strictEqual(run.status, 1);
+    assert.match(run.stderr, /hackmyagent was not found on PATH\. Install it with: npm install -g hackmyagent/);
+  });
+
+  it('lists teach in the help and rejects an argument beside it', () => {
+    assert.match(nanomind(['--help']).stdout, /nanomind teach/);
+    for (const args of [['teach', '--no-guard'], ['--no-guard', 'teach'], ['teach', 'now']]) {
+      const run = nanomind(args);
+      assert.strictEqual(run.status, 1, args.join(' '));
+      assert.match(run.stderr, /nanomind teach takes no other arguments/);
+      assert.match(run.stderr, /Usage:/);
+      assert.ok(!run.stdout.includes('Teach Mode'), 'teach mode must not start');
+    }
   });
 
   it('refuses to run a command that a shell could reinterpret', () => {

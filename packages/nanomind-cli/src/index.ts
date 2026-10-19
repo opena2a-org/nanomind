@@ -5,7 +5,8 @@
  * Run directly as the `nanomind` command, it starts the interactive NanoMind
  * prompt, or answers --help and --version. `nanomind --no-guard` starts the
  * session with `noGuard: true`, which skips input screening and prints a
- * warning to stderr.
+ * warning to stderr. `nanomind teach` runs teach mode (teach.ts), which typing
+ * `teach` in a session also starts.
  *
  * Imported, it is the entry point that HMA, secretless-ai, and opena2a
  * adapters delegate to when the user runs their CLI with no arguments.
@@ -23,6 +24,7 @@ import { classifyIntent, mapToCommand, isATCIntent, type IntentClassification } 
 import { ATCIntentHandler } from '@nanomind/atc';
 import { screenInput, detectInputSource, type InputSource, type DetectedPattern } from '@nanomind/guard';
 import { generateArtifact, detectArtifactType, artifactTypeFromInput, listArtifactTypes } from './codegen.ts';
+import { runTeachMode } from './teach.ts';
 
 export interface NanoMindSession {
   cliName: string;
@@ -37,6 +39,9 @@ export interface NanoMindSession {
 
 /** The launch flag that turns off input screening for one session. */
 export const NO_GUARD_FLAG = '--no-guard';
+
+/** The session input, and the `nanomind` argument, that start teach mode. */
+const TEACH_COMMAND = 'teach';
 
 export const NO_GUARD_WARNING =
   'WARNING: --no-guard is set. Piped and file input is not screened for prompt injection in this session.';
@@ -122,8 +127,69 @@ const WELCOME = `
     "scan this project"
     "why is my agent level 2"
     "fix the credential issue"
+  Type "teach" for a 7-step guided walkthrough.
   Type "exit" or Ctrl+C to quit.
 `;
+
+type ReadLine = (prompt: string) => Promise<string | null>;
+type Ask = (question: string) => Promise<string>;
+
+/**
+ * Read the lines of `rl` one at a time: print the prompt, then return the next
+ * line, or null once the input has ended. A session reads its requests and
+ * teach mode its answers through one reader, so the answer to a question is
+ * the line after it, also when the lines are piped in at once.
+ */
+function lineReader(rl: readline.Interface): ReadLine {
+  const lines = rl[Symbol.asyncIterator]();
+  let closed = false;
+  rl.on('close', () => {
+    closed = true;
+  });
+  return async (prompt) => {
+    // Lines that arrived before the input ended are still read after it ends,
+    // when rl.prompt() would throw, so the prompt is written out directly.
+    if (closed) {
+      process.stdout.write(prompt);
+    } else {
+      rl.setPrompt(prompt);
+      rl.prompt();
+    }
+    const next = await lines.next();
+    return next.done ? null : next.value;
+  };
+}
+
+function askWith(read: ReadLine): Ask {
+  return async (question) => {
+    const answer = await read(question);
+    if (answer === null) {
+      throw new Error('The input ended before the question was answered.');
+    }
+    return answer.trim();
+  };
+}
+
+// Teach mode's steps run HackMyAgent commands (detect, secure): through hma
+// when the session runs hma, and through hackmyagent otherwise.
+function teachCli(session: NanoMindSession): string {
+  return (session.targetCli ?? session.cliName) === 'hma' ? 'hma' : STANDALONE_TARGET;
+}
+
+/**
+ * Run teach mode for a session: its commands go through session.onCommand,
+ * and `ask` answers its questions.
+ */
+async function startTeachMode(session: NanoMindSession, ask: Ask): Promise<void> {
+  await runTeachMode({
+    cliName: teachCli(session),
+    projectDir: path.resolve(session.projectDir ?? process.cwd()),
+    registryUrl: session.registryUrl,
+    onCommand: session.onCommand,
+    onPrompt: ask,
+    onPrint: (msg) => console.log(msg),
+  });
+}
 
 /**
  * Start an interactive NanoMind session.
@@ -141,45 +207,41 @@ export async function startSession(session: NanoMindSession): Promise<void> {
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
-    prompt: `${session.cliName} > `,
   });
+  const read = lineReader(rl);
+  const ask = askWith(read);
+  const prompt = `${session.cliName} > `;
 
-  rl.prompt();
+  // Each line is handled before the next one is read. The session ends when
+  // the input does, or on "exit" or "quit".
+  void (async () => {
+    for (let line = await read(prompt); line !== null; line = await read(prompt)) {
+      const input = line.trim();
+      if (!input) continue;
+      if (input === 'exit' || input === 'quit') break;
 
-  rl.on('line', async (line: string) => {
-    const input = line.trim();
-    if (!input) {
-      rl.prompt();
-      return;
-    }
-    if (input === 'exit' || input === 'quit') {
-      rl.close();
-      return;
-    }
+      // Guard: screen piped and file input for injection
+      const screened = screenLine(input, inputSource, session.noGuard);
+      if (screened) {
+        console.log(`\n  ${screened.message}\n`);
+        if (screened.blocked) continue;
+      }
 
-    // Guard: screen piped and file input for injection
-    const screened = screenLine(input, inputSource, session.noGuard);
-    if (screened) {
-      console.log(`\n  ${screened.message}\n`);
-      if (screened.blocked) {
-        rl.prompt();
-        return;
+      try {
+        if (input.toLowerCase() === TEACH_COMMAND) {
+          await startTeachMode(session, ask);
+        } else {
+          await handleInput(input, session, atcHandler);
+        }
+      } catch (err) {
+        console.log(`\n  Error: ${err instanceof Error ? err.message : 'Unknown error'}\n`);
       }
     }
 
-    try {
-      await handleInput(input, session, atcHandler);
-    } catch (err) {
-      console.log(`\n  Error: ${err instanceof Error ? err.message : 'Unknown error'}\n`);
-    }
-
-    rl.prompt();
-  });
-
-  rl.on('close', () => {
+    rl.close();
     console.log('\n  Goodbye.\n');
     process.exit(0);
-  });
+  })();
 }
 
 export async function handleInput(
@@ -370,6 +432,8 @@ Usage:
   nanomind                 Start the interactive session
   nanomind --no-guard      Start it without screening piped or file input
                            for prompt injection (not recommended)
+  nanomind teach           Run teach mode: a 7-step guided walkthrough that
+                           scans this directory with ${STANDALONE_TARGET}
   nanomind --help, -h      Show this help
   nanomind --version, -v   Print the version
 
@@ -383,6 +447,10 @@ Requests the session acts on:
                              ${INSTALL_COMMANDS[STANDALONE_TARGET]}
   trust level of an agent    Looks the agent up in the OpenA2A registry
   build attestation          Prints a CI workflow step
+  teach                      Runs teach mode, as nanomind teach does
+
+Teach mode asks before it runs ${STANDALONE_TARGET} secure . --fix. NanoMind keeps
+no copy of the files the fix changes: undoing it relies on ${STANDALONE_TARGET}.
 
 Environment:
   OPENA2A_REGISTRY_URL   Registry for trust lookups (default: ${DEFAULT_REGISTRY_URL})
@@ -394,8 +462,21 @@ function packageVersion(): string {
 }
 
 /**
- * The `nanomind` command: --help, --version, or the interactive session,
- * screened unless --no-guard is given.
+ * `nanomind teach`: teach mode on its own, with each question answered by the
+ * next line of standard input.
+ */
+async function runTeachCommand(session: NanoMindSession): Promise<void> {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    await startTeachMode(session, askWith(lineReader(rl)));
+  } finally {
+    rl.close();
+  }
+}
+
+/**
+ * The `nanomind` command: --help, --version, teach mode, or the interactive
+ * session, screened unless --no-guard is given.
  */
 export async function runCli(argv: string[]): Promise<void> {
   if (argv.includes('--help') || argv.includes('-h')) {
@@ -406,7 +487,13 @@ export async function runCli(argv: string[]): Promise<void> {
     console.log(packageVersion());
     return;
   }
-  const unknown = argv.find((arg) => arg !== NO_GUARD_FLAG);
+  if (argv.includes(TEACH_COMMAND) && argv.length > 1) {
+    console.error(`nanomind ${TEACH_COMMAND} takes no other arguments\n`);
+    console.error(USAGE);
+    process.exitCode = 1;
+    return;
+  }
+  const unknown = argv.find((arg) => arg !== NO_GUARD_FLAG && arg !== TEACH_COMMAND);
   if (unknown !== undefined) {
     const kind = unknown.startsWith('-') ? 'option' : 'command';
     console.error(`Unknown ${kind}: ${unknown}\n`);
@@ -415,14 +502,19 @@ export async function runCli(argv: string[]): Promise<void> {
     return;
   }
 
-  await startSession({
+  const session: NanoMindSession = {
     cliName: 'nanomind',
     cliVersion: packageVersion(),
     targetCli: STANDALONE_TARGET,
     registryUrl: process.env.OPENA2A_REGISTRY_URL || DEFAULT_REGISTRY_URL,
     onCommand: async (cmd: string, args: string[]) => runCommand(cmd, args),
     noGuard: hasNoGuardFlag(argv),
-  });
+  };
+  if (argv[0] === TEACH_COMMAND) {
+    await runTeachCommand(session);
+    return;
+  }
+  await startSession(session);
 }
 
 // Start the command only when this file is the program that was run. Adapters

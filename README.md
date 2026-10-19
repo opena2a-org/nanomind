@@ -89,11 +89,11 @@ Detects: instruction override, role switching, permission escalation, zero-width
 
 ### Teach Mode
 
-7-step guided onboarding for new users:
+7-step guided onboarding for new users. Run `nanomind teach`, or type `teach` in a session. The detect, scan and fix steps run HackMyAgent.
 
 1. Detect project type
 2. Run HMA scan, explain findings
-3. Offer auto-fix with rollback
+3. Offer auto-fix: `secure --fix` runs only when you answer yes. NanoMind keeps no copy of the files the fix changes, so undoing it relies on HackMyAgent
 4. Generate CI/CD artifact
 5. Show current trust level (if registered)
 6. Explain ATC and trust levels
