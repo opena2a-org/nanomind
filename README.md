@@ -117,7 +117,7 @@ Detects: instruction override, role switching, permission escalation, zero-width
 
 ### Anomaly Detection
 
-The package's `main` is its TypeScript source, which Node does not load from `node_modules`, so import the compiled `dist/index.js`:
+Version 0.1.0 on npm points `main` at its TypeScript source, which Node does not load from `node_modules`, so import the compiled `dist/index.js`:
 
 ```typescript
 import { RuntimeTwin } from '@nanomind/runtime-core/dist/index.js';

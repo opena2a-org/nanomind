@@ -1,24 +1,25 @@
 # @nanomind/runtime-core
 
-RuntimeTwin: behavioral twin (LSTM) for ARP anomaly detection.
+RuntimeTwin: a statistical behavioral twin for ARP anomaly detection.
 
-This package is the canonical home of the LSTM behavioral scorer that sits between L0 rule-based classification and L2 LLM-assisted assessment in the three-tier ARP intelligence stack. Each ARP event flows through the twin on a non-blocking path. The twin computes an anomaly score against a warm-up baseline, contributes to federated learning via differential-private gradient submissions, and hands a `BehavioralRiskScore` back to the coordinator.
+This package holds `RuntimeTwin`, the statistical behavioral scorer that sits between L0 rule-based classification and L2 LLM-assisted assessment in the three-tier ARP intelligence stack. It builds a baseline from the first 100 events it processes, or starts from one it reads from `~/.opena2a/arp/baseline-<agentId>.json` at construction. The baseline holds event-type counts, the capabilities seen, and the mean and standard deviation of the time between events, kept with Welford's online algorithm. It then scores each event by adding fixed weights for six factors (unknown capability, timing anomaly, rare event type, L0 escalation, burst, error spike), caps the sum at 1.0, and maps the score to one of five actions: `allow`, `alert`, `throttle`, `suspend` or `kill`.
+
+`processEvent` returns an `AnomalyResult` (`score`, `action`, `reason`), with a score of 0 while the baseline is being built. `scoreARPEvent` scores an event without changing the baseline and returns an `AnomalyResult`, or `null` while the twin is disabled or its baseline holds fewer than 100 events. When the twin is enabled, `attach(engine)` registers an `onEvent` handler that schedules the scoring of each event with `setImmediate`, so the handler returns before the event is scored. With `fleetEnabled: true`, the twin also posts clipped, noised gradients for federated learning (see below).
 
 ## Three-tier ARP model
 
 - **L0**: Rule-based classification (microseconds, every event)
-- **L1**: RuntimeTwin (milliseconds, this package) and classification drift detection
+- **L1**: RuntimeTwin (milliseconds, this package)
 - **L2**: LLM-assisted assessment (seconds, budget-controlled)
 
 ## Status
 
-- Version 0.1.0, private workspace package.
-- Consumers import the canonical `RuntimeTwin` class when the package is published.
-- Pending publication, `hackmyagent/src/arp/intelligence/runtime-twin.ts` temporarily mirrors this source. Any change to scoring logic must be mirrored in both files until the publication cut-over (tracked as PR 1b in `todo/NANOMIND_V3_AUDIT.md` Section 8).
+- Published on npm as `@nanomind/runtime-core`.
+- Version 0.1.0 on npm points `main` at `src/index.ts`, which Node does not load from `node_modules`. With that version, import `@nanomind/runtime-core/dist/index.js`.
 
 ## Why this package exists
 
-Section 9 item 1 of the v3 audit found two parallel behavioral-twin implementations: a statistical twin in `packages/nanomind-runtime/` and an LSTM twin in `hackmyagent/src/arp/intelligence/nanomind-l1.ts`. Abdel approved path (a) on 2026-04-11: retire the statistical twin, relocate the LSTM to this package. This package is the result.
+`RuntimeTwin` is kept in its own package so an ARP integration can use it without depending on hackmyagent. The package has no dependencies outside the Node.js built-in modules, and it declares the event shape it reads (`ARPEventInput`) and the engine hook it attaches to (`EventEngineLike`) instead of importing them.
 
 ## Federated learning wire format
 
