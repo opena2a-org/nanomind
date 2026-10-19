@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "NanoMind Intent Schema",
   "version": "2.0",
-  "description": "Complete intent taxonomy for NanoMind CLI and ATC intents",
+  "description": "Complete intent taxonomy for NanoMind CLI, ATC and security scanning intents",
   "intents": [
     { "id": "SCAN", "tier": "local-fast", "description": "Run security scan on current project" },
     { "id": "FIX", "tier": "local-fast", "description": "Auto-fix security findings" },
@@ -19,6 +19,12 @@
     { "id": "RISK_SCORE", "tier": "local-fast", "description": "Show ARS (Agent Risk Score) breakdown", "atcIntent": true },
     { "id": "REVOCATION", "tier": "local-fast", "description": "Check ATC revocation status and reason", "atcIntent": true },
     { "id": "EXPOSURE", "tier": "local-fast", "description": "Show exposure ceiling and blast radius", "atcIntent": true },
-    { "id": "ATTEST", "tier": "local-full", "description": "Generate build attestation for CI pipeline", "atcIntent": true }
+    { "id": "ATTEST", "tier": "local-full", "description": "Generate build attestation for CI pipeline", "atcIntent": true },
+    { "id": "SCAN_SKILL_INTENT", "description": "Classify a skill's intent as malicious, benign or edge case", "scanIntent": true },
+    { "id": "SCAN_SOUL_COMPLETENESS", "description": "Analyze SOUL.md governance completeness", "scanIntent": true },
+    { "id": "SCAN_MCP_SCOPE", "description": "Analyze MCP tool description scope", "scanIntent": true },
+    { "id": "SCAN_PROMPT_INTENT", "description": "Analyze a system prompt's behavioral envelope", "scanIntent": true },
+    { "id": "SCAN_VERSION_DELTA", "description": "Semantic diff between skill versions", "scanIntent": true },
+    { "id": "SCAN_EXPLAIN", "description": "Explain a scan finding", "scanIntent": true }
   ]
 }
