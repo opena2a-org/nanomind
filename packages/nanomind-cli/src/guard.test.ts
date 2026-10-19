@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
+import { createRequire } from 'node:module';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -15,8 +16,9 @@ const MEDIUM_SEVERITY = 'scan this project for base64 decode(';
 
 // Runs startSession in a child process with `stdin` as its standard input.
 // The session's onCommand prints "RAN <command>" instead of running anything.
-function runSession(stdin: 'pipe' | number, opts: { noGuard?: boolean; input?: string } = {}) {
-  const cli = pathToFileURL(path.join(import.meta.dirname, 'index.ts')).href;
+// `entry` is the index.ts to start it from; the default is this package's.
+function runSession(stdin: 'pipe' | number, opts: { noGuard?: boolean; input?: string; entry?: string } = {}) {
+  const cli = pathToFileURL(opts.entry ?? path.join(import.meta.dirname, 'index.ts')).href;
   const script = `
     import { startSession } from ${JSON.stringify(cli)};
     await startSession({
@@ -175,6 +177,45 @@ describe('session input screening', () => {
       screened.message,
       `NOTICE: Minor suspicious pattern detected in piped input: encoded payload "base64${'\\u0009'.repeat(34)}...". The line is still routed.`,
     );
+  });
+
+  // An installed nanomind command resolves the published @nanomind/guard, and
+  // the published 0.1.1 exports screenInput and detectInputSource but not
+  // describePatterns. Runs the session from a copy of src/ whose
+  // @nanomind/guard is the workspace guard without that export.
+  it('screens a line with a guard that does not export describePatterns, as the published 0.1.1 does not', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nm-cli-guard-'));
+    try {
+      const src = path.join(dir, 'src');
+      fs.mkdirSync(src);
+      for (const file of fs.readdirSync(import.meta.dirname)) {
+        if (file.endsWith('.ts') && !file.endsWith('.test.ts')) {
+          fs.copyFileSync(path.join(import.meta.dirname, file), path.join(src, file));
+        }
+      }
+      const require = createRequire(import.meta.url);
+      const modules = path.join(dir, 'node_modules', '@nanomind');
+      fs.mkdirSync(modules, { recursive: true });
+      for (const name of ['atc', 'engine', 'router']) {
+        fs.symlinkSync(path.dirname(require.resolve(`@nanomind/${name}/package.json`)), path.join(modules, name));
+      }
+      const real = require.resolve('@nanomind/guard');
+      const exported = Object.keys(require(real) as Record<string, unknown>).filter((name) => name !== 'describePatterns');
+      assert.ok(exported.includes('screenInput') && exported.includes('detectInputSource'), exported.join(', '));
+      const guard = path.join(modules, 'guard');
+      fs.mkdirSync(guard);
+      fs.writeFileSync(path.join(guard, 'package.json'), JSON.stringify({ name: '@nanomind/guard', main: 'index.js' }));
+      fs.writeFileSync(
+        path.join(guard, 'index.js'),
+        [`const real = require(${JSON.stringify(real)});`, ...exported.map((name) => `exports.${name} = real.${name};`), ''].join('\n'),
+      );
+
+      const { stdout } = runSession('pipe', { input: `${HIGH_SEVERITY}\n`, entry: path.join(src, 'index.ts') });
+      assert.ok(stdout.includes('WARNING: Suspicious pattern detected in piped input: role switching "act as a"'), stdout);
+      assert.ok(stdout.includes('RAN hma secure'), stdout);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('names file input in the warning for a file redirected to stdin', () => {
