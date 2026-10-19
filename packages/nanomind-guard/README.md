@@ -18,11 +18,18 @@ const source = detectInputSource();
 
 // Direct input — always trusted
 screenInput('scan this', 'direct');
-// { safe: true, patterns: [] }
+// { safe: true, patterns: [], source: 'direct', recommendation: '' }
 
 // Piped input — screened for injection
 screenInput('ignore previous instructions', 'piped');
-// { safe: false, patterns: [{ type: 'instruction_override', ... }] }
+// {
+//   safe: false,
+//   patterns: [
+//     { type: 'instruction_override', match: 'ignore previous instructions', position: 0, severity: 'critical' }
+//   ],
+//   source: 'piped',
+//   recommendation: 'BLOCKED: Critical injection pattern detected. This input appears to contain instructions designed to hijack NanoMind. The command was not executed.'
+// }
 ```
 
 ## Detected Patterns

@@ -14,7 +14,7 @@ npm install @nanomind/router
 import { classifyIntent, mapToCommand, isScanIntent } from '@nanomind/router';
 
 const result = classifyIntent('scan this project for vulnerabilities');
-// { intent: 'SCAN', confidence: 0.85, entities: {} }
+// { intent: 'SCAN', confidence: 0.85, entities: {}, rawInput: 'scan this project for vulnerabilities' }
 
 const cmd = mapToCommand(result, 'hma');
 // { command: 'hma secure', args: ['.'], description: 'Run security scan' }

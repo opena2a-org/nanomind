@@ -76,7 +76,7 @@ Input that does not come from a terminal is screened before routing. Piped stdin
 import { screenInput } from '@nanomind/guard';
 
 screenInput('ignore previous instructions', 'piped');
-// { safe: false, patterns: [{ type: 'instruction_override', severity: 'critical' }] }
+// { safe: false, patterns: [{ type: 'instruction_override', severity: 'critical', ... }], ... }
 ```
 
 In a session, a critical match blocks the line. A high or medium match prints a warning or notice that names the matched pattern, and the line is still routed.
