@@ -49,7 +49,7 @@ Type `teach` in the session, or run `nanomind teach`, for a 7-step walkthrough: 
 | llamafile 0.8.13 | `~/.nanomind/bin/llamafile` | 241,352,637 bytes |
 | SmolLM2-135M, Q4_K_M | `~/.nanomind/models/SmolLM2-135M.Q4_K_M.gguf` | 101,016,128 bytes |
 
-Each file comes from a pinned URL. The download goes to a new file beside its path, and that file is moved to the path only when its size and SHA-256 match the pinned ones; otherwise it is deleted, and setup prints why and exits with status 1. A file already at its path is not downloaded again. Setup keeps it when its SHA-256 matches; when it does not, setup leaves it as it is, names it, and exits with status 1. Delete such a file and run `nanomind setup` again to download the pinned one.
+Each file comes from a pinned URL. The download goes to a new file beside its path, and that file is moved to the path only when its size and SHA-256 match the pinned ones; otherwise it is deleted, and setup prints why and exits with status 1. A setup interrupted during a download, by Ctrl+C for example, leaves that file behind. Its name holds the ID of the process that wrote it, and the next download to the same path deletes it unless a process other than the one downloading runs with that ID. A file already at its path is not downloaded again. Setup keeps it when its SHA-256 matches; when it does not, setup leaves it as it is, names it, and exits with status 1. Delete such a file and run `nanomind setup` again to download the pinned one.
 
 ### Inside a CLI tool
 

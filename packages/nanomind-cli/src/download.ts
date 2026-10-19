@@ -12,9 +12,9 @@
 
 import { createHash, randomBytes } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { mkdir, open, rename, rm, stat, type FileHandle } from 'node:fs/promises';
+import { mkdir, open, readdir, rename, rm, stat, type FileHandle } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 
 /** A file to download: where it comes from, and the size and SHA-256 it must have. */
 export interface DownloadSource {
@@ -61,18 +61,29 @@ export function sha256File(path: string): Promise<string> {
   });
 }
 
+// The names of the partial files that downloads in this process are writing.
+// The set is kept on globalThis, so that the copies of this file in
+// @nanomind/engine and @nanomind/cli share it when one process loads both.
+const PARTIALS = Symbol.for('@nanomind/download partials');
+const writing = ((globalThis as typeof globalThis & { [PARTIALS]?: Set<string> })[PARTIALS] ??= new Set<string>());
+
 /**
  * Download `source` to `path`, creating its directory when it is missing. The
- * bytes go to a new file beside `path`, created with permission `mode`. That
- * file is read back and renamed to `path` only when it holds `source.size`
- * bytes with SHA-256 `source.sha256`; otherwise it is deleted and the call
- * rejects, so a failed download leaves nothing at `path`. Resolves to the size
- * of the file.
+ * bytes go to a new file beside `path`, created with permission `mode` and
+ * named `<path>.<process ID>.<12 hex digits>.part`. That file is read back and
+ * renamed to `path` only when it holds `source.size` bytes with SHA-256
+ * `source.sha256`; otherwise it is deleted and the call rejects, so a failed
+ * download leaves nothing at `path`. A process that ends during the download,
+ * on Ctrl+C for example, cannot delete that file, so the call first deletes
+ * the ones that earlier downloads to `path` left behind (see
+ * removeStalePartials). Resolves to the size of the file.
  */
 export async function downloadVerified(source: DownloadSource, path: string, mode: number): Promise<number> {
-  const partial = `${path}.${randomBytes(6).toString('hex')}.part`;
+  const partial = `${path}.${process.pid}.${randomBytes(6).toString('hex')}.part`;
+  writing.add(basename(partial));
   try {
     await mkdir(dirname(path), { recursive: true });
+    await removeStalePartials(path);
     const file = await open(partial, 'wx', mode);
     await fetchInto(source, file).finally(() => file.close());
     // Checked on disk, so a write that fell short fails the checks too.
@@ -91,6 +102,43 @@ export async function downloadVerified(source: DownloadSource, path: string, mod
     // one); the error to report is the first.
     await rm(partial, { force: true }).catch(() => undefined);
     throw new Error(`Could not download ${source.url} to ${path}: ${reason(error)}`);
+  } finally {
+    writing.delete(basename(partial));
+  }
+}
+
+/**
+ * Delete the partial files beside `path` that earlier downloads to it left
+ * behind because their process ended before it could delete them: those
+ * named for a process ID that no running process has, and those named for
+ * this process that no download in it is writing, since a process that ran
+ * before this one can have had the same ID. Other files are left as they are,
+ * and a file it cannot delete, or a directory it cannot list, does not stop
+ * the download.
+ */
+async function removeStalePartials(path: string): Promise<void> {
+  const prefix = `${basename(path)}.`;
+  const names = await readdir(dirname(path)).catch(() => [] as string[]);
+  for (const name of names) {
+    if (!name.startsWith(prefix)) continue;
+    const match = /^(\d+)\.[0-9a-f]{12}\.part$/.exec(name.slice(prefix.length));
+    if (!match) continue;
+    const pid = Number(match[1]);
+    // The partial file of a download that is still running.
+    if (pid === process.pid ? writing.has(name) : isRunning(pid)) continue;
+    await rm(join(dirname(path), name), { force: true }).catch(() => undefined);
+  }
+}
+
+// Whether a process with ID `pid` is running. Signal 0 sends nothing: kill
+// only checks that the process exists, and fails with EPERM when it runs as
+// another user.
+function isRunning(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'EPERM';
   }
 }
 
