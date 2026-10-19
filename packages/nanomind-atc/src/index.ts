@@ -9,6 +9,10 @@
 
 const DEFAULT_REGISTRY_URL = 'https://api.oa2a.org';
 const DEFAULT_TIMEOUT_MS = 10 * 1000;
+// The longest timeout a Node timer keeps: 2^31 - 1 milliseconds.
+// AbortSignal.timeout takes up to 2^32 - 1, but sets a timeout above this one
+// to 1 millisecond, which would end the lookup at once.
+const MAX_TIMEOUT_MS = 2147483647;
 
 export interface ATCSummary {
   agentId: string;
@@ -48,7 +52,10 @@ export interface ATCConfig {
   cacheTTLMs?: number;
   /**
    * How long a lookup waits for the registry's whole answer, body included,
-   * in milliseconds. Defaults to 10 seconds.
+   * in milliseconds. Defaults to 10 seconds. A whole number from 0 to
+   * 2147483647; the constructor throws a RangeError for any other number,
+   * such as 1500.5, -1, NaN, Infinity or 4294967295, and a TypeError for a
+   * value that is not a number, such as the string '300'.
    */
   timeoutMs?: number;
 }
@@ -96,6 +103,24 @@ function inSeconds(ms: number): string {
   return `${seconds} ${seconds === 1 ? 'second' : 'seconds'}`;
 }
 
+// The timeoutMs option, checked when the handler is made. AbortSignal.timeout
+// throws a RangeError or TypeError, not an ATCLookupError, at each lookup for
+// a value that is not a whole number from 0 to 2^32 - 1, and ends the lookup
+// after 1 millisecond for one above MAX_TIMEOUT_MS.
+function checkTimeout(value: unknown): number {
+  const accepted = `timeoutMs must be a whole number of milliseconds from 0 to ${MAX_TIMEOUT_MS}`;
+  if (typeof value === 'string') {
+    throw new TypeError(`${accepted}, received the string "${value}"`);
+  }
+  if (typeof value !== 'number') {
+    throw new TypeError(`${accepted}, received a value of type ${typeof value}`);
+  }
+  if (!Number.isInteger(value) || value < 0 || value > MAX_TIMEOUT_MS) {
+    throw new RangeError(`${accepted}, received ${value}`);
+  }
+  return value;
+}
+
 export class ATCIntentHandler {
   private registryUrl: string;
   private apiKey: string | undefined;
@@ -107,7 +132,7 @@ export class ATCIntentHandler {
     this.registryUrl = config.registryUrl ?? DEFAULT_REGISTRY_URL;
     this.apiKey = config.apiKey;
     this.cacheTTL = config.cacheTTLMs ?? 5 * 60 * 1000; // 5 min default
-    this.timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    this.timeoutMs = checkTimeout(config.timeoutMs ?? DEFAULT_TIMEOUT_MS);
   }
 
   /**
