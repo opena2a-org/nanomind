@@ -113,6 +113,47 @@ def _emit_drift_human(drifted: list[str], *, daemon_down: bool) -> None:
         _emit("  run `nanomind-analyst install` to update it")
 
 
+def _emit_socket_missing_human(agent_print: str) -> None:
+    """Say whether a loaded agent with no socket is booting or stopped.
+
+    launchd's state for the service tells the two apart. While it reports
+    the daemon running, the daemon may still be booting. serve() returns
+    after a stop signal or the idle exit and unlinks the socket as it does;
+    main() then exits 0, and the plist's KeepAlive (see render_plist) asks
+    launchd to restart neither. `nanomind-analyst start` brings that daemon
+    back; waiting for its `listening on` line does not.
+    """
+    log = paths.log_path()
+    state = launchd.service_state(agent_print)
+    if state == "not running":
+        exit_code = launchd.last_exit_code(agent_print)
+        if exit_code is None:
+            _emit("daemon: not running")
+        else:
+            _emit(f"daemon: not running (last exit code {exit_code})")
+        if exit_code == 0:
+            _emit("  it was stopped, or exited after its idle window")
+        elif exit_code is not None:
+            _emit(
+                f"  it exited with an error: check `nanomind-analyst logs` "
+                f"(tail {log})"
+            )
+        _emit("  run `nanomind-analyst start`, then rerun status")
+        return
+    _emit(
+        "  daemon may still be booting: it serves once its log "
+        "shows `listening on`"
+    )
+    _emit(f"  check `nanomind-analyst logs` (tail {log}), then rerun status")
+    if state != "running":
+        # launchd gave no `running` / `not running` state (no state line, or
+        # another value), so the daemon may equally have stopped.
+        _emit(
+            "  if it was stopped, or exited after its idle window, run "
+            "`nanomind-analyst start`"
+        )
+
+
 def run_status(*, json_output: bool = False) -> int:
     """Report whether the agent is loaded and whether the daemon answers.
 
@@ -121,7 +162,7 @@ def run_status(*, json_output: bool = False) -> int:
     Exit codes match the human-formatted mode: 0 when fully ready, 1
     otherwise.
     """
-    rc, _agent_state = launchd.print_state()
+    rc, agent_print = launchd.print_state()
     if rc != 0:
         if json_output:
             _emit_json({"agent": {"loaded": False}})
@@ -148,14 +189,7 @@ def run_status(*, json_output: bool = False) -> int:
             )
         else:
             _emit(f"socket: missing at {paths.SOCK_PATH}")
-            _emit(
-                "  daemon may still be booting: it serves once its log "
-                "shows `listening on`"
-            )
-            _emit(
-                f"  check `nanomind-analyst logs` (tail {paths.log_path()}), "
-                "then rerun status"
-            )
+            _emit_socket_missing_human(agent_print)
             _emit_drift_human(drifted, daemon_down=True)
         return 1
     if not json_output:

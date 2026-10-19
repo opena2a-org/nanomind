@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import os
 import plistlib
+import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -226,8 +227,47 @@ def stop_service() -> None:
 def print_state() -> tuple[int, str]:
     """Return (returncode, stdout) of `launchctl print gui/<UID>/<label>`.
 
-    Used by `nanomind-analyst status` to report whether the agent is loaded.
+    Used by `nanomind-analyst status` to report whether the agent is loaded,
+    and, through service_state() and last_exit_code(), whether the daemon
+    process is running.
     """
     target = f"gui/{paths.uid()}/{paths.LABEL}"
     result = _run_launchctl(["print", target])
     return (result.returncode, result.stdout or result.stderr or "")
+
+
+def _print_field(print_output: str, key: str) -> str | None:
+    """Value of a field of the service's own block in `launchctl print` output.
+
+    The service's fields are indented by one tab. Nested blocks (the resource
+    and jetsam coalitions) print their own `state = active` one tab deeper,
+    so only the one-tab line is the service's.
+    """
+    prefix = f"\t{key} = "
+    for line in print_output.splitlines():
+        if line.startswith(prefix):
+            return line[len(prefix):].strip()
+    return None
+
+
+def service_state(print_output: str) -> str | None:
+    """The service's `state` in `launchctl print` output.
+
+    `running` while the daemon process exists and `not running` while it
+    does not; None when the output carries no such line.
+    """
+    return _print_field(print_output, "state")
+
+
+def last_exit_code(print_output: str) -> int | None:
+    """The service's `last exit code` in `launchctl print` output.
+
+    None when the line is absent or does not start with a number, as with
+    `(never exited)` before the first exit. Text after the leading number is
+    ignored.
+    """
+    value = _print_field(print_output, "last exit code")
+    if value is None:
+        return None
+    match = re.match(r"-?\d+", value)
+    return int(match.group()) if match else None
