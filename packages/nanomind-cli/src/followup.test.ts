@@ -98,10 +98,24 @@ describe('handleInput: follow-up references', () => {
     assert.deepStrictEqual(status.commands, []);
   });
 
-  it('takes no agent from a not-found answer that quotes the id', async () => {
+  it('takes no agent from a not-found answer that quotes the id', async (t) => {
+    // The registry answers that it has no ATC for the agent.
+    t.mock.method(globalThis, 'fetch', async () => new Response('{}', { status: 404 }));
     const memory = createSessionMemory();
     const query = await turn('what is the trust level of agent: billing-agent', memory);
     assert.ok(query.output.includes('No ATC found for agent "billing-agent"'), query.output);
+    const status = await turn('why is my agent level 2', memory);
+    assert.ok(!status.output.includes('> Reading'), status.output);
+  });
+
+  it('records no answer, and takes no agent, from a lookup the registry could not answer', async () => {
+    const memory = createSessionMemory();
+    const query = await turn('what is the trust level of agent: billing-agent', memory);
+    assert.ok(
+      query.output.includes(`Could not look up agent "billing-agent": the registry at ${REGISTRY} could not be reached (`),
+      query.output,
+    );
+    assert.strictEqual(memory.context.getContext().lastOutput, null);
     const status = await turn('why is my agent level 2', memory);
     assert.ok(!status.output.includes('> Reading'), status.output);
   });
@@ -114,8 +128,11 @@ describe('handleInput: follow-up references', () => {
 describe('handleInput: routes of the router in this repository', () => {
   it('takes no agent id from "why is my agent level 2"', async () => {
     const status = await turn('why is my agent level 2', createSessionMemory());
-    assert.ok(status.output.includes('No ATC found for agent current.'), status.output);
-    assert.ok(!status.output.includes('agent level'), status.output);
+    assert.ok(
+      status.output.includes(`Could not look up agent "current": the registry at ${REGISTRY} could not be reached (`),
+      status.output,
+    );
+    assert.ok(!status.output.includes('agent "level"'), status.output);
     assert.deepStrictEqual(status.commands, []);
   });
 

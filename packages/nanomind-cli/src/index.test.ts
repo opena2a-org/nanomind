@@ -85,3 +85,42 @@ describe('handleInput: GENERATE', () => {
     assert.ok(output.includes(`registry-url: ${REGISTRY}`), output);
   });
 });
+
+describe('handleInput: trust lookups', () => {
+  // A trust question and a question about why an agent has its level.
+  const REQUESTS = ['what is the trust level of agent:test-agent', 'why is agent:test-agent level 2'];
+
+  it('says no ATC was found when the registry answers 404', async (t) => {
+    t.mock.method(globalThis, 'fetch', async () => new Response('{}', { status: 404 }));
+    for (const request of REQUESTS) {
+      const { output } = await run(request, projectDir());
+      assert.ok(output.includes('No ATC found for agent'), output);
+      assert.ok(!output.includes('Could not look up'), output);
+    }
+  });
+
+  it('reports a registry error status as a failed lookup that names the registry address', async (t) => {
+    t.mock.method(globalThis, 'fetch', async () => new Response('{}', { status: 500 }));
+    for (const request of REQUESTS) {
+      const { output } = await run(request, projectDir());
+      assert.strictEqual(
+        output,
+        `\n  Could not look up agent "test-agent": the registry at ${REGISTRY} answered with status 500.\n`,
+      );
+    }
+  });
+
+  it('reports a registry it cannot reach as a failed lookup that names the registry address', async (t) => {
+    t.mock.method(globalThis, 'fetch', async () => {
+      throw new TypeError('fetch failed', { cause: new Error('getaddrinfo ENOTFOUND registry.test') });
+    });
+    for (const request of REQUESTS) {
+      const { output } = await run(request, projectDir());
+      assert.strictEqual(
+        output,
+        `\n  Could not look up agent "test-agent": the registry at ${REGISTRY} could not be reached` +
+          ' (fetch failed: getaddrinfo ENOTFOUND registry.test).\n',
+      );
+    }
+  });
+});

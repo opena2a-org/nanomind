@@ -15,7 +15,7 @@
  */
 
 import * as path from 'node:path';
-import { ATCIntentHandler } from '@nanomind/atc';
+import { ATCIntentHandler, ATCLookupError } from '@nanomind/atc';
 import { generateArtifact, detectArtifactType, type ArtifactType } from './codegen.ts';
 
 export interface TeachContext {
@@ -105,15 +105,22 @@ export async function runTeachMode(ctx: TeachContext): Promise<void> {
     print('  Save this to your CI configuration.\n');
   }
 
-  // Step 5: Show ARS if registered
+  // Step 5: Show ARS if registered. A lookup the registry could not answer
+  // says nothing about whether the agent is registered, so its reason is
+  // printed instead and the walkthrough goes on.
   print('  Step 5/7: Checking registry...');
-  const trustInfo = await atcHandler.getTrustLevel(projectName);
-  if (trustInfo) {
-    print(`  Your agent "${projectName}" is registered.`);
-    print(`  Trust Level: ${trustInfo.trustLevel}`);
-    print(`  Trust Score: ${trustInfo.trustScore}\n`);
-  } else {
-    print(`  Agent "${projectName}" is not yet registered in the OpenA2A Registry.\n`);
+  try {
+    const trustInfo = await atcHandler.getTrustLevel(projectName);
+    if (trustInfo) {
+      print(`  Your agent "${projectName}" is registered.`);
+      print(`  Trust Level: ${trustInfo.trustLevel}`);
+      print(`  Trust Score: ${trustInfo.trustScore}\n`);
+    } else {
+      print(`  Agent "${projectName}" is not yet registered in the OpenA2A Registry.\n`);
+    }
+  } catch (err) {
+    if (!(err instanceof ATCLookupError)) throw err;
+    print(`  ${err.message}\n`);
   }
 
   // Step 6: Explain ATC

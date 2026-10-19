@@ -125,3 +125,39 @@ describe('teach mode auto-fix step', () => {
     ]);
   });
 });
+
+describe('teach mode registry step', () => {
+  // Runs teach mode in a new project directory, answering no to each question,
+  // and checks that step 5 printed the failed lookup that `reason` ends, not
+  // an unregistered agent, and that the walkthrough went on to the end.
+  async function assertLookupFailure(reason: string): Promise<void> {
+    const dir = projectDir();
+    const printed: string[] = [];
+    await runTeachMode({
+      cliName: 'hackmyagent',
+      projectDir: dir,
+      registryUrl: REGISTRY,
+      onCommand: async () => '',
+      onPrompt: async () => 'n',
+      onPrint: (msg) => printed.push(msg),
+    });
+
+    const transcript = printed.join('\n');
+    const lookup = printed.findIndex((line) =>
+      line.startsWith(`  Could not look up agent "${path.basename(dir)}": the registry at ${REGISTRY} ${reason}`),
+    );
+    assert.ok(lookup > printed.indexOf('  Step 5/7: Checking registry...'), transcript);
+    assert.ok(!transcript.includes('is not yet registered'), transcript);
+    assert.ok(printed.findIndex((line) => line.includes('Step 6/7')) > lookup, transcript);
+    assert.ok(transcript.includes('=== Teach Mode Complete ==='), transcript);
+  }
+
+  it('reports a registry it cannot reach as a failed lookup and goes on to step 6', async () => {
+    await assertLookupFailure('could not be reached (');
+  });
+
+  it('reports a registry error status as a failed lookup and goes on to step 6', async (t) => {
+    t.mock.method(globalThis, 'fetch', async () => new Response('{}', { status: 500 }));
+    await assertLookupFailure('answered with status 500.');
+  });
+});

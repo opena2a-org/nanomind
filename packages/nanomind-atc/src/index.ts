@@ -47,6 +47,42 @@ export interface ATCConfig {
   cacheTTLMs?: number;
 }
 
+/**
+ * A lookup the registry could not answer: it answered with an error status
+ * other than 404, or with a body that could not be read as JSON, or it could
+ * not be reached. Such a lookup says nothing about whether the registry has
+ * an ATC for the agent; a 404 is the registry's answer that it has none. The
+ * message names the agent, the registry address and the reason.
+ */
+export class ATCLookupError extends Error {
+  readonly agentId: string;
+  readonly registryUrl: string;
+  /** The status the registry answered with; undefined when it was not reached. */
+  readonly status: number | undefined;
+
+  constructor(agentId: string, registryUrl: string, reason: string, status?: number, cause?: unknown) {
+    super(
+      `Could not look up agent "${agentId}": the registry at ${registryUrl} ${reason}.`,
+      cause === undefined ? undefined : { cause },
+    );
+    this.name = 'ATCLookupError';
+    this.agentId = agentId;
+    this.registryUrl = registryUrl;
+    this.status = status;
+  }
+}
+
+// Why a request failed: the error's message, then the message of the error
+// that caused it, or its code when that message is empty. For a request that
+// does not reach the server, Node's fetch throws "fetch failed" and keeps the
+// reason in the cause.
+function failureReason(err: unknown): string {
+  if (!(err instanceof Error)) return String(err);
+  const cause = err.cause;
+  const detail = cause instanceof Error ? cause.message || (cause as NodeJS.ErrnoException).code : undefined;
+  return detail ? `${err.message}: ${detail}` : err.message;
+}
+
 export class ATCIntentHandler {
   private registryUrl: string;
   private apiKey: string | undefined;
@@ -60,7 +96,9 @@ export class ATCIntentHandler {
   }
 
   /**
-   * TRUST_QUERY intent — get trust level of an agent.
+   * TRUST_QUERY intent — get trust level of an agent. Returns null when the
+   * registry answers 404, that it has no ATC for the agent, and throws an
+   * ATCLookupError when the registry could not answer.
    */
   async getTrustLevel(agentId: string): Promise<ATCSummary | null> {
     const atc = await this.fetchATC(agentId);
@@ -81,7 +119,9 @@ export class ATCIntentHandler {
   /**
    * ATC_STATUS intent — explain WHY the trust level is what it is.
    * This is the most important method. Produces plain-English explanation
-   * with specific remediation steps.
+   * with specific remediation steps. An agent the registry has no ATC for
+   * gets a summary of how to get started; a lookup the registry could not
+   * answer throws an ATCLookupError instead.
    */
   async explainTrustLevel(agentId: string): Promise<ATCExplanation> {
     const atc = await this.fetchATC(agentId);
@@ -218,7 +258,9 @@ export class ATCIntentHandler {
   }
 
   /**
-   * Fetch ATC from Registry (with caching).
+   * Fetch ATC from Registry (with caching). Returns null when the registry
+   * answers 404, and throws an ATCLookupError when it could not answer. Only
+   * an ATC is cached, so the next call asks the registry again after either.
    */
   private async fetchATC(agentId: string): Promise<any | null> {
     const cacheKey = `atc:${agentId}`;
@@ -227,27 +269,42 @@ export class ATCIntentHandler {
       return cached.data;
     }
 
-    try {
-      // Phase 2 of the ATC to ATX rename: the registry publishes the
-      // verifier surface under /api/v1/atx/* as the primary path with
-      // /api/v1/atc/* as a deprecated alias that returns RFC 8594
-      // Sunset headers. Switching here drops this client off the
-      // legacy-path metric well before Phase 3 removal.
-      const url = `${this.registryUrl}/api/v1/atx/${encodeURIComponent(agentId)}`;
-      const headers: Record<string, string> = { 'Accept': 'application/json' };
-      if (this.apiKey) {
-        headers['Authorization'] = `Bearer ${this.apiKey}`;
-      }
-
-      const response = await fetch(url, { headers });
-      if (!response.ok) return null;
-
-      const data = await response.json();
-      this.cache.set(cacheKey, { data, expiresAt: Date.now() + this.cacheTTL });
-      return data;
-    } catch {
-      return null;
+    // Phase 2 of the ATC to ATX rename: the registry publishes the
+    // verifier surface under /api/v1/atx/* as the primary path with
+    // /api/v1/atc/* as a deprecated alias that returns RFC 8594
+    // Sunset headers. Switching here drops this client off the
+    // legacy-path metric well before Phase 3 removal.
+    const url = `${this.registryUrl}/api/v1/atx/${encodeURIComponent(agentId)}`;
+    const headers: Record<string, string> = { 'Accept': 'application/json' };
+    if (this.apiKey) {
+      headers['Authorization'] = `Bearer ${this.apiKey}`;
     }
+
+    let response: Response;
+    try {
+      response = await fetch(url, { headers });
+    } catch (err) {
+      throw new ATCLookupError(agentId, this.registryUrl, `could not be reached (${failureReason(err)})`, undefined, err);
+    }
+    if (response.status === 404) return null;
+    if (!response.ok) {
+      throw new ATCLookupError(agentId, this.registryUrl, `answered with status ${response.status}`, response.status);
+    }
+
+    let data: unknown;
+    try {
+      data = await response.json();
+    } catch (err) {
+      throw new ATCLookupError(
+        agentId,
+        this.registryUrl,
+        `answered with status ${response.status} and a body that could not be read as JSON`,
+        response.status,
+        err,
+      );
+    }
+    this.cache.set(cacheKey, { data, expiresAt: Date.now() + this.cacheTTL });
+    return data;
   }
 }
 
