@@ -2,7 +2,7 @@
 
 **Version:** 3.2
 **Status:** Active
-**Last Updated:** 2026-09-04
+**Last Updated:** 2026-10-18
 **Maintainer:** NanoMind model owner
 
 ---
@@ -107,8 +107,9 @@ NanoMind is NOT a standalone train-and-ship pipeline. It is a **closed-loop inte
 ┌─────────────────────────────────────────────────────────────────┐
 │  5. TRAINING PIPELINE                                           │
 │     Corpus build → train-tme-mlx.py (MLX) → export-onnx.py     │
-│     → push-to-huggingface.py → GitHub Actions CI                │
-│     → repository_dispatch → all consumer tools                  │
+│     → push-to-huggingface.py, run by hand from the private      │
+│     training tree; no workflow in this repository uploads a     │
+│     model to Hugging Face                                       │
 └────────────────────────┬────────────────────────────────────────┘
                          │
                          ▼
@@ -116,7 +117,8 @@ NanoMind is NOT a standalone train-and-ship pipeline. It is a **closed-loop inte
 │  6. MODEL DISTRIBUTION                                          │
 │     GET /api/v1/nanomind/latest — Auto-update endpoint          │
 │     HuggingFace: opena2a/nanomind-security-classifier           │
-│     repository_dispatch event → HMA downloads new model         │
+│     Consumer tools updated by hand with the new SHA-256         │
+│     hashes (TRAINING-PLAYBOOK.md Step 10)                       │
 │     SHA-256 verification → inference resumes with new model     │
 │                                                                 │
 │     ──── LOOP RESTARTS AT STEP 1 ────                           │
@@ -257,10 +259,12 @@ Corpus (nanomind-training repo, augmented with Registry exports)
   -> MLX weights (.npz) + tokenizer.json + eval-report.json
   -> export-onnx.py (MLX -> PyTorch -> ONNX)
   -> ONNX model (.onnx + .onnx.data)
-  -> push-to-huggingface.py (publish to opena2a/nanomind-security-classifier)
-  -> GitHub Actions CI (auto-publish on main push)
+  -> push-to-huggingface.py, run by hand from the private training tree
+     (publish to opena2a/nanomind-security-classifier)
   -> Consumer tools download via SHA-256 verified fetch
 ```
+
+Models are uploaded to Hugging Face by hand; no workflow in this repository uploads one. The `Validate Model Manifest` workflow (`.github/workflows/publish-models.yml`) checks `nanomind-models.json` and does not publish ([EVALUATION-STANDARD.md](EVALUATION-STANDARD.md) section 7.1).
 
 ### 3.7 Inference Pipeline (in consumer tools)
 
@@ -524,7 +528,7 @@ A model version can be promoted to "latest" when:
 2. Write model card (see [MODEL-CARD-TEMPLATE.md](MODEL-CARD-TEMPLATE.md))
 3. Update `nanomind-models.json`
 4. Commit and push to feature branch
-5. CI auto-publishes to HuggingFace
+5. Upload the model to Hugging Face by hand from the private training tree (see [TRAINING-PLAYBOOK.md](TRAINING-PLAYBOOK.md) Step 9). CI does not publish it: the `Validate Model Manifest` workflow checks `nanomind-models.json` when a pull request or a push to `main` changes it.
 6. Update all consumer tools with new SHA-256 hashes
 7. Run consumer integration tests
 8. Merge to main
@@ -558,9 +562,9 @@ Benchmark datasets are stored in `nanomind-training/benchmarks/` and MUST NOT ov
 
 ### 9.3 Continuous Benchmarking
 
-- Benchmarks run automatically on every model push via GitHub Actions
-- Results are appended to `benchmark-history.json` for trend tracking
-- Any benchmark failure blocks the release
+Not in place yet. No workflow in this repository runs a benchmark or blocks a release on one; benchmarks are run outside this repository, from the private training tree. Released versions have shipped without some of the benchmarks in 9.1: the [v0.4.0](model-cards/v0.4.0.md) and [v0.5.0](model-cards/v0.5.0.md) model cards record no latency measurement and no robustness run.
+
+The goal is a CI job that runs when `nanomind-models.json` gains a model version: it checks each file's size against the budget in section 7 and its SHA-256 hash against the manifest, runs the latency benchmark, and blocks the release when a check fails.
 
 ## 10. Roadmap to 99.999%
 
