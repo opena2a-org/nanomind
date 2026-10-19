@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- `classifyIntent` finds the words of a pattern that had `.*` between
+  them (SCAN_SKILL_INTENT, SCAN_SOUL_COMPLETENESS, SCAN_MCP_SCOPE,
+  ATC_STATUS, REVOCATION, ATTEST, SECRETS_EXPOSE, NAVIGATE and GENERATE)
+  in order on one line, and gives the intent the pattern gave: the router
+  test compares the two on 20,000 generated inputs. The pattern re-read
+  the rest of the line from each place its first word matched, so an
+  input repeating that word took time quadratic in its length. "show "
+  repeated to 16 KB, 32 KB and 64 KB classified in 24 ms, 92 ms and
+  385 ms, and classifies in 0.14 ms, 0.28 ms and 0.50 ms; 1 MiB of it,
+  the daemon's request body limit, classifies in 7.8 ms.
 - NAVIGATE has a pattern: "open", "show", "view" or "display" before
   "dashboard" or "report", tried after the SECRETS_EXPOSE patterns and
   before SCAN. "open the dashboard" and "show the report" give NAVIGATE

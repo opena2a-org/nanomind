@@ -456,3 +456,146 @@ describe('Router README', () => {
     }
   });
 });
+
+// The intent patterns before the rows with `.*` between their words were
+// rewritten as matchers that find the words in order, one line at a time. The
+// tests below check that classifyIntent gives the intent these patterns give,
+// and that an input repeating one of the words is classified in linear time.
+describe('Intent patterns whose words are matched in order', () => {
+  const previousFix = /\b(fix|repair|patch|remediate|auto-?fix)\b/i;
+  const previousStatus = /\b(status|how (secure|safe)|summary|overview)\b/i;
+  const previousPatterns: Array<{ pattern: RegExp; intent: IntentType; unless?: RegExp[] }> = [
+    { pattern: /\bscan.*(skill|intent).*malicious\b/i, intent: 'SCAN_SKILL_INTENT' },
+    { pattern: /\b(soul|governance).*(complet|coverage|gap)/i, intent: 'SCAN_SOUL_COMPLETENESS' },
+    { pattern: /\bmcp.*(scope|permission|tool\s*desc)\b/i, intent: 'SCAN_MCP_SCOPE' },
+    { pattern: /\b(system\s*prompt|prompt\s*intent|behavioral\s*envelope)\b/i, intent: 'SCAN_PROMPT_INTENT' },
+    { pattern: /\b(version\s*delta|semantic\s*diff|skill\s*update)\b/i, intent: 'SCAN_VERSION_DELTA' },
+    { pattern: /\bexplain\s*(finding|scan\s*result|detection)\b/i, intent: 'SCAN_EXPLAIN' },
+    { pattern: /\b(trust\s*level|trust\s*score|trusted)\b/i, intent: 'TRUST_QUERY' },
+    { pattern: /\b(why.*(level|trust|score)|explain.*(trust|level|atc))\b/i, intent: 'ATC_STATUS' },
+    { pattern: /\b(risk\s*score|ars|blast\s*radius)\b/i, intent: 'RISK_SCORE' },
+    { pattern: /\b(revok(ed|e|ation)|why.*blocked)\b/i, intent: 'REVOCATION' },
+    { pattern: /\b(exposure|ceiling|exposure\s*ceiling)\b/i, intent: 'EXPOSURE' },
+    { pattern: /\b(attest|attestation|build.*(trust|atc)|add.*ci.*trust)\b/i, intent: 'ATTEST' },
+    { pattern: /\b(secrets?|credentials?|keys?|tokens?|passwords?|env)\b.*\b(exposed?|leak(s|ed|ing)?|find|check)\b/i, intent: 'SECRETS_EXPOSE' },
+    { pattern: /\b(exposed?|leak(s|ed|ing)?|find|check)\b.*\b(secrets?|credentials?|keys?|tokens?|passwords?|env)\b/i, intent: 'SECRETS_EXPOSE' },
+    { pattern: /\b(open|show|view|display)\b.*\b(dashboards?|reports?)\b/i, intent: 'NAVIGATE', unless: [previousFix, previousStatus] },
+    { pattern: /\b(scan|check|audit|inspect|analyze|secure|detect)\b/i, intent: 'SCAN' },
+    { pattern: previousFix, intent: 'FIX' },
+    { pattern: /\b(generate|create|make|build|setup|configure)\b.*\b(action|docker|ci|yaml|config)\b/i, intent: 'GENERATE' },
+    { pattern: /\b(compare|diff|changed|difference|delta)\b/i, intent: 'COMPARE' },
+    { pattern: previousStatus, intent: 'STATUS' },
+    { pattern: /\b(set|configure|config|setting|preference)\b/i, intent: 'CONFIG' },
+    { pattern: /\b(explain|what (does|is|are)|describe|tell me about|meaning)\b/i, intent: 'EXPLAIN' },
+    { pattern: /\b(help|command|what can|how do|usage)\b/i, intent: 'HELP' },
+  ];
+
+  function previousIntent(input: string): IntentType {
+    const trimmed = input.trim();
+    for (const { pattern, intent, unless } of previousPatterns) {
+      if (unless?.some((skip) => skip.test(trimmed))) continue;
+      if (pattern.test(trimmed)) return intent;
+    }
+    return 'UNKNOWN';
+  }
+
+  it('matches the words of a row in order on one line, as the pattern with `.*` did', () => {
+    const cases: Array<[string, IntentType]> = [
+      ['show me the latest report', 'NAVIGATE'],
+      ['the report, then show it', 'UNKNOWN'],
+      ['show\nthe report', 'UNKNOWN'],
+      ['show\nshow the report', 'NAVIGATE'],
+      ['showreport', 'UNKNOWN'],
+      ['Display the DASHBOARDS', 'NAVIGATE'],
+      ['scan the skill for malicious intent', 'SCAN_SKILL_INTENT'],
+      ['scan for malicious skill', 'SCAN'],
+      ['add ci trust', 'ATTEST'],
+      ['add trust to ci', 'UNKNOWN'],
+      ['build trust\r\nadd ci', 'ATTEST'],
+      ['build\u{2028}trust', 'UNKNOWN'],
+      ['why was the agent blocked', 'REVOCATION'],
+      ['explain the atc level', 'ATC_STATUS'],
+      ['find the leaked keys', 'SECRETS_EXPOSE'],
+      ['create a docker config', 'GENERATE'],
+      ['the docker config was created', 'CONFIG'],
+      ['mcp tool description scope', 'SCAN_MCP_SCOPE'],
+      ['soul coverage', 'SCAN_SOUL_COMPLETENESS'],
+    ];
+    for (const [input, expected] of cases) {
+      assert.strictEqual(previousIntent(input), expected, `previous pattern for ${JSON.stringify(input)}`);
+      assert.strictEqual(classifyIntent(input).intent, expected, JSON.stringify(input));
+    }
+  });
+
+  it('gives the intent of the previous patterns on 20000 generated inputs', () => {
+    // The words of the rewritten rows, words that share a stem with them but
+    // are not them, words of the other rows, and filler.
+    const words = [
+      'scan', 'skill', 'intent', 'malicious', 'soul', 'governance', 'complete', 'coverage', 'gap',
+      'mcp', 'scope', 'permission', 'tool desc', 'tooldesc', 'why', 'level', 'trust', 'score',
+      'explain', 'atc', 'blocked', 'attest', 'attestation', 'build', 'add', 'ci', 'secret',
+      'secrets', 'credential', 'credentials', 'key', 'keys', 'token', 'tokens', 'password',
+      'passwords', 'env', 'expose', 'exposed', 'leak', 'leaks', 'leaked', 'leaking', 'find',
+      'check', 'open', 'show', 'view', 'display', 'dashboard', 'dashboards', 'report', 'reports',
+      'generate', 'create', 'make', 'setup', 'configure', 'action', 'docker', 'yaml', 'config',
+      'scanner', 'skills', 'intents', 'maliciously', 'souls', 'gaps', 'scoped', 'trusted',
+      'levels', 'scores', 'explained', 'blocks', 'builder', 'adds', 'cis', 'secretive', 'keyed',
+      'exposure', 'leakage', 'finder', 'checked', 'showing', 'opened', 'viewer', 'displays',
+      'reporting', 'created', 'maker', 'configs', 'fix', 'status', 'summary', 'risk', 'ars',
+      'revoked', 'ceiling', 'help', 'set', 'compare', 'the', 'my', 'a', 'to', 'for', 'is', 'and',
+      'please', 'project', 'agent', '2', 'it', 'now', 'report!', 'x',
+    ];
+    const separators = [' ', ' ', ' ', '', '\n', '\r\n', '\u{2028}', '\u{2029}', '-', ', ', '  ', '\t'];
+    const casings: Array<(word: string) => string> = [
+      (word) => word,
+      (word) => word.toUpperCase(),
+      (word) => word[0].toUpperCase() + word.slice(1),
+    ];
+    // mulberry32 with a fixed seed, so the corpus is the same on every run.
+    let state = 184;
+    const random = (): number => {
+      state = (state + 0x6d2b79f5) >>> 0;
+      let t = state;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    const pick = <T>(items: T[]): T => items[Math.floor(random() * items.length)];
+    for (let i = 0; i < 20000; i++) {
+      const count = 1 + Math.floor(random() * 10);
+      let input = pick(casings)(pick(words));
+      for (let j = 1; j < count; j++) input += pick(separators) + pick(casings)(pick(words));
+      assert.strictEqual(classifyIntent(input).intent, previousIntent(input), JSON.stringify(input));
+    }
+  });
+
+  // Each input repeats a word that opens one of the rewritten rows and holds
+  // no word that completes the row. The pattern with `.*` re-read the rest of
+  // the input from every repetition, so its time grew four times per doubling
+  // of the input, and eight times for the rows with three words.
+  const repeatedWords: Array<[string, number]> = [
+    ['scan skill ', 8],
+    ['soul ', 128],
+    ['mcp ', 128],
+    ['why ', 128],
+    ['explain ', 128],
+    ['build ', 128],
+    ['add ci ', 8],
+    ['secrets ', 128],
+    ['check ', 128],
+    ['show ', 128],
+    ['create ', 128],
+  ];
+  for (const [word, kb] of repeatedWords) {
+    it(`classifies ${kb} KB of "${word}" repeated in under 200 ms`, () => {
+      const input = word.repeat(Math.ceil((kb * 1024) / word.length));
+      let fastest = Infinity;
+      for (let run = 0; run < 3; run++) {
+        const start = performance.now();
+        classifyIntent(input);
+        fastest = Math.min(fastest, performance.now() - start);
+      }
+      assert.ok(fastest < 200, `${fastest.toFixed(1)} ms`);
+    });
+  }
+});

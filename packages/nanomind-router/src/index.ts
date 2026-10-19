@@ -50,38 +50,83 @@ export interface CommandMapping {
 const FIX_PATTERN = /\b(fix|repair|patch|remediate|auto-?fix)\b/i;
 const STATUS_PATTERN = /\b(status|how (secure|safe)|summary|overview)\b/i;
 
+/** What an intent pattern offers: a RegExp, or a matcher from inOrder(). */
+interface InputMatcher {
+  test(input: string): boolean;
+}
+
+// The characters `.` does not match, so a pattern with `.*` matches within one line.
+const LINE_TERMINATORS = /[\n\r\u{2028}\u{2029}]/u;
+
+/**
+ * A matcher for `parts` appearing in order on one line of the input, with
+ * anything between them: what the pattern `/A.*B/` (or `/A.*B.*C/`) matches,
+ * in time linear in the input. That pattern re-reads the rest of the line from
+ * every place A matches, so an input that repeats a word of A and never
+ * completes the pattern takes time quadratic in its length, cubic with three
+ * parts. This matcher reads each line once per part: it takes the first match
+ * of each part, searched from the end of the part before it. The answer is the
+ * same as the pattern's when no match of a part can lie inside another match
+ * of the same part, which holds for whole words and for alternatives none of
+ * which contains another. The parts carry no g or y flag.
+ */
+function inOrder(first: RegExp, ...rest: RegExp[]): InputMatcher {
+  const later = rest.map((part) => new RegExp(part.source, `${part.flags}g`));
+  return {
+    test(input: string): boolean {
+      return input.split(LINE_TERMINATORS).some((line) => {
+        const head = first.exec(line);
+        if (!head) return false;
+        let end = head.index + head[0].length;
+        for (const part of later) {
+          part.lastIndex = end;
+          const match = part.exec(line);
+          if (!match) return false;
+          end = match.index + match[0].length;
+        }
+        return true;
+      });
+    },
+  };
+}
+
 // Pattern-based fast classification (no LLM needed for obvious intents)
 // Order matters: more specific patterns first, general patterns last.
 // A pattern is skipped when the input matches one of its `unless` patterns.
-const INTENT_PATTERNS: Array<{ pattern: RegExp; intent: IntentType; unless?: RegExp[] }> = [
+// Consecutive rows with the same intent are the alternatives of one pattern.
+const INTENT_PATTERNS: Array<{ pattern: InputMatcher; intent: IntentType; unless?: RegExp[] }> = [
   // SCAN intents (programmatic, invoked by HMA --semantic flag)
-  { pattern: /\bscan.*(skill|intent).*malicious\b/i, intent: 'SCAN_SKILL_INTENT' },
-  { pattern: /\b(soul|governance).*(complet|coverage|gap)/i, intent: 'SCAN_SOUL_COMPLETENESS' },
-  { pattern: /\bmcp.*(scope|permission|tool\s*desc)\b/i, intent: 'SCAN_MCP_SCOPE' },
+  { pattern: inOrder(/\bscan/i, /(skill|intent)/i, /malicious\b/i), intent: 'SCAN_SKILL_INTENT' },
+  { pattern: inOrder(/\b(soul|governance)/i, /(complet|coverage|gap)/i), intent: 'SCAN_SOUL_COMPLETENESS' },
+  { pattern: inOrder(/\bmcp/i, /(scope|permission|tool\s*desc)\b/i), intent: 'SCAN_MCP_SCOPE' },
   { pattern: /\b(system\s*prompt|prompt\s*intent|behavioral\s*envelope)\b/i, intent: 'SCAN_PROMPT_INTENT' },
   { pattern: /\b(version\s*delta|semantic\s*diff|skill\s*update)\b/i, intent: 'SCAN_VERSION_DELTA' },
   { pattern: /\bexplain\s*(finding|scan\s*result|detection)\b/i, intent: 'SCAN_EXPLAIN' },
   // ATC intents (specific — must be before general EXPLAIN/STATUS)
   { pattern: /\b(trust\s*level|trust\s*score|trusted)\b/i, intent: 'TRUST_QUERY' },
-  { pattern: /\b(why.*(level|trust|score)|explain.*(trust|level|atc))\b/i, intent: 'ATC_STATUS' },
+  { pattern: inOrder(/\bwhy/i, /(level|trust|score)\b/i), intent: 'ATC_STATUS' },
+  { pattern: inOrder(/\bexplain/i, /(trust|level|atc)\b/i), intent: 'ATC_STATUS' },
   { pattern: /\b(risk\s*score|ars|blast\s*radius)\b/i, intent: 'RISK_SCORE' },
-  { pattern: /\b(revok(ed|e|ation)|why.*blocked)\b/i, intent: 'REVOCATION' },
+  { pattern: /\brevok(ed|e|ation)\b/i, intent: 'REVOCATION' },
+  { pattern: inOrder(/\bwhy/i, /blocked\b/i), intent: 'REVOCATION' },
   { pattern: /\b(exposure|ceiling|exposure\s*ceiling)\b/i, intent: 'EXPOSURE' },
-  { pattern: /\b(attest|attestation|build.*(trust|atc)|add.*ci.*trust)\b/i, intent: 'ATTEST' },
+  { pattern: /\b(attest|attestation)\b/i, intent: 'ATTEST' },
+  { pattern: inOrder(/\bbuild/i, /(trust|atc)\b/i), intent: 'ATTEST' },
+  { pattern: inOrder(/\badd/i, /ci/i, /trust\b/i), intent: 'ATTEST' },
   // Secrets (before SCAN, which also matches "check"); the noun may come before or after the verb
-  { pattern: /\b(secrets?|credentials?|keys?|tokens?|passwords?|env)\b.*\b(exposed?|leak(s|ed|ing)?|find|check)\b/i, intent: 'SECRETS_EXPOSE' },
-  { pattern: /\b(exposed?|leak(s|ed|ing)?|find|check)\b.*\b(secrets?|credentials?|keys?|tokens?|passwords?|env)\b/i, intent: 'SECRETS_EXPOSE' },
+  { pattern: inOrder(/\b(secrets?|credentials?|keys?|tokens?|passwords?|env)\b/i, /\b(exposed?|leak(s|ed|ing)?|find|check)\b/i), intent: 'SECRETS_EXPOSE' },
+  { pattern: inOrder(/\b(exposed?|leak(s|ed|ing)?|find|check)\b/i, /\b(secrets?|credentials?|keys?|tokens?|passwords?|env)\b/i), intent: 'SECRETS_EXPOSE' },
   // Navigate (before SCAN, so "show the scan report" opens the report). An input
   // that also matches the FIX or STATUS pattern skips it and is classified by the
   // patterns below, so "show the status report" stays STATUS and "open the report
   // and fix issues" stays FIX.
-  { pattern: /\b(open|show|view|display)\b.*\b(dashboards?|reports?)\b/i, intent: 'NAVIGATE', unless: [FIX_PATTERN, STATUS_PATTERN] },
+  { pattern: inOrder(/\b(open|show|view|display)\b/i, /\b(dashboards?|reports?)\b/i), intent: 'NAVIGATE', unless: [FIX_PATTERN, STATUS_PATTERN] },
   // Scan
   { pattern: /\b(scan|check|audit|inspect|analyze|secure|detect)\b/i, intent: 'SCAN' },
   // Fix
   { pattern: FIX_PATTERN, intent: 'FIX' },
   // Generate
-  { pattern: /\b(generate|create|make|build|setup|configure)\b.*\b(action|docker|ci|yaml|config)\b/i, intent: 'GENERATE' },
+  { pattern: inOrder(/\b(generate|create|make|build|setup|configure)\b/i, /\b(action|docker|ci|yaml|config)\b/i), intent: 'GENERATE' },
   // Compare
   { pattern: /\b(compare|diff|changed|difference|delta)\b/i, intent: 'COMPARE' },
   // Status
