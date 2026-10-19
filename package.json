@@ -8,7 +8,7 @@
     "integrations/*"
   ],
   "scripts": {
-    "build": "npm run build --workspace=@nanomind/engine --workspace=@nanomind/router && npm run build --workspaces --if-present",
+    "build": "npm run build --workspace=@nanomind/engine --workspace=@nanomind/router --workspace=@nanomind/guard && npm run build --workspaces --if-present",
     "check:docs": "node scripts/check-docs-prose.mjs",
     "test": "npm run check:docs && node --test test/*.test.mjs && npm test --workspaces --if-present",
     "test:root": "node --test test/*.test.mjs"
