@@ -40,23 +40,36 @@ describe('nanomind command', () => {
     });
   }
 
-  // Runs the session against `registryUrl` with `input` on its standard input
-  // and resolves with what it printed. Unlike nanomind(), it leaves this
-  // process free to answer the session from a registry it serves itself.
-  function session(registryUrl: string, input: string): Promise<string> {
+  // Runs the command with `args` against `registryUrl`, with `input` on its
+  // standard input, and resolves with its exit status, the signal that ended
+  // it, if any, and what it printed. Unlike nanomind(), it leaves this process
+  // free to answer the command from a registry it serves itself.
+  function runAgainst(
+    registryUrl: string,
+    args: string[],
+    input: string,
+    options: { path?: string; cwd?: string } = {},
+  ): Promise<{ status: number | null; signal: NodeJS.Signals | null; stdout: string }> {
     return new Promise((resolve, reject) => {
-      const child = spawn(process.execPath, [bin], {
+      const child = spawn(process.execPath, [bin, ...args], {
+        cwd: options.cwd,
         timeout: 30_000,
-        env: { PATH: emptyPath, OPENA2A_REGISTRY_URL: registryUrl },
+        env: { PATH: options.path ?? emptyPath, OPENA2A_REGISTRY_URL: registryUrl },
       });
       let stdout = '';
       child.stdout.setEncoding('utf8').on('data', (chunk: string) => {
         stdout += chunk;
       });
       child.on('error', reject);
-      child.on('close', () => resolve(stdout));
+      child.on('close', (status, signal) => resolve({ status, signal, stdout }));
       child.stdin.end(input);
     });
+  }
+
+  // Runs the session against `registryUrl` with `input` on its standard input
+  // and resolves with what it printed.
+  async function session(registryUrl: string, input: string): Promise<string> {
+    return (await runAgainst(registryUrl, [], input)).stdout;
   }
 
   before(() => {
@@ -256,6 +269,44 @@ describe('nanomind command', () => {
       unreachable,
     );
     assert.ok(!unreachable.includes('No ATC found'), unreachable);
+  });
+
+  // A lookup waits 10 seconds for the registry, so the session and teach mode
+  // run at the same time and the test takes about that long.
+  it('reports a registry that takes the request and never answers as a failed lookup after 10 seconds, in the session and at the registry step of teach mode', { skip: process.platform === 'win32' }, async () => {
+    const requests: string[] = [];
+    const registry = createServer((req) => {
+      requests.push(`${req.method} ${req.url}`);
+    });
+    await new Promise<void>((resolve) => registry.listen(0, '127.0.0.1', resolve));
+    const address = `http://127.0.0.1:${(registry.address() as AddressInfo).port}`;
+    const failed = (agent: string) =>
+      `Could not look up agent "${agent}": the registry at ${address} did not answer within 10 seconds.`;
+    try {
+      const [inSession, inTeach] = await Promise.all([
+        runAgainst(address, [], 'what is the trust level of agent:test-agent\nexit\n'),
+        runAgainst(address, ['teach'], 'n\nn\n', { path: fakeToolPath, cwd: projectPath }),
+      ]);
+
+      // The session reads the line after the question, and that line ends it.
+      assert.deepStrictEqual([inSession.status, inSession.signal], [0, null], inSession.stdout);
+      const lookup = inSession.stdout.indexOf(`\n  ${failed('test-agent')}\n`);
+      assert.ok(lookup !== -1, inSession.stdout);
+      assert.ok(inSession.stdout.indexOf('Goodbye.') > lookup, inSession.stdout);
+
+      // Teach mode prints the failed lookup at step 5 and goes on to the end.
+      assert.deepStrictEqual([inTeach.status, inTeach.signal], [0, null], inTeach.stdout);
+      const step5 = inTeach.stdout.indexOf('Step 5/7: Checking registry...');
+      const teachLookup = inTeach.stdout.indexOf(`  ${failed('project')}\n`);
+      assert.ok(step5 !== -1 && teachLookup > step5, inTeach.stdout);
+      assert.ok(inTeach.stdout.indexOf('Step 6/7') > teachLookup, inTeach.stdout);
+      assert.ok(inTeach.stdout.includes('=== Teach Mode Complete ==='), inTeach.stdout);
+
+      assert.deepStrictEqual(requests.sort(), ['GET /api/v1/atx/project', 'GET /api/v1/atx/test-agent']);
+    } finally {
+      registry.closeAllConnections();
+      registry.close();
+    }
   });
 
   it('runs teach mode with nanomind teach and reads its answers from standard input', { skip: process.platform === 'win32' }, () => {
