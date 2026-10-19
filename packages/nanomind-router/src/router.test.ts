@@ -85,6 +85,44 @@ describe('NanoMind Router', () => {
     assert.strictEqual(classifyIntent('why is my agent level 2').intent, 'ATC_STATUS');
   });
 
+  // An agent id is taken only where the input marks one
+  it('takes no agent id from "why is my agent level 2"', () => {
+    assert.deepStrictEqual(classifyIntent('why is my agent level 2').entities, {});
+  });
+
+  it('takes no agent id from the word after an unmarked "agent"', () => {
+    for (const input of [
+      'is this agent trusted',
+      'is my agent trusted',
+      'check my agent trust level',
+      'why is the agent at level 2',
+      'scan my agent for vulnerabilities',
+      'why is agent billing-agent level 2',
+      'is agent "my agent" trusted',
+    ]) {
+      assert.strictEqual(classifyIntent(input).entities.agentId, undefined, input);
+    }
+  });
+
+  it('takes the agent id from agent:<id>, a quoted id or a DID after "agent"', () => {
+    const cases: Array<[string, string]> = [
+      ['trust level of agent:my-agent', 'my-agent'],
+      ['trust level of agent: my-agent', 'my-agent'],
+      ['why is agent : billing-agent level 2', 'billing-agent'],
+      ['Agent: acme/agent trust level', 'acme/agent'],
+      ['is agent "my-agent" trusted', 'my-agent'],
+      ["is agent 'my-agent' trusted", 'my-agent'],
+      ['trust level of agent: "my-agent"', 'my-agent'],
+      ["trust level of agent: 'my-agent'", 'my-agent'],
+      ['is agent did:web:example.org trusted', 'did:web:example.org'],
+      ['trust level of agent: did:web:example.org', 'did:web:example.org'],
+      ['why is my agent level 2, agent: billing-agent', 'billing-agent'],
+    ];
+    for (const [input, agentId] of cases) {
+      assert.strictEqual(classifyIntent(input).entities.agentId, agentId, input);
+    }
+  });
+
   it('classifies "show risk score" as RISK_SCORE', () => {
     assert.strictEqual(classifyIntent('show risk score').intent, 'RISK_SCORE');
   });
@@ -267,6 +305,29 @@ describe('Per-CLI command tables', () => {
     assert.strictEqual(mapToCommand(intent('TRUST_QUERY', { agentId: 'my-agent;id' }), 'opena2a'), null);
     assert.strictEqual(mapToCommand(intent('TRUST_QUERY', { agentId: '--help' }), 'hma'), null);
     assert.deepStrictEqual(mapToCommand(intent('TRUST_QUERY', { agentId: 'did:web:example.org' }), 'hma')?.args, ['did:web:example.org']);
+  });
+
+  it('routes "why is my agent level 2" to opena2a trust explain with no agent id', () => {
+    for (const cliName of Object.keys(COMMAND_TABLES)) {
+      assert.deepStrictEqual(route('why is my agent level 2', cliName), {
+        command: 'opena2a trust explain',
+        args: [],
+        description: 'Explain trust level',
+      }, cliName);
+    }
+  });
+
+  it('appends a marked agent id to the trust commands', () => {
+    assert.deepStrictEqual(route('why is agent: billing-agent level 2', 'opena2a'), {
+      command: 'opena2a trust explain',
+      args: ['billing-agent'],
+      description: 'Explain trust level',
+    });
+    assert.deepStrictEqual(route('is agent "my-agent" trusted', 'hma'), {
+      command: 'opena2a trust',
+      args: ['my-agent'],
+      description: 'Query trust level',
+    });
   });
 
   it('isPlainArgument accepts identifiers and refuses shell syntax', () => {
