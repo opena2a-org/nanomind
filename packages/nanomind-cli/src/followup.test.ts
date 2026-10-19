@@ -107,6 +107,25 @@ describe('handleInput: follow-up references', () => {
   });
 });
 
+// The router's own tests assert these routes. These assert that a session
+// routes with the router in this repository, and not with a copy npm installs
+// from the registry under this package's node_modules when package.json pins
+// a version the workspace's router does not satisfy.
+describe('handleInput: routes of the router in this repository', () => {
+  it('takes no agent id from "why is my agent level 2"', async () => {
+    const status = await turn('why is my agent level 2', createSessionMemory());
+    assert.ok(status.output.includes('No ATC found for agent current.'), status.output);
+    assert.ok(!status.output.includes('agent level'), status.output);
+    assert.deepStrictEqual(status.commands, []);
+  });
+
+  it('runs hma explain CRED-001 for "what does cred-001 mean"', async () => {
+    const explain = await turn('what does cred-001 mean', createSessionMemory());
+    assert.ok(explain.output.includes('> Running: hma explain CRED-001'), explain.output);
+    assert.deepStrictEqual(explain.commands, ['hma explain CRED-001']);
+  });
+});
+
 describe('handleInput: skill level', () => {
   it('says the middle-length message before three lines were typed', async () => {
     const memory = createSessionMemory();
