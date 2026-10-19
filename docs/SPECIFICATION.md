@@ -361,7 +361,7 @@ Every tool that uses NanoMind MUST:
 
 ### 5.2 Open Protocol
 
-NanoMind is an open protocol (MIT). Any CLI tool can implement the adapter interface:
+NanoMind is an open protocol (Apache-2.0). Any CLI tool can implement the adapter interface:
 
 ```typescript
 interface NanoMindCLIAdapter {

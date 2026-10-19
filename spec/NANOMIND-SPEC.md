@@ -1,7 +1,7 @@
 # NanoMind Specification v2.0
 
 **Status:** Draft
-**License:** MIT
+**License:** Apache-2.0
 **Companion to:** OpenA2A ATC Architecture, Federated Intelligence Brief
 
 ---

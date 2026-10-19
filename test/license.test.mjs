@@ -8,11 +8,15 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const readJson = (path) => JSON.parse(readFileSync(path, 'utf8'));
 const rootManifest = readJson(join(root, 'package.json'));
 
-// SPDX identifier for each license text the repository could carry, keyed by
-// a line that only that text contains.
+// SPDX identifier and Python package classifier for each license text the
+// repository could carry, keyed by a line that only that text contains.
 const LICENSE_TEXTS = [
-  { spdx: 'Apache-2.0', marker: /^\s*Apache License\s*$\n^\s*Version 2\.0, January 2004\s*$/m },
-  { spdx: 'MIT', marker: /^MIT License\s*$/m },
+  {
+    spdx: 'Apache-2.0',
+    classifier: 'License :: OSI Approved :: Apache Software License',
+    marker: /^\s*Apache License\s*$\n^\s*Version 2\.0, January 2004\s*$/m,
+  },
+  { spdx: 'MIT', classifier: 'License :: OSI Approved :: MIT License', marker: /^MIT License\s*$/m },
 ];
 
 function licenseOf(path) {
@@ -22,14 +26,25 @@ function licenseOf(path) {
   return found[0].spdx;
 }
 
-function workspaceDirs() {
+// The SPDX identifiers of the license texts above that a statement names.
+function licensesNamed(statement) {
+  return LICENSE_TEXTS.filter(({ spdx }) => new RegExp(`\\b${spdx.replace('.', '\\.')}\\b`).test(statement)).map(
+    ({ spdx }) => spdx,
+  );
+}
+
+const rootLicenseText = readFileSync(join(root, 'LICENSE'), 'utf8');
+const rootLicense = licenseOf(join(root, 'LICENSE'));
+
+// The directories the workspace patterns match that hold the given manifest.
+function packageDirs(manifest) {
   return rootManifest.workspaces.flatMap((pattern) => {
     assert.match(pattern, /^[^*]+\/\*$/, `unsupported workspace pattern ${pattern}`);
     const parent = join(root, pattern.slice(0, -2));
     return readdirSync(parent, { withFileTypes: true })
       .filter((entry) => entry.isDirectory())
       .map((entry) => join(parent, entry.name))
-      .filter((dir) => existsSync(join(dir, 'package.json')));
+      .filter((dir) => existsSync(join(dir, manifest)));
   });
 }
 
@@ -39,7 +54,16 @@ function expectedLicense(dir) {
   return existsSync(own) ? licenseOf(own) : licenseOf(join(root, 'LICENSE'));
 }
 
-const packages = [root, ...workspaceDirs()].map((dir) => ({
+// The first line of the README's License section, or null without one.
+function readmeLicenseStatement(dir) {
+  const readme = join(dir, 'README.md');
+  const section = existsSync(readme)
+    ? /^## License\s*\n+([^\n]+)/m.exec(readFileSync(readme, 'utf8'))
+    : null;
+  return section ? section[1] : null;
+}
+
+const packages = [root, ...packageDirs('package.json')].map((dir) => ({
   dir,
   name: relative(root, dir) || '.',
   expected: expectedLicense(dir),
@@ -54,17 +78,59 @@ for (const { dir, name, expected } of packages) {
     assert.equal(readJson(join(dir, 'package.json')).license, expected);
   });
 
-  const readme = join(dir, 'README.md');
-  const section = existsSync(readme)
-    ? /^## License\s*\n+([^\n]+)/m.exec(readFileSync(readme, 'utf8'))
-    : null;
-  if (section) {
+  const statement = readmeLicenseStatement(dir);
+  if (statement) {
     test(`${name}/README.md names the license its LICENSE file grants`, () => {
-      const statement = section[1];
-      const named = LICENSE_TEXTS.filter(({ spdx }) => new RegExp(`\\b${spdx.replace('.', '\\.')}\\b`).test(statement));
-      assert.deepEqual(named.map(({ spdx }) => spdx), [expected], `License section reads: ${statement}`);
+      assert.deepEqual(licensesNamed(statement), [expected], `License section reads: ${statement}`);
     });
   }
+}
+
+// npm adds a LICENSE file in the package directory to the tarball although
+// `files` does not list it, and does not add the repository root's LICENSE.
+for (const { dir, name } of packages.filter(({ dir }) => !readJson(join(dir, 'package.json')).private)) {
+  test(`${name}/LICENSE is the root LICENSE text, so the npm tarball carries it`, () => {
+    const own = join(dir, 'LICENSE');
+    assert.ok(existsSync(own), `${name} has no LICENSE file, so its npm tarball carries no license text`);
+    assert.equal(readFileSync(own, 'utf8'), rootLicenseText, `${name}/LICENSE differs from the root LICENSE`);
+  });
+}
+
+for (const dir of packageDirs('pyproject.toml')) {
+  const name = relative(root, dir);
+  const pyproject = readFileSync(join(dir, 'pyproject.toml'), 'utf8');
+
+  test(`${name}/LICENSE is the root LICENSE text`, () => {
+    const own = join(dir, 'LICENSE');
+    assert.ok(existsSync(own), `${name} has no LICENSE file`);
+    assert.equal(readFileSync(own, 'utf8'), rootLicenseText, `${name}/LICENSE differs from the root LICENSE`);
+  });
+
+  test(`${name}/pyproject.toml declares the license in the root LICENSE`, () => {
+    const field = /^license\s*=\s*(.+)$/m.exec(pyproject);
+    assert.ok(field, `${name}/pyproject.toml has no license field`);
+    assert.deepEqual(licensesNamed(field[1]), [rootLicense], `license field reads: ${field[1]}`);
+  });
+
+  test(`${name}/pyproject.toml lists the classifier of the license in the root LICENSE`, () => {
+    const { classifier } = LICENSE_TEXTS.find(({ spdx }) => spdx === rootLicense);
+    assert.deepEqual(pyproject.match(/(?<=")License :: [^"]+(?=")/g) ?? [], [classifier]);
+  });
+
+  const statement = readmeLicenseStatement(dir);
+  if (statement) {
+    test(`${name}/README.md names the license in the root LICENSE`, () => {
+      assert.deepEqual(licensesNamed(statement), [rootLicense], `License section reads: ${statement}`);
+    });
+  }
+}
+
+// spec/NANOMIND-SPEC.md states its license in a **License:** line and
+// docs/SPECIFICATION.md in its Open Protocol section.
+for (const path of ['spec/NANOMIND-SPEC.md', 'docs/SPECIFICATION.md']) {
+  test(`${path} names the license in the root LICENSE and no other`, () => {
+    assert.deepEqual(licensesNamed(readFileSync(join(root, path), 'utf8')), [rootLicense]);
+  });
 }
 
 test('package-lock.json records the license each workspace package declares', () => {
