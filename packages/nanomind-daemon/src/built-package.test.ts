@@ -214,3 +214,24 @@ describe('nanomind-daemon status: refusals', { skip: !CLI_BUILT && 'dist/ is not
     assert.doesNotMatch(stdout, /Refused/, stdout);
   });
 });
+
+describe('nanomind-daemon --help: API routes', { skip: !CLI_BUILT && 'dist/ is not built' }, () => {
+  // The routes the daemon serves, read as text from the
+  // `url === '<path>' && method === '<METHOD>'` checks in server.ts.
+  const SERVER_TS = readFileSync(join(PKG_DIR, 'src', 'server.ts'), 'utf-8');
+  const served = [...SERVER_TS.matchAll(/url === '([^']+)' && method === '([A-Z]+)'/g)]
+    .map(([, path, method]) => `${method} ${path}`);
+
+  it('lists each route the daemon serves, and no other', () => {
+    assert.ok(served.length > 0, 'no route checks were read from server.ts');
+    const run = spawnSync(process.execPath, [CLI, '--help'], {
+      env: { PATH: process.env.PATH ?? '' },
+      encoding: 'utf-8',
+      timeout: 60_000,
+    });
+    assert.strictEqual(run.status, 0, run.stderr);
+    const listed = [...run.stdout.matchAll(/^ {2}([A-Z]+) +http:\/\/127\.0\.0\.1:\d+(\/\S*)$/gm)]
+      .map(([, method, path]) => `${method} ${path}`);
+    assert.deepStrictEqual([...listed].sort(), [...served].sort(), run.stdout);
+  });
+});

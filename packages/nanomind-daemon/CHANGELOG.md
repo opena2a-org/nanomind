@@ -81,6 +81,11 @@ The classifier runs in a child process of the daemon. `OnnxProcessEngine`, the e
 - The field is required in the `DaemonConfig` type, so a TypeScript object typed as a full `DaemonConfig` must set it. The `NanoMindDaemon` constructor takes a `Partial<DaemonConfig>`, and a call that leaves the field out gets the default.
 - The `NanoMindDaemon` constructor throws a `RangeError` when `rateLimitPerSecond` is not a finite number of at least 1. A finite rate below 1 would leave the bucket without a whole token and refuse every rate-limited request, and `NaN`, `Infinity` or `-Infinity` would let every request through.
 
+### `--help` lists `GET /health/ready` (#110)
+
+- `nanomind-daemon --help` lists `GET /health/ready` with the other routes and says when it answers 200 and when it answers 503. The daemon served the route and the README documented it, but the help listed only `POST /v1/infer`, `GET /v1/status` and `GET /health`.
+- New test in `src/built-package.test.ts`: it runs the built `nanomind-daemon --help` and compares the routes it lists with the route checks in `src/server.ts`.
+
 ### Tests
 
 - 21/21 pass (was 18; +3: a no-confidence engine result abstains; sub-floor confidence abstains and blanks attackClass; a verdict exactly at the inclusive floor classifies through).
