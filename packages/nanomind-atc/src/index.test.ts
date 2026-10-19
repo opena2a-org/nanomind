@@ -1,11 +1,33 @@
-import { describe, it } from 'node:test';
+import { describe, it, type TestContext } from 'node:test';
 import assert from 'node:assert';
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { createServer, type ServerResponse } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { ATCIntentHandler, ATCLookupError } from './index.ts';
 
 const REGISTRY = 'https://registry.test';
+
+// A registry on 127.0.0.1 that records each request and hands its response to
+// `answer`, which may leave it unanswered. Closed, with every connection it
+// holds, when the test ends.
+async function localRegistry(
+  t: TestContext,
+  answer: (res: ServerResponse) => void,
+): Promise<{ address: string; requests: string[] }> {
+  const requests: string[] = [];
+  const server = createServer((req, res) => {
+    requests.push(`${req.method} ${req.url}`);
+    answer(res);
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => {
+    server.closeAllConnections();
+    server.close();
+  });
+  return { address: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, requests };
+}
 
 const FULL_ATC = {
   agentId: 'acme/agent',
@@ -140,6 +162,43 @@ describe('ATCIntentHandler', () => {
       );
       assert.strictEqual(err.status, 200);
       assert.ok(err.cause instanceof SyntaxError, String(err.cause));
+      return true;
+    });
+  });
+
+  // The test timeout ends a lookup that never settles, so a hang fails these tests.
+  it('throws a lookup error that names the time it waited when the registry takes the request and never answers', { timeout: 10_000 }, async (t) => {
+    const registry = await localRegistry(t, () => {});
+    const handler = new ATCIntentHandler({ registryUrl: registry.address, timeoutMs: 100 });
+    const message = `Could not look up agent "acme/agent": the registry at ${registry.address} did not answer within 0.1 seconds.`;
+
+    await assert.rejects(handler.getTrustLevel('acme/agent'), (err: unknown) => {
+      assert.ok(err instanceof ATCLookupError, String(err));
+      assert.strictEqual(err.message, message);
+      assert.strictEqual(err.status, undefined);
+      assert.strictEqual((err.cause as Error)?.name, 'TimeoutError');
+      return true;
+    });
+    // In place of the how-to-get-started summary.
+    await assert.rejects(handler.explainTrustLevel('acme/agent'), { name: 'ATCLookupError', message });
+    assert.deepStrictEqual(registry.requests, ['GET /api/v1/atx/acme%2Fagent', 'GET /api/v1/atx/acme%2Fagent']);
+  });
+
+  it('throws a lookup error when the registry answers with a status and never finishes the body', { timeout: 10_000 }, async (t) => {
+    const registry = await localRegistry(t, (res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.write('{"agentId":');
+    });
+    const handler = new ATCIntentHandler({ registryUrl: registry.address, timeoutMs: 1000 });
+
+    await assert.rejects(handler.getTrustLevel('acme/agent'), (err: unknown) => {
+      assert.ok(err instanceof ATCLookupError, String(err));
+      assert.strictEqual(
+        err.message,
+        `Could not look up agent "acme/agent": the registry at ${registry.address} answered with status 200 but did not finish its answer within 1 second.`,
+      );
+      assert.strictEqual(err.status, 200);
+      assert.strictEqual((err.cause as Error)?.name, 'TimeoutError');
       return true;
     });
   });

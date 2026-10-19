@@ -8,6 +8,7 @@
  */
 
 const DEFAULT_REGISTRY_URL = 'https://api.oa2a.org';
+const DEFAULT_TIMEOUT_MS = 10 * 1000;
 
 export interface ATCSummary {
   agentId: string;
@@ -45,14 +46,20 @@ export interface ATCConfig {
   registryUrl?: string;
   apiKey?: string;
   cacheTTLMs?: number;
+  /**
+   * How long a lookup waits for the registry's whole answer, body included,
+   * in milliseconds. Defaults to 10 seconds.
+   */
+  timeoutMs?: number;
 }
 
 /**
  * A lookup the registry could not answer: it answered with an error status
  * other than 404, or with a body that could not be read as JSON, or it could
- * not be reached. Such a lookup says nothing about whether the registry has
- * an ATC for the agent; a 404 is the registry's answer that it has none. The
- * message names the agent, the registry address and the reason.
+ * not be reached, or it did not finish its answer within the timeout. Such a
+ * lookup says nothing about whether the registry has an ATC for the agent; a
+ * 404 is the registry's answer that it has none. The message names the agent,
+ * the registry address and the reason.
  */
 export class ATCLookupError extends Error {
   readonly agentId: string;
@@ -83,16 +90,24 @@ function failureReason(err: unknown): string {
   return detail ? `${err.message}: ${detail}` : err.message;
 }
 
+// A timeout in words: "10 seconds", "1 second", "0.1 seconds".
+function inSeconds(ms: number): string {
+  const seconds = ms / 1000;
+  return `${seconds} ${seconds === 1 ? 'second' : 'seconds'}`;
+}
+
 export class ATCIntentHandler {
   private registryUrl: string;
   private apiKey: string | undefined;
   private cache = new Map<string, { data: unknown; expiresAt: number }>();
   private cacheTTL: number;
+  private timeoutMs: number;
 
   constructor(config: ATCConfig = {}) {
     this.registryUrl = config.registryUrl ?? DEFAULT_REGISTRY_URL;
     this.apiKey = config.apiKey;
     this.cacheTTL = config.cacheTTLMs ?? 5 * 60 * 1000; // 5 min default
+    this.timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   }
 
   /**
@@ -259,8 +274,9 @@ export class ATCIntentHandler {
 
   /**
    * Fetch ATC from Registry (with caching). Returns null when the registry
-   * answers 404, and throws an ATCLookupError when it could not answer. Only
-   * an ATC is cached, so the next call asks the registry again after either.
+   * answers 404, and throws an ATCLookupError when it could not answer,
+   * including when its answer is not complete within the timeout. Only an
+   * ATC is cached, so the next call asks the registry again after either.
    */
   private async fetchATC(agentId: string): Promise<any | null> {
     const cacheKey = `atc:${agentId}`;
@@ -280,10 +296,17 @@ export class ATCIntentHandler {
       headers['Authorization'] = `Bearer ${this.apiKey}`;
     }
 
+    // The signal also ends the read of the body, so a registry that takes the
+    // request and sends nothing, or stops partway through the body, cannot
+    // leave the lookup pending.
+    const signal = AbortSignal.timeout(this.timeoutMs);
     let response: Response;
     try {
-      response = await fetch(url, { headers });
+      response = await fetch(url, { headers, signal });
     } catch (err) {
+      if (signal.aborted) {
+        throw new ATCLookupError(agentId, this.registryUrl, `did not answer within ${inSeconds(this.timeoutMs)}`, undefined, err);
+      }
       throw new ATCLookupError(agentId, this.registryUrl, `could not be reached (${failureReason(err)})`, undefined, err);
     }
     if (response.status === 404) return null;
@@ -295,6 +318,15 @@ export class ATCIntentHandler {
     try {
       data = await response.json();
     } catch (err) {
+      if (signal.aborted) {
+        throw new ATCLookupError(
+          agentId,
+          this.registryUrl,
+          `answered with status ${response.status} but did not finish its answer within ${inSeconds(this.timeoutMs)}`,
+          response.status,
+          err,
+        );
+      }
       throw new ATCLookupError(
         agentId,
         this.registryUrl,

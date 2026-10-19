@@ -39,7 +39,7 @@ console.log(explanation.summary);
 
 ## Not found and failed lookups
 
-A 404 from the registry means it has no ATC for the agent: `getTrustLevel` returns null, and `explainTrustLevel` explains how to get started. When the registry answers with another error status or with a body that could not be read as JSON, or cannot be reached, both methods reject with an `ATCLookupError`, so a failed lookup is not read as an unregistered agent. Its message names the agent, the registry address and the reason. It also carries `agentId`, `registryUrl` and `status`, which is undefined when the registry was not reached.
+A 404 from the registry means it has no ATC for the agent: `getTrustLevel` returns null, and `explainTrustLevel` explains how to get started. When the registry answers with another error status or with a body that could not be read as JSON, cannot be reached, or does not finish its answer within the timeout, both methods reject with an `ATCLookupError`, so a failed lookup is not read as an unregistered agent. Its message names the agent, the registry address and the reason. It also carries `agentId`, `registryUrl` and `status`, which is undefined when the registry sent no status. The timeout is 10 seconds and covers the whole answer, body included; set `timeoutMs` in the options to change it, for example `new ATCIntentHandler({ timeoutMs: 30000 })`.
 
 ```typescript
 import { ATCIntentHandler, ATCLookupError } from '@nanomind/atc';
@@ -52,6 +52,8 @@ try {
   console.log(err.message);
   // For a registry that answers 503:
   // Could not look up agent "billing-agent": the registry at https://api.oa2a.org answered with status 503.
+  // For a registry that sends nothing within the timeout:
+  // Could not look up agent "billing-agent": the registry at https://api.oa2a.org did not answer within 10 seconds.
 }
 ```
 
