@@ -41,9 +41,22 @@
 - `hma` EXPLAIN runs `hma explain <id>` when the input names a finding
   ID, so "what does CRED-001 mean" runs `hma explain CRED-001`. EXPLAIN
   without a finding ID, and EXPLAIN on `secretless-ai` and `opena2a`,
-  still maps to `null`. The `checkId` entity takes a finding ID with more
-  than one prefix whole: "explain SKILL-SEMANTIC-007" gives
-  `SKILL-SEMANTIC-007`, where it gave `SEMANTIC-007`.
+  still maps to `null`. The `checkId` entity takes a finding ID with up
+  to four prefixes whole: "explain SKILL-SEMANTIC-007" gives
+  `SKILL-SEMANTIC-007`, where it gave `SEMANTIC-007`. A prefix may hold
+  digits after its first letter and the ID may be written in lower case;
+  `checkId` holds it in upper case, so "what does A2A-001 mean" runs
+  `hma explain A2A-001` and "what does cred-001 mean" runs
+  `hma explain CRED-001`, where neither gave a `checkId`.
+- `classifyIntent` took time quadratic in the length of an input that
+  repeats the first word of a pattern joining words with `.*` and never
+  the words after it, and cubic for "scan skill " and "add ci ": 256 KB
+  of "why " took 16 s of CPU time, and 256 KB of "scan skill " had not
+  returned after 45 s. Those patterns now go from the start of each line
+  to the first match of each of their words in turn. The finding ID
+  pattern, which took 35 s on 256 KB of "A-", takes at most four
+  prefixes. The router tests classify 256 KB of each of twelve such
+  inputs in under 250 ms of CPU time.
 - `mapToCommand` appends a package name or agent id from the input to the
   command's arguments only when it is a plain argument (`isPlainArgument`:
   ASCII letters, digits and `@ . : / + - _`, starting with a letter, digit
