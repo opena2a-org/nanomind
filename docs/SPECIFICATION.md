@@ -2,7 +2,7 @@
 
 **Version:** 3.2
 **Status:** Active
-**Last Updated:** 2026-10-18
+**Last Updated:** 2026-10-19
 **Maintainer:** NanoMind model owner
 
 ---
@@ -30,7 +30,7 @@ Achieve **99.999% accuracy** in classifying AI agent security threats. Every fal
 
 The current column is the v0.5.0 entry in [`nanomind-models.json`](../nanomind-models.json) and the [v0.5.0 model card](model-cards/v0.5.0.md), measured on its 194-sample eval set; overall accuracy is the card's best eval accuracy.
 
-The [v0.4.0 model card](model-cards/v0.4.0.md#evaluation-metrics) reports two checkpoints of one training run. The released one, the best checkpoint, scored 96.73%. The macro F1 and the class F1 figures come from the final checkpoint, which scored 95.73%, because the card has per-class figures for that checkpoint only.
+The class F1 figures come from the card's per-class table, whose recall and support columns count 191 of the 194 eval samples correct, the same 98.45% as the overall accuracy; the macro F1 is the mean of that table's F1 column.
 
 The path to 99.999% is primarily a data problem, not an architecture problem. The Mamba TME architecture learns well: it hits 100% training accuracy. The gap is generalization, which requires more diverse, high-quality training data.
 

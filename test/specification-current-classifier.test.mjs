@@ -110,6 +110,37 @@ test('section 2.1 gives the figures recorded for the latest classifier version',
   }
 });
 
+// Section 2.1 explains the figures of its table, which shows the latest
+// version only, so a figure it explains for another version is not one it
+// shows.
+test('section 2.1 names no classifier version but the latest, the one its table shows', () => {
+  const named = [...specSection('2.1').join('\n').matchAll(/\bv(\d+\.\d+\.\d+)\b/g)].map((match) => match[1]);
+  assert.ok(named.length > 0, 'section 2.1 names no version');
+  assert.deepEqual([...new Set(named)], [latest]);
+});
+
+// A card can report more than one checkpoint of a training run, so section 2.1
+// says which one its F1 figures belong to. Each class answers recall x support
+// of its eval samples correctly, so the per-class table of the latest card
+// counts the samples its checkpoint answered correctly: that count has to make
+// up the overall accuracy the section gives, the section has to state it, and
+// the macro F1 has to be the mean of the table's F1 column.
+test('section 2.1 takes its F1 figures from a per-class table that counts its overall accuracy, and gives that count', () => {
+  const lines = specSection('2.1');
+  const { rows } = firstTable(lines);
+  const value = (metric) => rows.find((row) => row.Metric === metric)?.[`Current (v${latest})`];
+
+  const perClass = firstTable(sectionLines(latestCard().path, /^### Per-Class$/)).rows;
+  const total = perClass.reduce((sum, row) => sum + Number(row.Support), 0);
+  const correct = perClass.reduce((sum, row) => sum + Math.round(Number(row.Recall) * Number(row.Support)), 0);
+  assert.equal(`${((100 * correct) / total).toFixed(2)}%`, value('Overall accuracy'), 'the per-class table does not count the overall accuracy');
+  const meanF1 = perClass.reduce((sum, row) => sum + Number(row.F1), 0) / perClass.length;
+  assert.equal(meanF1.toFixed(3), value('Macro F1'), 'the macro F1 is not the mean of the per-class F1 column');
+
+  const prose = lines.filter((line) => !line.startsWith('|')).join(' ');
+  assert.ok(prose.includes(`${correct} of the ${total} eval samples`), `section 2.1 does not say its per-class table counts ${correct} of the ${total} eval samples correct`);
+});
+
 test('sections 7.2 and 10.2 give the size the latest classifier card records', () => {
   const architecture = firstTable(sectionLines(latestCard().path, /^## Architecture$/)).rows;
   const size = (parameter) => architecture.find((row) => row.Parameter === parameter)?.Value;
