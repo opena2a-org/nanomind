@@ -1,7 +1,7 @@
 # NanoMind Training Playbook
 
 **Version:** 1.0
-**Last Updated:** 2026-10-11
+**Last Updated:** 2026-10-18
 **Companion to:** [SPECIFICATION.md](SPECIFICATION.md), [EVALUATION-STANDARD.md](EVALUATION-STANDARD.md)
 
 ---
@@ -250,7 +250,7 @@ git commit -m "Add {N}-class TME model v{VERSION} with {description}"
 
 ### Step 9: Publish to HuggingFace
 
-Publishing is manual and runs from the private training tree (see 2.4). The `publish-models.yml` workflow in this repository validates `nanomind-models.json` on every change to it; it does not publish.
+Publishing is manual and runs from the private training tree (see 2.4). The `Validate Model Manifest` workflow (`.github/workflows/publish-models.yml`) checks `nanomind-models.json` when a pull request or a push to `main` changes it; it does not publish.
 
 ```bash
 python3 training/scripts/push-to-huggingface.py \

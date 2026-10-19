@@ -40,3 +40,50 @@ test('docs/models.md describes model publishing as the manifest workflow does', 
   assert.doesNotMatch(models, /publishing automated|automated publish/i);
   assert.match(models, /uploaded to Hugging Face by hand/);
 });
+
+// What the workflows in this repository run is what the docs may say CI does
+// with a model version.
+const workflowText = tracked
+  .filter((path) => /^\.github\/workflows\/[^/]+\.ya?ml$/.test(path))
+  .map(read)
+  .join('\n');
+
+// The pages that describe how a model version is released.
+const RELEASE_DOCS = [
+  'README.md',
+  'docs/models.md',
+  'docs/SPECIFICATION.md',
+  'docs/EVALUATION-STANDARD.md',
+  'docs/TRAINING-PLAYBOOK.md',
+];
+
+test('the release docs say models are uploaded to Hugging Face by hand, as no workflow publishes one', () => {
+  assert.match(read('.github/workflows/publish-models.yml'), /it does not publish/, 'the workflow header says it does not publish');
+  for (const doc of RELEASE_DOCS) {
+    assert.doesNotMatch(read(doc), /auto-?publish|publishing automated|publishes to hugging ?face/i, `${doc} says CI publishes models`);
+  }
+  for (const doc of ['docs/SPECIFICATION.md', 'docs/EVALUATION-STANDARD.md']) {
+    assert.match(read(doc), /uploaded to Hugging Face by hand/, `${doc} does not say how models reach Hugging Face`);
+  }
+});
+
+test('the release docs say no workflow runs a benchmark, as none does', () => {
+  assert.doesNotMatch(workflowText, /benchmark/i, 'a workflow names a benchmark: describe it in the release docs and update this test');
+  for (const doc of RELEASE_DOCS) {
+    assert.doesNotMatch(
+      read(doc),
+      /benchmarks? (?:are )?run automatically|runs (?:the )?accuracy benchmark|isn.t benchmarked/i,
+      `${doc} says benchmarks run automatically`,
+    );
+  }
+  for (const doc of ['docs/SPECIFICATION.md', 'docs/EVALUATION-STANDARD.md']) {
+    assert.match(read(doc), /no workflow in this repository runs a benchmark/i, `${doc} does not say that no workflow runs a benchmark`);
+  }
+});
+
+test('no Markdown file names repository_dispatch while no workflow sends one', () => {
+  assert.doesNotMatch(workflowText, /repository_dispatch|\/dispatches\b/, 'a workflow sends repository_dispatch: describe it in the docs and update this test');
+  for (const file of tracked.filter((path) => /\.mdx?$/i.test(path))) {
+    assert.ok(!read(file).includes('repository_dispatch'), `${file} names repository_dispatch, which no workflow in this repository sends`);
+  }
+});

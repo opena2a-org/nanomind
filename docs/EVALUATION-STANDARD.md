@@ -1,14 +1,14 @@
 # NanoMind Evaluation Standard
 
 **Version:** 1.0
-**Last Updated:** 2026-04-09
+**Last Updated:** 2026-10-18
 **Companion to:** [SPECIFICATION.md](SPECIFICATION.md)
 
 ---
 
 ## 1. Purpose
 
-This document defines how NanoMind models are evaluated. Every model release MUST follow this standard. No exceptions. No "we'll benchmark later." If it isn't benchmarked, it isn't shipped.
+This document defines how NanoMind models are evaluated and the benchmarks every model release is required to run. No workflow in this repository runs a benchmark or blocks a release on one (section 7.1), and released versions have shipped without some of the required benchmarks: the [v0.4.0](model-cards/v0.4.0.md) and [v0.5.0](model-cards/v0.5.0.md) model cards record no latency measurement and no robustness run.
 
 ## 2. Accuracy Targets
 
@@ -43,7 +43,7 @@ If a model fails to meet thresholds:
 
 ## 3. Benchmark Suite
 
-### 3.1 Required Benchmarks (run on every model release)
+### 3.1 Required Benchmarks (for every model release)
 
 #### Benchmark 1: Accuracy
 
@@ -226,12 +226,9 @@ Every model card (see [MODEL-CARD-TEMPLATE.md](MODEL-CARD-TEMPLATE.md)) must inc
 
 ### 7.1 GitHub Actions (CI)
 
-The `publish-models.yml` workflow:
-1. Validates `nanomind-models.json` schema
-2. Runs accuracy benchmark (dry run)
-3. Checks model file sizes
-4. Publishes to HuggingFace
-5. Notifies consumer repos via `repository_dispatch`
+The `Validate Model Manifest` workflow (`.github/workflows/publish-models.yml`) runs when a push to `main` or a pull request changes `nanomind-models.json`, and when started by hand. It checks that `nanomind-models.json` parses as JSON and, for each model that lists versions, that exactly one version has status `latest` and that `latestVersion`, when set, names one of them.
+
+It does not run a benchmark, check file sizes or SHA-256 hashes, publish to Hugging Face or notify consumer repositories. Models are uploaded to Hugging Face by hand from the private training tree ([TRAINING-PLAYBOOK.md](TRAINING-PLAYBOOK.md) Step 9). Section 7.2 describes the benchmark pipeline that is planned.
 
 ### 7.2 Future: Automated Benchmark Pipeline
 
