@@ -107,6 +107,11 @@ Specification §3.4.1 says `attackClass` and `classification` are emitted on eve
 - The specification and the README "Error responses" section say what an error body carries, and `abstain` now also covers a request the daemon answered with an error before the model ran.
 - New tests: each error body carries both fields over HTTP, and `spec-conformance.test.ts` checks that `server.ts` writes every error body through the one function that adds them, called with the `error` codes the README lists.
 
+### License (#124)
+
+- The `license` field in `package.json` reads `Apache-2.0`, the license in the repository's LICENSE file. Releases 0.2.0 and 0.3.0 declared `MIT`.
+- The package directory holds a LICENSE file with the Apache-2.0 text of the repository's LICENSE, so the npm tarball carries it. Before, the directory held no LICENSE file and `npm pack` left the license text out.
+
 ### Tests
 
 - New tests: a no-confidence engine result abstains; sub-floor confidence abstains and blanks attackClass; a verdict exactly at the inclusive floor classifies through.

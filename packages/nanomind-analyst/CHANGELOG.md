@@ -75,6 +75,12 @@
   status still says it serves once its log shows `listening on`; when
   launchd reports neither state, status gives both steps. The exit code
   (1) and the `status --json` output on this path are unchanged.
+- The package is licensed under Apache-2.0, the license in the
+  repository's LICENSE file. `pyproject.toml` declares `Apache-2.0` with
+  the `License :: OSI Approved :: Apache Software License` classifier,
+  the package's LICENSE file holds the Apache-2.0 text and the README's
+  License section names Apache-2.0. Earlier releases declared MIT and
+  carried the MIT text.
 
 ## 0.1.4
 

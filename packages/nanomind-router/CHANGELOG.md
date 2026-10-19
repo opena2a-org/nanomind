@@ -61,6 +61,9 @@
   "detect" classifies as SCAN.
 - The `license` field in `package.json` reads `Apache-2.0`, the license in
   the repository's LICENSE file. Earlier releases declared `MIT`.
+- The package directory holds a LICENSE file with the Apache-2.0 text of
+  the repository's LICENSE, so the npm tarball carries it. Before, the
+  directory held no LICENSE file and `npm pack` left the license text out.
 - The README lists the six scanning intents `isScanIntent` accepts
   (`SCAN_SKILL_INTENT`, `SCAN_SOUL_COMPLETENESS`, `SCAN_MCP_SCOPE`,
   `SCAN_PROMPT_INTENT`, `SCAN_VERSION_DELTA`, `SCAN_EXPLAIN`) and says

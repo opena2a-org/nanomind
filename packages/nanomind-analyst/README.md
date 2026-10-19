@@ -89,4 +89,4 @@ Not supported in v0.1. The daemon is bf16 on Apple MPS; fp16 yields 0% accuracy 
 
 ## License
 
-MIT.
+Apache-2.0.
