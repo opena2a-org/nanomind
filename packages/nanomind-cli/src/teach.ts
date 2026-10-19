@@ -4,15 +4,19 @@
  * The complete new-user onboarding experience:
  *   1. Scan current directory. Detect project type.
  *   2. Run actual HMA scan. Explain each finding as it appears.
- *   3. Offer auto-fix with rollback.
+ *   3. Offer auto-fix. NanoMind keeps no copy of the files the fix changes,
+ *      so undoing it is left to the host tool.
  *   4. Generate CI/CD artifact (GitHub Actions, GitLab, etc.)
  *   5. Show current ARS if agent is already registered.
  *   6. Explain ATC and what trust level 3 means.
  *   7. Offer to generate build-action YAML for ATC issuance.
+ *
+ * `nanomind teach` starts it, and so does typing `teach` in a session.
  */
 
+import * as path from 'node:path';
 import { ATCIntentHandler } from '@nanomind/atc';
-import { generateArtifact, detectArtifactType, type ArtifactType } from './codegen';
+import { generateArtifact, detectArtifactType, type ArtifactType } from './codegen.ts';
 
 export interface TeachContext {
   cliName: string;
@@ -26,17 +30,22 @@ export interface TeachContext {
 export async function runTeachMode(ctx: TeachContext): Promise<void> {
   const atcHandler = new ATCIntentHandler({ registryUrl: ctx.registryUrl });
   const print = ctx.onPrint;
+  const projectDir = path.resolve(ctx.projectDir);
+  const projectName = path.basename(projectDir);
+  // Commands run in the working directory, so they name the project relative
+  // to it: "." when it is the working directory, as a session's scan does.
+  const dir = path.relative(process.cwd(), projectDir) || '.';
 
   print('\n  === Teach Mode: AI Agent Security in 7 Steps ===\n');
 
   // Step 1: Detect project type
   print('  Step 1/7: Detecting project type...');
-  const detectOutput = await ctx.onCommand(`${ctx.cliName} detect`, [ctx.projectDir]);
+  const detectOutput = await ctx.onCommand(`${ctx.cliName} detect`, [dir]);
   print(`  ${detectOutput.split('\n')[0] || 'Project detected.'}\n`);
 
   // Step 2: Run HMA scan
   print('  Step 2/7: Running security scan...');
-  const scanOutput = await ctx.onCommand(`${ctx.cliName} secure`, [ctx.projectDir, '--ci']);
+  const scanOutput = await ctx.onCommand(`${ctx.cliName} secure`, [dir, '--ci']);
   const lines = scanOutput.split('\n').filter(l => l.trim());
 
   // Count findings
@@ -58,14 +67,22 @@ export async function runTeachMode(ctx: TeachContext): Promise<void> {
     }
   }
 
-  // Step 3: Offer auto-fix
+  // Step 3: Offer auto-fix. NanoMind keeps no copy of the files the fix
+  // changes, so the user is told before answering that undoing the fix is up
+  // to the host tool, and sees what the host tool printed.
   if (totalFindings > 0) {
+    const fix = `${ctx.cliName} secure ${dir} --fix`;
     print('  Step 3/7: Auto-fix available.');
+    print(`  ${fix} can change files in this project.`);
+    print(`  NanoMind keeps no copy of them: undoing the fix relies on ${ctx.cliName}'s own backup, if it makes one.`);
     const answer = await ctx.onPrompt('  Apply auto-fix? (y/n): ');
     if (answer.toLowerCase().startsWith('y')) {
-      print('  Running auto-fix (changes will be backed up)...');
-      await ctx.onCommand(`${ctx.cliName} secure`, [ctx.projectDir, '--fix']);
-      print('  Auto-fix applied. Run scan again to verify.\n');
+      print(`  Running: ${fix}`);
+      const fixOutput = await ctx.onCommand(`${ctx.cliName} secure`, [dir, '--fix']);
+      if (fixOutput) {
+        print(fixOutput);
+      }
+      print('  Auto-fix ran. Run the scan again to verify.\n');
     } else {
       print('  Skipping auto-fix.\n');
     }
@@ -75,12 +92,12 @@ export async function runTeachMode(ctx: TeachContext): Promise<void> {
 
   // Step 4: Generate CI artifact
   print('  Step 4/7: CI/CD integration.');
-  const artifactType = detectArtifactType(ctx.projectDir);
+  const artifactType = detectArtifactType(projectDir);
   print(`  Detected CI platform: ${artifactType}`);
   const answer4 = await ctx.onPrompt(`  Generate ${artifactType} config? (y/n): `);
   if (answer4.toLowerCase().startsWith('y')) {
     const artifact = generateArtifact(artifactType, {
-      projectName: require('path').basename(ctx.projectDir),
+      projectName,
       projectType: 'mcp_server',
       language: 'typescript',
     });
@@ -90,7 +107,6 @@ export async function runTeachMode(ctx: TeachContext): Promise<void> {
 
   // Step 5: Show ARS if registered
   print('  Step 5/7: Checking registry...');
-  const projectName = require('path').basename(ctx.projectDir);
   const trustInfo = await atcHandler.getTrustLevel(projectName);
   if (trustInfo) {
     print(`  Your agent "${projectName}" is registered.`);
