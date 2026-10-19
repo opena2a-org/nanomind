@@ -22,7 +22,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { classifyIntent, mapToCommand, isATCIntent, type IntentClassification } from '@nanomind/router';
 import { ATCIntentHandler } from '@nanomind/atc';
-import { screenInput, detectInputSource, describePatterns, type InputSource } from '@nanomind/guard';
+import { screenInput, detectInputSource, type InputSource, type DetectedPattern } from '@nanomind/guard';
 import { SkillAdapter } from './adapt.ts';
 import { SessionManager, type Finding } from './session.ts';
 import { generateArtifact, detectArtifactType, artifactTypeFromInput, listArtifactTypes } from './codegen.ts';
@@ -70,6 +70,50 @@ const SOURCE_LABELS: Record<InputSource, string> = {
   env: 'environment input',
   'agent-output': 'agent output',
 };
+
+// Characters a terminal would not show, or would act on: C0 and C1 controls
+// (escape among them), zero-width, line and paragraph separators, and
+// bidirectional marks.
+const UNPRINTABLE_RANGES: Array<[number, number]> = [
+  [0x0000, 0x001f],
+  [0x007f, 0x009f],
+  [0x200b, 0x200f],
+  [0x2028, 0x202f],
+  [0x2060, 0x206f],
+  [0xfeff, 0xfeff],
+];
+
+function printable(text: string): string {
+  return Array.from(text, (c) => {
+    const code = c.codePointAt(0) ?? 0;
+    const hidden = UNPRINTABLE_RANGES.some(([low, high]) => code >= low && code <= high);
+    return hidden ? `\\u${code.toString(16).padStart(4, '0')}` : c;
+  }).join('');
+}
+
+// The most code points of a match that a message quotes. A pattern that
+// allows a run of whitespace matches a line that is mostly whitespace in
+// full, and a message that quoted it in full would be as long as the line.
+const MAX_QUOTED_MATCH = 40;
+
+function quoted(match: string): string {
+  const chars = Array.from(match);
+  const cut = chars.length > MAX_QUOTED_MATCH;
+  const shown = printable((cut ? chars.slice(0, MAX_QUOTED_MATCH) : chars).join(''));
+  return `"${shown}${cut ? '...' : ''}"`;
+}
+
+/**
+ * Name matched patterns for a session message: the kind of each and the text
+ * it matched, quoted, with characters a terminal would not show written as
+ * \uXXXX escapes. A match longer than 40 code points is cut to its first 40
+ * and ends with an ellipsis inside the quotes. An installed nanomind command
+ * resolves the guard release published to npm, and the published 0.1.0 and
+ * 0.1.1 do not export describePatterns, so the session keeps its own copy.
+ */
+function describePatterns(patterns: DetectedPattern[]): string {
+  return patterns.map((p) => `${p.type.replaceAll('_', ' ')} ${quoted(p.match)}`).join(', ');
+}
 
 /**
  * Screen one line of session input from `source`. Returns null when the line
