@@ -6,6 +6,7 @@ import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { inspect } from 'node:util';
 import { BaseFabricAdapter } from './fabric-adapter.ts';
 import { NanoMindDaemon, RATE_LIMIT_PER_SECOND, TokenBucketRateLimiter } from './server.ts';
 import type { DaemonEngine } from './server.ts';
@@ -178,5 +179,107 @@ describe('BaseFabricAdapter registry paths', () => {
       await assert.rejects(adapter.writeASC(agentId, {}), TypeError);
     }
     assert.deepStrictEqual(requests, []);
+  });
+
+  it('refuses an agentId that is not a string without sending a request', async () => {
+    requests.length = 0;
+    // The first four turn into "..", "." or "" when they are put into the path.
+    const notStrings: unknown[] = [['..'], ['.'], [], { toString: () => '..' }, 42, undefined];
+    for (const agentId of notStrings) {
+      const invalid = { name: 'TypeError', message: /^Invalid agentId/ };
+      await assert.rejects(adapter.readRiskSummary(agentId as string), invalid);
+      await assert.rejects(adapter.writeASC(agentId as string, {}), invalid);
+    }
+    assert.deepStrictEqual(requests, []);
+  });
+
+  it('refuses an agentId with a lone surrogate with a TypeError, not a URIError', async () => {
+    requests.length = 0;
+    for (const agentId of ['a\uD800', '\uDC00a']) {
+      const invalid = { name: 'TypeError', message: /^Invalid agentId/ };
+      await assert.rejects(adapter.readRiskSummary(agentId), invalid);
+      await assert.rejects(adapter.writeASC(agentId, {}), invalid);
+    }
+    assert.deepStrictEqual(requests, []);
+  });
+});
+
+describe('BaseFabricAdapter internal API key', () => {
+  const KEY = 'FAKE-KEY-1234';
+  const agentId = '00000000-0000-0000-0000-000000000000';
+  let registryUrl: string;
+  let otherUrl: string;
+  // While set, the registry answers every request with this redirect.
+  let redirect: { status: number; location: string } | null = null;
+  const requests: { request: string; internalKey: string | undefined }[] = [];
+  const otherRequests: string[] = [];
+  const registry = createServer((req, res) => {
+    const key = req.headers['x-internal-key'];
+    requests.push({ request: `${req.method} ${req.url}`, internalKey: typeof key === 'string' ? key : undefined });
+    if (redirect !== null) {
+      res.writeHead(redirect.status, { Location: redirect.location });
+    } else {
+      res.writeHead(req.method === 'PATCH' ? 204 : 404);
+    }
+    res.end();
+  });
+  // The address a redirect names. It answers 204, so a write that followed
+  // the redirect would resolve.
+  const other = createServer((req, res) => {
+    otherRequests.push(`${req.method} ${req.url}`);
+    res.writeHead(204);
+    res.end();
+  });
+
+  before(async () => {
+    registry.listen(0, '127.0.0.1');
+    other.listen(0, '127.0.0.1');
+    await Promise.all([once(registry, 'listening'), once(other, 'listening')]);
+    registryUrl = `http://127.0.0.1:${(registry.address() as AddressInfo).port}`;
+    otherUrl = `http://127.0.0.1:${(other.address() as AddressInfo).port}`;
+  });
+
+  after(() => {
+    registry.close();
+    other.close();
+  });
+
+  it('sends the internalApiKey option in the X-Internal-Key header of writeASC and not of readRiskSummary', async () => {
+    requests.length = 0;
+    const adapter = new BaseFabricAdapter('test', { registryUrl, internalApiKey: KEY });
+    await adapter.writeASC(agentId, { driftScore: 0.1 });
+    assert.strictEqual(await adapter.readRiskSummary(agentId), null);
+    assert.deepStrictEqual(requests, [
+      { request: `PATCH /internal/asc/${agentId}`, internalKey: KEY },
+      { request: `GET /api/v1/asc/${agentId}/risk-summary`, internalKey: undefined },
+    ]);
+  });
+
+  it('sends no X-Internal-Key header without the option', async () => {
+    requests.length = 0;
+    await new BaseFabricAdapter('test', { registryUrl }).writeASC(agentId, {});
+    assert.deepStrictEqual(requests, [{ request: `PATCH /internal/asc/${agentId}`, internalKey: undefined }]);
+  });
+
+  it('does not follow a redirect from writeASC, so the key is not sent to the address it names', async () => {
+    const adapter = new BaseFabricAdapter('test', { registryUrl, internalApiKey: KEY });
+    for (const status of [301, 302, 303, 307, 308]) {
+      requests.length = 0;
+      otherRequests.length = 0;
+      redirect = { status, location: `${otherUrl}/internal/asc/${agentId}` };
+      try {
+        await assert.rejects(adapter.writeASC(agentId, {}), { message: new RegExp(`^ASC write failed: ${status} `) });
+      } finally {
+        redirect = null;
+      }
+      assert.deepStrictEqual(requests, [{ request: `PATCH /internal/asc/${agentId}`, internalKey: KEY }]);
+      assert.deepStrictEqual(otherRequests, [], `writeASC followed a ${status}`);
+    }
+  });
+
+  it('keeps the key out of util.inspect and JSON.stringify output of the adapter', () => {
+    const adapter = new BaseFabricAdapter('test', { registryUrl, internalApiKey: KEY });
+    assert.ok(!inspect(adapter, { showHidden: true }).includes(KEY), inspect(adapter));
+    assert.ok(!JSON.stringify(adapter).includes(KEY), JSON.stringify(adapter));
   });
 });

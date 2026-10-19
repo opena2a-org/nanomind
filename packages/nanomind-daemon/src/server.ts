@@ -4,6 +4,7 @@ import { chmodSync, lstatSync, unlinkSync } from 'node:fs';
 import { classifyIntent } from '@nanomind/router';
 import { EventEmitter } from 'node:events';
 import { OnnxProcessEngine } from './onnx-process-engine.ts';
+import { errorMessage } from './error-message.ts';
 import { manifest } from './manifest.mts';
 
 const SERVICE_NAME = 'nanomind-daemon';
@@ -667,7 +668,9 @@ export class NanoMindDaemon extends EventEmitter {
         this.respondRefused(res, err);
         return;
       }
-      const message = err instanceof Error ? err.message : 'Inference failed';
+      // errorMessage() and not err.message: Node reports a download refused
+      // on every address of a host as an AggregateError with an empty message.
+      const message = err instanceof Error ? errorMessage(err) : 'Inference failed';
       res.writeHead(500);
       // Bug 1 wire contract: attackClass is ALWAYS a string. Even on the
       // engine-error path the response carries `attackClass: ''` so FGA

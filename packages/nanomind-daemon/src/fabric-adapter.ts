@@ -56,19 +56,37 @@ export class BaseFabricAdapter implements FabricAdapter {
   readonly productId: string;
   private daemonUrl: string;
   private registryUrl: string;
+  // A #private field, so util.inspect and JSON.stringify of the adapter leave
+  // the key out.
+  readonly #internalApiKey: string | undefined;
 
-  constructor(productId: string, options?: { daemonUrl?: string; registryUrl?: string }) {
+  /**
+   * `internalApiKey` is the registry's INTERNAL_API_KEY, which the internal
+   * endpoints require (docs/SPECIFICATION.md section 11.2). writeASC() sends
+   * it in the X-Internal-Key header; without it, writeASC() sends no
+   * credential.
+   */
+  constructor(
+    productId: string,
+    options?: { daemonUrl?: string; registryUrl?: string; internalApiKey?: string },
+  ) {
     this.productId = productId;
     this.daemonUrl = options?.daemonUrl ?? 'http://127.0.0.1:47200';
     this.registryUrl = options?.registryUrl ?? 'https://api.oa2a.org';
+    this.#internalApiKey = options?.internalApiKey;
   }
 
   async writeASC(agentId: string, signals: Record<string, unknown>): Promise<void> {
     const url = `${this.registryUrl}/internal/asc/${agentIdSegment(agentId)}`;
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (this.#internalApiKey) headers['X-Internal-Key'] = this.#internalApiKey;
     const resp = await fetch(url, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(signals),
+      // fetch would send the key on to the address a redirect names, so a
+      // redirect is answered as a failed write instead.
+      redirect: 'manual',
     });
     if (!resp.ok) {
       throw new Error(`ASC write failed: ${resp.status} ${resp.statusText}`);
@@ -108,13 +126,23 @@ export class BaseFabricAdapter implements FabricAdapter {
  * `agentId` as one segment of a registry path. encodeURIComponent keeps `/`,
  * `?` and `#` inside the segment. The empty string, `.` and `..` would still
  * move the request to another path once the URL is resolved, so they are
- * refused.
+ * refused. A value that is not a string is refused too: `['..'] === '..'` is
+ * false, yet the array is put into the path as `..`. encodeURIComponent throws
+ * a URIError for a string with a lone surrogate; that is reported as the same
+ * TypeError.
  */
-function agentIdSegment(agentId: string): string {
+function agentIdSegment(agentId: unknown): string {
+  if (typeof agentId !== 'string') {
+    throw new TypeError(`Invalid agentId: expected a string, got ${typeof agentId}`);
+  }
   if (agentId === '' || agentId === '.' || agentId === '..') {
     throw new TypeError(`Invalid agentId: ${JSON.stringify(agentId)}`);
   }
-  return encodeURIComponent(agentId);
+  try {
+    return encodeURIComponent(agentId);
+  } catch (err) {
+    throw new TypeError(`Invalid agentId: ${JSON.stringify(agentId)}`, { cause: err });
+  }
 }
 
 /**
