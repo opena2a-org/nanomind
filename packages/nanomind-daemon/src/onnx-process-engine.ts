@@ -15,7 +15,8 @@
 
 import { fork, type ChildProcess } from 'node:child_process';
 import type { DownloadProgressEvent, OnnxEngineConfig, OnnxInferResult } from './onnx-engine.ts';
-import { HOST_ARG, ONNX_HOST_PATH, type HostConfig, type HostMessage, type ParentMessage } from './onnx-host.mts';
+import type { HostConfig, HostMessage, ParentMessage } from './onnx-host.mts';
+import { HOST_ARG, ONNX_HOST_PATH } from './onnx-host-path.cts';
 
 // The Node flags a host keeps from this process: preloads (a test stubs the
 // download with one), type stripping (which runs onnx-host.mts from source)

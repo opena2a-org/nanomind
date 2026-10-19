@@ -1,6 +1,6 @@
-import { fileURLToPath } from 'node:url';
 import type { DownloadProgressEvent, OnnxEngineConfig, OnnxInferResult } from './onnx-engine.ts';
 import { errorMessage } from './error-message.ts';
+import { HOST_ARG } from './onnx-host-path.cts';
 
 /**
  * The process `OnnxProcessEngine` runs the classifier in. The engine forks
@@ -11,15 +11,10 @@ import { errorMessage } from './error-message.ts';
  * an ORT session inside a long-lived process does not: the allocator keeps
  * the freed pages.
  *
- * This module is .mts for the same reason as manifest.mts: it is ESM in both
- * runtimes, so `import.meta.url` names the file to fork (src/onnx-host.mts
- * under the test runner, dist/onnx-host.mjs in the build). Importing it only
- * reads these exports; onnxruntime-node loads in the forked process alone.
+ * This module is .mts, so it is ESM in both runtimes. The daemon process
+ * imports only its types: onnx-host-path.cts names the file to fork, and
+ * onnxruntime-node loads in the forked process alone.
  */
-export const ONNX_HOST_PATH = fileURLToPath(import.meta.url);
-
-/** First argument of a forked host; the second is its `HostConfig` as JSON. */
-export const HOST_ARG = '--nanomind-onnx-host';
 
 /** `OnnxEngineConfig` without the callback, which cannot cross processes. */
 export type HostConfig = Omit<OnnxEngineConfig, 'onDownloadProgress'> & {
