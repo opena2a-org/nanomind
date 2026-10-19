@@ -10,7 +10,7 @@ import { join } from 'node:path';
 import { homedir, tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { classifyIntent } from '@nanomind/router';
-import { ABSTAIN_CONFIDENCE_FLOOR, NanoMindDaemon, InferRequestError, TokenBucketRateLimiter } from './server.ts';
+import { ABSTAIN_CONFIDENCE_FLOOR, DEFAULT_CONFIG, NanoMindDaemon, InferRequestError, TokenBucketRateLimiter } from './server.ts';
 import type { DaemonConfig, DaemonEngine, InferRequest } from './server.ts';
 import { OnnxEngine } from './onnx-engine.ts';
 
@@ -1102,6 +1102,107 @@ describe('TokenBucketRateLimiter', () => {
     clockMs += 1000;
     assert.deepStrictEqual([1, 2, 3].map(() => limiter.tryRemove('late')), [true, true, false]);
     assert.strictEqual(tracked.size, 1);
+  });
+});
+
+describe('NanoMindDaemon rateLimitPerSecond', () => {
+  const stubEngine = {
+    ensureReady: async () => {},
+    infer: async () => ({ text: 'benign', attackClass: '' as const, confidence: 0.99, rawLabel: 'benign' }),
+  };
+
+  // Each test starts its own daemon, on an OS-assigned port, with the daemon's
+  // own limiter on the real clock.
+  const daemons: NanoMindDaemon[] = [];
+  afterEach(async () => {
+    await Promise.all(daemons.splice(0).map(daemon => daemon.stop()));
+  });
+
+  /** Starts a daemon with `rateLimitPerSecond` and returns its /v1/infer URL. */
+  async function startWithRate(rateLimitPerSecond: number): Promise<string> {
+    const daemon = new NanoMindDaemon({
+      httpPort: 0,
+      ipcPath: join(SOCKET_DIR, `rate-${rateLimitPerSecond}.sock`),
+      idleUnloadSeconds: 60,
+      engine: stubEngine,
+      rateLimitPerSecond,
+    });
+    daemons.push(daemon);
+    const started = once(daemon, 'started');
+    await daemon.start();
+    await started;
+    const { port } = (daemon as unknown as { httpServer: { address(): { port: number } } }).httpServer.address();
+    return `http://127.0.0.1:${port}/v1/infer`;
+  }
+
+  /** Sends `count` sequential POST /v1/infer requests, as the issue's reproduction does. */
+  async function sendInfers(url: string, count: number) {
+    const statuses: number[] = [];
+    let firstRefusal: { retryAfter: string | null; body: { error: string; message: string } } | null = null;
+    const startedAt = performance.now();
+    for (let i = 0; i < count; i++) {
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ intent: 'X', input: 'list users' }),
+      });
+      statuses.push(resp.status);
+      if (resp.status === 429 && !firstRefusal) {
+        firstRefusal = { retryAfter: resp.headers.get('retry-after'), body: await resp.json() as { error: string; message: string } };
+      } else {
+        await resp.text();
+      }
+    }
+    return { statuses, firstRefusal, elapsedSeconds: (performance.now() - startedAt) / 1000 };
+  }
+
+  it('defaults to 100 requests per second', () => {
+    assert.strictEqual(DEFAULT_CONFIG.rateLimitPerSecond, 100);
+  });
+
+  it('refuses the requests past a configured rate below the default, and the 429 names that rate', async () => {
+    const RATE = 5;
+    const { statuses, firstRefusal, elapsedSeconds } = await sendInfers(await startWithRate(RATE), 50);
+
+    // The bucket holds RATE tokens and refills at RATE per second, so no more
+    // than RATE plus RATE for each second of the run pass. At the default
+    // rate all 50 pass.
+    const passed = statuses.filter(s => s === 200).length;
+    assert.strictEqual(passed + statuses.filter(s => s === 429).length, 50, `only 200 and 429 expected: ${[...new Set(statuses)]}`);
+    assert.ok(passed >= RATE, `the first ${RATE} requests pass, got ${passed}`);
+    const ceiling = Math.floor(RATE + RATE * elapsedSeconds) + 1;
+    assert.ok(passed <= ceiling, `${passed} of 50 requests passed in ${elapsedSeconds.toFixed(3)} s; a rate of ${RATE} allows ${ceiling}`);
+
+    assert.ok(firstRefusal, 'a request past the configured rate is refused');
+    assert.strictEqual(firstRefusal.retryAfter, '1');
+    assert.strictEqual(firstRefusal.body.error, 'rate_limited');
+    assert.strictEqual(firstRefusal.body.message, `Rate limit of ${RATE} requests/second exceeded. Try again shortly.`);
+  });
+
+  it('passes a burst as large as a configured rate above the default', async () => {
+    // A full bucket of 300 passes 300 requests however fast they come. At
+    // the default rate 300 sequential requests pass only when they take two
+    // seconds or more.
+    const RATE = 300;
+    const { statuses, elapsedSeconds } = await sendInfers(await startWithRate(RATE), RATE);
+    assert.deepStrictEqual(statuses, Array(RATE).fill(200), `${RATE} requests in ${elapsedSeconds.toFixed(3)} s`);
+  });
+
+  it('throws a RangeError for a rate that is not a finite number of at least 1', () => {
+    // A finite rate below 1 leaves the bucket without a whole token, so every
+    // request would be refused; NaN, Infinity or -Infinity would let every
+    // request through.
+    const invalid: unknown[] = [0, -1, 0.5, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, '100', null, undefined];
+    for (const rate of invalid) {
+      assert.throws(
+        () => new NanoMindDaemon({ engine: stubEngine, rateLimitPerSecond: rate as number }),
+        (err: unknown) => err instanceof RangeError && err.message.startsWith('rateLimitPerSecond must be a finite number of at least 1, got '),
+        `rateLimitPerSecond: ${String(rate)}`,
+      );
+    }
+    for (const rate of [1, 2.5, 1000]) {
+      assert.doesNotThrow(() => new NanoMindDaemon({ engine: stubEngine, rateLimitPerSecond: rate }), `rateLimitPerSecond: ${rate}`);
+    }
   });
 });
 

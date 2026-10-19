@@ -183,7 +183,7 @@ Each response in this table has a JSON body with an `error` code and a `message`
 | 400 | `invalid_request` | The body is not valid JSON, is not a JSON object, or has not finished arriving 30 seconds after the request reached the daemon; or `input` is missing, is not a string, or is empty or whitespace only. |
 | 404 | `not_found` | No route matches the method and path. |
 | 413 | `request_too_large` | The `/v1/infer` request body is larger than 1MB (1,048,576 bytes). The input is not classified. |
-| 429 | `rate_limited` | The client address sent more than 100 requests/second. Applies to every route except `GET /health`, `GET /health/ready` and `GET /v1/status`, and carries a `Retry-After` header. |
+| 429 | `rate_limited` | The client address sent more than `rateLimitPerSecond` requests/second (100 by default). Applies to every route except `GET /health`, `GET /health/ready` and `GET /v1/status`, and carries a `Retry-After` header. |
 | 429 | `queue_full` | `maxConcurrent` inference requests are already running. Applies to `/v1/infer` only. |
 | 500 | `inference_error` | The engine failed. The body also carries `classification: "abstain"`. |
 
@@ -193,7 +193,7 @@ The one other error status is 503 from `GET /health/ready`. Its body is the read
 
 A 429 means the daemon is running and refused this one request. The input was not classified. Read the body's `error` code to choose what to do:
 
-- `rate_limited`: the client address sent more than 100 requests/second. Wait the number of seconds in the `Retry-After` header, then send the request again. A local TCP client connects from `127.0.0.1` unless it binds another loopback address, and the TCP clients on one address share one budget. Every Unix socket client shares another.
+- `rate_limited`: the client address sent more than `rateLimitPerSecond` requests/second (100 by default). Wait the number of seconds in the `Retry-After` header, then send the request again. A local TCP client connects from `127.0.0.1` unless it binds another loopback address, and the TCP clients on one address share one budget. Every Unix socket client shares another.
 - `queue_full`: `maxConcurrent` inferences are already running. Send the request again shortly.
 
 A client that treats every non-2xx answer as "daemon unavailable" and falls back (for example to the `fail_open` path in the [FGA contract](#fga-contract)) hides these refusals from its users. Retry first, and count or log the requests it gives up on. The daemon counts the requests it refused in the `refusals` field of `GET /v1/status`. The health and status routes are not rate limited, so a health probe keeps answering 200 while a client on the same address is over the limit.
@@ -275,6 +275,7 @@ A retrain to v0.6.0 with broader corpus coverage is tracked separately. The 5-va
 | `ipcPath` | `/tmp/nanomind.sock` (`\\.\pipe\nanomind` on Windows) | Unix socket path, mode 0600; serves the same routes as HTTP |
 | `maxConcurrent` | `4` | Max concurrent inference requests |
 | `idleUnloadSeconds` | `300` | Release the model (end its child process) after N seconds without a request; the next request reloads it |
+| `rateLimitPerSecond` | `100` | Requests per second each client address may make before it is answered 429 `rate_limited`; an idle client can send up to this many at once. See [Security](#security). A value that is not a finite number of at least 1 makes the constructor throw a `RangeError` |
 
 ## Programmatic Usage
 
@@ -375,7 +376,7 @@ process and receives the child's progress events.
 - The Unix socket at `ipcPath` is created with mode 0600: only the user running the daemon can connect to it.
 - Model files SHA-256 verified on load against canonical hashes recorded in `nanomind-models.json` (v0.5.0). Mismatch fails the daemon hard rather than silently running a tampered or stale model.
 - Request size capped at 1MB (1,048,576 bytes). A larger `/v1/infer` body gets HTTP 413 with `error: "request_too_large"` and is never parsed.
-- Rate limited to 100 requests/second per client address, counted across every route except `GET /health`, `GET /health/ready` and `GET /v1/status`. Those three answer from memory and are not limited, so a health probe keeps answering while another client on its address is over the limit. The limit is a token bucket, so an idle client can send 100 requests at once. A request over the limit is answered with HTTP 429 `rate_limited`; see [Retrying a 429](#retrying-a-429). The daemon listens on loopback only, so local callers that connect from the same address share one bucket, and callers on the Unix socket share one bucket. `daemon.infer()` called in-process is not rate limited.
+- Rate limited to 100 requests/second per client address by default; `rateLimitPerSecond` sets another rate. The limit counts every route except `GET /health`, `GET /health/ready` and `GET /v1/status`. Those three answer from memory and are not limited, so a health probe keeps answering while another client on its address is over the limit. The limit is a token bucket, so an idle client can send up to `rateLimitPerSecond` requests at once. A request over the limit is answered with HTTP 429 `rate_limited`; see [Retrying a 429](#retrying-a-429). The daemon listens on loopback only, so local callers that connect from the same address share one bucket, and callers on the Unix socket share one bucket. `daemon.infer()` called in-process is not rate limited.
 - At most `maxConcurrent` (default 4) inference requests run at the same time. A `/v1/infer` request beyond that is answered with HTTP 429 `queue_full`.
 - No credentials in memory after model load.
 
