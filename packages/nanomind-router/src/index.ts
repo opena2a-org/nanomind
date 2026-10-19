@@ -139,11 +139,19 @@ const INTENT_PATTERNS: Array<{ pattern: InputMatcher; intent: IntentType; unless
   { pattern: /\b(help|command|what can|how do|usage)\b/i, intent: 'HELP' },
 ];
 
-// Entity extraction patterns
+// Entity extraction patterns. A pattern with alternatives has a group for
+// each; the value is the group that matched.
 const ENTITY_PATTERNS: Array<{ pattern: RegExp; entity: string }> = [
   // A finding ID such as CRED-001 or SKILL-SEMANTIC-007, taken whole
   { pattern: /\b([A-Z]+(?:-[A-Z]+)*-\d{3})\b/, entity: 'checkId' },
-  { pattern: /\bagent[:\s]+(\S+)/i, entity: 'agentId' },
+  // An agent id only where the input marks one: `agent:<id>` or `agent: <id>`,
+  // a quoted id after "agent" (`agent "<id>"`, `agent: '<id>'`), or a DID after
+  // "agent". The word after an unmarked "agent" is not an id, so "why is my
+  // agent level 2" names no agent.
+  {
+    pattern: /\bagent(?:\s*:\s*|\s+)(?:"([^"\s]+)"|'([^'\s]+)')|\bagent\s*:\s*(\S+)|\bagent\s+(did:[a-z0-9]+:\S+)/i,
+    entity: 'agentId',
+  },
   { pattern: /\bpackage[:\s]+(\S+)/i, entity: 'packageName' },
   { pattern: /\b(did:[a-z]+:[a-z_]+:[^\s]+)/, entity: 'did' },
 ];
@@ -158,9 +166,9 @@ export function classifyIntent(input: string): IntentClassification {
   // Extract entities
   const entities: Record<string, string> = {};
   for (const { pattern, entity } of ENTITY_PATTERNS) {
-    const match = trimmed.match(pattern);
-    if (match) {
-      entities[entity] = match[1];
+    const value = trimmed.match(pattern)?.slice(1).find((group) => group !== undefined);
+    if (value !== undefined) {
+      entities[entity] = value;
     }
   }
 
