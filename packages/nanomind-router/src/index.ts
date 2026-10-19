@@ -55,37 +55,49 @@ interface InputMatcher {
   test(input: string): boolean;
 }
 
-// The characters `.` does not match, so a pattern with `.*` matches within one line.
-const LINE_TERMINATORS = /[\n\r\u{2028}\u{2029}]/u;
+// The characters `.` does not match, so the `.*` of a pattern stays on one line.
+const LINE_TERMINATOR = /[\n\r\u{2028}\u{2029}]/gu;
 
 /**
- * A matcher for `parts` appearing in order on one line of the input, with
- * anything between them: what the pattern `/A.*B/` (or `/A.*B.*C/`) matches,
- * in time linear in the input. That pattern re-reads the rest of the line from
- * every place A matches, so an input that repeats a word of A and never
- * completes the pattern takes time quadratic in its length, cubic with three
- * parts. This matcher reads each line once per part: it takes the first match
- * of each part, searched from the end of the part before it. The answer is the
- * same as the pattern's when no match of a part can lie inside another match
- * of the same part, which holds for whole words and for alternatives none of
- * which contains another. The parts carry no g or y flag.
+ * A matcher for `parts` appearing in order in the input, with anything but a
+ * line terminator between them: what the pattern `/A.*B/` (or `/A.*B.*C/`)
+ * matches, in time linear in the input. That pattern re-reads the rest of the
+ * line from every place A matches, so an input that repeats a word of A and
+ * never completes the pattern takes time quadratic in its length, cubic with
+ * three parts. This matcher takes the first match of A on a line and the first
+ * match of each later part that starts between the end of the part before it
+ * and the end of that line; when a part has none, it goes on to the next line.
+ * A match may run past the end of its line, as in the pattern: `tool\s*desc`
+ * matches "tool", a line break and "desc". The answer is the same as the
+ * pattern's when no match of a part can lie inside another match of the same
+ * part, which holds for whole words and for alternatives none of which
+ * contains another, and no part but the last can match a line terminator. The
+ * parts carry no g, y or s flag.
  */
 function inOrder(first: RegExp, ...rest: RegExp[]): InputMatcher {
-  const later = rest.map((part) => new RegExp(part.source, `${part.flags}g`));
+  const head = new RegExp(first.source, `${first.flags}g`);
+  // Each is tried where the part before it ends: `.*?` stops at the end of
+  // that line, and being lazy it takes the first match of the part.
+  const later = rest.map((part) => new RegExp(`.*?(?:${part.source})`, `${part.flags}y`));
   return {
     test(input: string): boolean {
-      return input.split(LINE_TERMINATORS).some((line) => {
-        const head = first.exec(line);
-        if (!head) return false;
-        let end = head.index + head[0].length;
-        for (const part of later) {
+      head.lastIndex = 0;
+      for (let match = head.exec(input); match; match = head.exec(input)) {
+        let end = match.index + match[0].length;
+        const complete = later.every((part) => {
           part.lastIndex = end;
-          const match = part.exec(line);
-          if (!match) return false;
-          end = match.index + match[0].length;
-        }
-        return true;
-      });
+          const found = part.test(input);
+          if (found) end = part.lastIndex;
+          return found;
+        });
+        if (complete) return true;
+        // A later match of the first part on this line ends no earlier, so it
+        // completes no more parts: go on to the next line.
+        LINE_TERMINATOR.lastIndex = end;
+        if (!LINE_TERMINATOR.test(input)) return false;
+        head.lastIndex = LINE_TERMINATOR.lastIndex;
+      }
+      return false;
     },
   };
 }

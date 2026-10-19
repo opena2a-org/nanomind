@@ -571,9 +571,10 @@ describe('Router README', () => {
 });
 
 // The intent patterns before the rows with `.*` between their words were
-// rewritten as matchers that find the words in order, one line at a time. The
-// tests below check that classifyIntent gives the intent these patterns give,
-// and that an input repeating one of the words is classified in linear time.
+// rewritten as matchers that find the words in order, with no line break
+// between one word and the next. The tests below check that classifyIntent
+// gives the intent these patterns give, and that an input repeating one of
+// the words is classified in linear time.
 describe('Intent patterns whose words are matched in order', () => {
   const previousFix = /\b(fix|repair|patch|remediate|auto-?fix)\b/i;
   const previousStatus = /\b(status|how (secure|safe)|summary|overview)\b/i;
@@ -640,12 +641,46 @@ describe('Intent patterns whose words are matched in order', () => {
     }
   });
 
+  // `\s*` in `tool\s*desc` matches a line terminator, so the SCAN_MCP_SCOPE
+  // pattern matched "tool" and "desc" on two lines when "mcp" came before
+  // "tool" on the first of them.
+  it('gives SCAN_MCP_SCOPE when a line break falls between "tool" and "desc", as the pattern did', () => {
+    const cases: Array<[string, IntentType]> = [
+      ['mcp tool\ndesc', 'SCAN_MCP_SCOPE'],
+      ['mcp tool\r\ndesc', 'SCAN_MCP_SCOPE'],
+      ['mcp tool\u{2028}desc', 'SCAN_MCP_SCOPE'],
+      ['mcp tool\u{2029}desc', 'SCAN_MCP_SCOPE'],
+      ['mcp tool \n\n\tdesc', 'SCAN_MCP_SCOPE'],
+      ['mcp tool\tdesc', 'SCAN_MCP_SCOPE'],
+      ['mcp\ntool desc', 'UNKNOWN'],
+      ['mcp tool\ndescribe it', 'EXPLAIN'],
+    ];
+    for (const [input, expected] of cases) {
+      assert.strictEqual(previousIntent(input), expected, `previous pattern for ${JSON.stringify(input)}`);
+      assert.strictEqual(classifyIntent(input).intent, expected, JSON.stringify(input));
+    }
+    // Whitespace runs between "tool" and "desc", with text before and after.
+    const leads = ['mcp ', 'MCP: the ', 'mcp\n', 'mcp tool\n', 'scope\nmcp ', ''];
+    const gaps = ['', ' ', '\t', '\n', '\r', '\r\n', '\u{2028}', '\u{2029}', ' \n ', '\n\n', '\r\n\t\u{2029}'];
+    const tails = ['', ' scope', 's', 'ription', '\nscope', ' now'];
+    for (const lead of leads) {
+      for (const gap of gaps) {
+        for (const tail of tails) {
+          const input = `${lead}tool${gap}desc${tail}`;
+          assert.strictEqual(classifyIntent(input).intent, previousIntent(input), JSON.stringify(input));
+        }
+      }
+    }
+  });
+
   it('gives the intent of the previous patterns on 20000 generated inputs', () => {
-    // The words of the rewritten rows, words that share a stem with them but
-    // are not them, words of the other rows, and filler.
+    // The words of the rewritten rows, "tool" and "desc" apart so that a
+    // separator can fall inside `tool\s*desc`, words that share a stem with
+    // them but are not them, words of the other rows, and filler.
     const words = [
       'scan', 'skill', 'intent', 'malicious', 'soul', 'governance', 'complete', 'coverage', 'gap',
-      'mcp', 'scope', 'permission', 'tool desc', 'tooldesc', 'why', 'level', 'trust', 'score',
+      'mcp', 'scope', 'permission', 'tool desc', 'tooldesc', 'tool', 'desc', 'description',
+      'why', 'level', 'trust', 'score',
       'explain', 'atc', 'blocked', 'attest', 'attestation', 'build', 'add', 'ci', 'secret',
       'secrets', 'credential', 'credentials', 'key', 'keys', 'token', 'tokens', 'password',
       'passwords', 'env', 'expose', 'exposed', 'leak', 'leaks', 'leaked', 'leaking', 'find',
@@ -699,8 +734,12 @@ describe('Intent patterns whose words are matched in order', () => {
     ['show ', 128],
     ['create ', 128],
   ];
-  for (const [word, kb] of repeatedWords) {
-    it(`classifies ${kb} KB of "${word}" repeated in under 200 ms`, () => {
+  // Each line opens the SCAN_MCP_SCOPE row and does not complete it, and
+  // `tool\s*` reads the line break at its end: the matcher goes on from each
+  // line to the next.
+  const repeatedLines: Array<[string, number]> = [['mcp tool\n', 128]];
+  for (const [word, kb] of [...repeatedWords, ...repeatedLines]) {
+    it(`classifies ${kb} KB of ${JSON.stringify(word)} repeated in under 200 ms`, () => {
       const input = word.repeat(Math.ceil((kb * 1024) / word.length));
       let fastest = Infinity;
       for (let run = 0; run < 3; run++) {
