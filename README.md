@@ -54,19 +54,18 @@ nanomind-daemon status
 nanomind-daemon stop
 ```
 
-The router also carries 6 security scanning intents: `SCAN_SKILL_INTENT`, `SCAN_SOUL_COMPLETENESS`, `SCAN_MCP_SCOPE`, `SCAN_PROMPT_INTENT`, `SCAN_VERSION_DELTA`, `SCAN_EXPLAIN` ([router README](packages/nanomind-router/README.md)).
-
 ## CLI Mode
 
-NanoMind replaces the help screen when a CLI tool is run with no arguments. It classifies natural language into one of 16 intent types and maps the intent to a command through a per-CLI routing table in `@nanomind/router` ([routing tables](docs/cli-mode.md#intent-routing)).
+NanoMind replaces the help screen when a CLI tool is run with no arguments. It classifies natural language into one of 22 intent types or `UNKNOWN` and maps the intent to a command through a per-CLI routing table in `@nanomind/router` ([routing tables](docs/cli-mode.md#intent-routing)).
 
-### 16 Intent Types
+### Intent Types
 
 | Category | Intents |
 |----------|---------|
 | Security | SCAN, FIX, EXPLAIN, COMPARE, STATUS, SECRETS_EXPOSE |
 | Generation | GENERATE (9 CI/CD artifact types) |
 | Trust (ATC) | TRUST_QUERY, ATC_STATUS, RISK_SCORE, REVOCATION, EXPOSURE, ATTEST |
+| Scanning | SCAN_SKILL_INTENT, SCAN_SOUL_COMPLETENESS, SCAN_MCP_SCOPE, SCAN_PROMPT_INTENT, SCAN_VERSION_DELTA, SCAN_EXPLAIN ([router README](packages/nanomind-router/README.md)) |
 | General | HELP, CONFIG, NAVIGATE |
 
 ### Prompt Injection Guard
