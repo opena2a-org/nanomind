@@ -92,8 +92,8 @@ function printable(text: string): string {
 /**
  * Name matched patterns for a session message: the kind of each and the text
  * it matched, quoted, with characters a terminal would not show written as
- * \uXXXX escapes. The guard release this package depends on does not export
- * a way to do this, so the session does it here.
+ * \uXXXX escapes. The guard releases published to npm (0.1.0 and 0.1.1) do
+ * not export a way to do this, so the session does it here.
  */
 function describePatterns(patterns: DetectedPattern[]): string {
   return patterns.map((p) => `${p.type.replaceAll('_', ' ')} "${printable(p.match)}"`).join(', ');
