@@ -252,6 +252,19 @@ class TestIdleExit:
                 }
             )
 
+    @pytest.mark.parametrize("raw", ["nan", "NaN", "inf", "-inf", "infinity"])
+    def test_non_finite_window_is_a_config_error(self, raw):
+        # float() parses each of these, and the idle check is false for each,
+        # so the daemon would never idle out.
+        with pytest.raises(daemon.ConfigError):
+            daemon.Config.from_env(
+                {
+                    "INPUT_CLASSIFIER_JOBLIB_SHA256": "a" * 64,
+                    "INPUT_CLASSIFIER_META_SHA256": "b" * 64,
+                    "NANOMIND_GUARD_IDLE_EXIT_SEC": raw,
+                }
+            )
+
     def test_daemon_exits_on_its_own_after_window(self, short_sock, monkeypatch):
         t, stop = _start_serve(short_sock, "0.5", monkeypatch)
         try:
@@ -262,12 +275,22 @@ class TestIdleExit:
             stop.set()
 
     def test_requests_keep_the_daemon_alive(self, short_sock, monkeypatch):
-        t, stop = _start_serve(short_sock, "2.0", monkeypatch)
+        # serve() checks the idle window only when accept() times out. With
+        # requests closer together than that timeout the check never runs
+        # while they flow, and a daemon that never refreshed its idle clock
+        # would pass. These requests are further apart than the timeout, and
+        # the loop runs past the window by more than one gap, so a daemon
+        # that measured idle time from its start would exit during the loop.
+        window, gap, loop = 2.0, 0.5, 4.0
+        assert daemon.ACCEPT_POLL_SEC < gap < window
+        assert window + gap < loop
+        t, stop = _start_serve(short_sock, str(window), monkeypatch)
         try:
-            deadline = time.monotonic() + 3.0
+            deadline = time.monotonic() + loop
             while time.monotonic() < deadline:
+                assert t.is_alive()
                 _request(short_sock)
-                time.sleep(0.2)
+                time.sleep(gap)
             assert t.is_alive()
             t.join(6.0)
             assert not t.is_alive()
