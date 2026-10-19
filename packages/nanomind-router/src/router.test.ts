@@ -74,6 +74,24 @@ describe('NanoMind Router', () => {
     assert.strictEqual(result.entities.checkId, 'SKILL-SEMANTIC-007');
   });
 
+  it('takes a finding ID with a digit in a prefix or written in lower case, in upper case', () => {
+    assert.strictEqual(classifyIntent('what does A2A-001 mean').entities.checkId, 'A2A-001');
+    assert.strictEqual(classifyIntent('what does cred-001 mean').entities.checkId, 'CRED-001');
+    assert.strictEqual(classifyIntent('explain skill-semantic-007').entities.checkId, 'SKILL-SEMANTIC-007');
+  });
+
+  it('takes up to four prefixes of a finding ID, and no ID from a number with no prefix', () => {
+    assert.strictEqual(classifyIntent('explain AA-BB-CC-DD-001').entities.checkId, 'AA-BB-CC-DD-001');
+    assert.strictEqual(classifyIntent('explain AA-BB-CC-DD-EE-001').entities.checkId, 'BB-CC-DD-EE-001');
+    assert.strictEqual(classifyIntent('what does 555-123 mean').entities.checkId, undefined);
+  });
+
+  it('needs the words a pattern takes in order to be on one line', () => {
+    assert.strictEqual(classifyIntent('scan the skill, it looks malicious').intent, 'SCAN_SKILL_INTENT');
+    assert.strictEqual(classifyIntent('scan the skill\nit looks malicious').intent, 'SCAN');
+    assert.strictEqual(classifyIntent('why\nwhy is my score low').intent, 'ATC_STATUS');
+  });
+
   // ATC intents
   it('classifies "what is the trust level of my-agent" as TRUST_QUERY', () => {
     const result = classifyIntent('what is the trust level of agent: my-agent');
@@ -361,6 +379,15 @@ describe('Per-CLI command tables', () => {
     assert.deepStrictEqual(route('explain SKILL-SEMANTIC-007', 'hma')?.args, ['SKILL-SEMANTIC-007']);
   });
 
+  it('routes hma EXPLAIN with a finding ID that has a digit in a prefix or is in lower case', () => {
+    assert.deepStrictEqual(route('what does A2A-001 mean', 'hma')?.args, ['A2A-001']);
+    assert.deepStrictEqual(route('what does cred-001 mean', 'hma'), {
+      command: 'hma explain',
+      args: ['CRED-001'],
+      description: 'Explain a security finding',
+    });
+  });
+
   it('maps EXPLAIN to null when no finding ID is named or the CLI has no explain command', () => {
     assert.strictEqual(classifyIntent('what does this mean').intent, 'EXPLAIN');
     assert.strictEqual(route('what does this mean', 'hma'), null);
@@ -452,6 +479,31 @@ describe('Per-CLI command tables', () => {
           );
         }
       }
+    });
+  }
+});
+
+// CPU time of one classifyIntent call in milliseconds. CPU time rather than
+// wall time, so that load from other processes on the machine does not count.
+function classifyCpuMs(input: string): number {
+  const before = process.cpuUsage();
+  classifyIntent(input);
+  const used = process.cpuUsage(before);
+  return (used.user + used.system) / 1000;
+}
+
+// Each input repeats the start of a match and never completes it: "A-" is a
+// finding ID prefix with no number, and each other input repeats the first
+// word, or the first two words, of a pattern built with inOrder but never its
+// last word.
+describe('Classification time', () => {
+  const SIZE = 256 * 1024;
+  const LIMIT_MS = 250;
+  for (const unit of ['A-', 'scan skill ', 'add ci ', 'why ', 'explain ', 'mcp ', 'soul ', 'build ', 'secret ', 'find ', 'open ', 'create ']) {
+    it(`classifies 256 KB of ${JSON.stringify(unit)} repeated in under ${LIMIT_MS} ms of CPU time`, () => {
+      const input = unit.repeat(Math.ceil(SIZE / unit.length)).slice(0, SIZE);
+      const ms = classifyCpuMs(input);
+      assert.ok(ms < LIMIT_MS, `${ms.toFixed(0)} ms`);
     });
   }
 });

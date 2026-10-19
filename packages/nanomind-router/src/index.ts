@@ -140,10 +140,14 @@ const INTENT_PATTERNS: Array<{ pattern: InputMatcher; intent: IntentType; unless
 ];
 
 // Entity extraction patterns. A pattern with alternatives has a group for
-// each; the value is the group that matched.
-const ENTITY_PATTERNS: Array<{ pattern: RegExp; entity: string }> = [
-  // A finding ID such as CRED-001 or SKILL-SEMANTIC-007, taken whole
-  { pattern: /\b([A-Z]+(?:-[A-Z]+)*-\d{3})\b/, entity: 'checkId' },
+// each; the value is the group that matched. `normalize`, when set, rewrites
+// the value taken.
+const ENTITY_PATTERNS: Array<{ pattern: RegExp; entity: string; normalize?: (value: string) => string }> = [
+  // A finding ID such as CRED-001, A2A-001 or SKILL-SEMANTIC-007, taken whole
+  // and in upper case, with up to four prefixes before the number. With no
+  // bound on the prefixes, an input such as "A-A-A-..." with no number took
+  // time quadratic in its length.
+  { pattern: /\b([A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*){0,3}-\d{3})\b/i, entity: 'checkId', normalize: (id) => id.toUpperCase() },
   // An agent id only where the input marks one: `agent:<id>` or `agent: <id>`,
   // a quoted id after "agent" (`agent "<id>"`, `agent: '<id>'`), or a DID after
   // "agent". The word after an unmarked "agent" is not an id, so "why is my
@@ -165,10 +169,10 @@ export function classifyIntent(input: string): IntentClassification {
 
   // Extract entities
   const entities: Record<string, string> = {};
-  for (const { pattern, entity } of ENTITY_PATTERNS) {
+  for (const { pattern, entity, normalize } of ENTITY_PATTERNS) {
     const value = trimmed.match(pattern)?.slice(1).find((group) => group !== undefined);
     if (value !== undefined) {
-      entities[entity] = value;
+      entities[entity] = normalize ? normalize(value) : value;
     }
   }
 
