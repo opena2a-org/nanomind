@@ -30,3 +30,7 @@ This twin produces 9-dimensional gradients that feed `/api/v1/telemetry/behavior
 - Any ARP integration wiring (EventEngine attach, proxy integration, telemetry forwarder): lives in `hackmyagent/src/arp/`.
 - Any rule-based classifier: that is L0, not L1.
 - Any classification-drift detection: that is `guard-anomaly`, still in `hackmyagent/src/arp/intelligence/`.
+
+## License
+
+Apache-2.0
