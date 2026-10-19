@@ -22,7 +22,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { classifyIntent, mapToCommand, isATCIntent, type IntentClassification } from '@nanomind/router';
 import { ATCIntentHandler } from '@nanomind/atc';
-import { screenInput, detectInputSource, type InputSource, type DetectedPattern } from '@nanomind/guard';
+import { screenInput, detectInputSource, describePatterns, type InputSource } from '@nanomind/guard';
 import { SkillAdapter } from './adapt.ts';
 import { SessionManager, type Finding } from './session.ts';
 import { generateArtifact, detectArtifactType, artifactTypeFromInput, listArtifactTypes } from './codegen.ts';
@@ -70,36 +70,6 @@ const SOURCE_LABELS: Record<InputSource, string> = {
   env: 'environment input',
   'agent-output': 'agent output',
 };
-
-// Characters a terminal would not show, or would act on: C0 and C1 controls
-// (escape among them), zero-width, line and paragraph separators, and
-// bidirectional marks.
-const UNPRINTABLE_RANGES: Array<[number, number]> = [
-  [0x0000, 0x001f],
-  [0x007f, 0x009f],
-  [0x200b, 0x200f],
-  [0x2028, 0x202f],
-  [0x2060, 0x206f],
-  [0xfeff, 0xfeff],
-];
-
-function printable(text: string): string {
-  return Array.from(text, (c) => {
-    const code = c.codePointAt(0) ?? 0;
-    const hidden = UNPRINTABLE_RANGES.some(([low, high]) => code >= low && code <= high);
-    return hidden ? `\\u${code.toString(16).padStart(4, '0')}` : c;
-  }).join('');
-}
-
-/**
- * Name matched patterns for a session message: the kind of each and the text
- * it matched, quoted, with characters a terminal would not show written as
- * \uXXXX escapes. The guard releases published to npm (0.1.0 and 0.1.1) do
- * not export a way to do this, so the session does it here.
- */
-function describePatterns(patterns: DetectedPattern[]): string {
-  return patterns.map((p) => `${p.type.replaceAll('_', ' ')} "${printable(p.match)}"`).join(', ');
-}
 
 /**
  * Screen one line of session input from `source`. Returns null when the line

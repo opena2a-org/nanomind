@@ -99,13 +99,26 @@ function printable(text: string): string {
   }).join('');
 }
 
+// The most code points of a match that a message quotes. A pattern that
+// allows a run of whitespace matches a line that is mostly whitespace in
+// full, and a message that quoted it in full would be as long as the line.
+const MAX_QUOTED_MATCH = 40;
+
+function quoted(match: string): string {
+  const chars = Array.from(match);
+  const cut = chars.length > MAX_QUOTED_MATCH;
+  const shown = printable((cut ? chars.slice(0, MAX_QUOTED_MATCH) : chars).join(''));
+  return `"${shown}${cut ? '...' : ''}"`;
+}
+
 /**
  * Name detected patterns for a message: the kind of each and the text it
  * matched, quoted, with characters a terminal would not show written as
- * \uXXXX escapes.
+ * \uXXXX escapes. A match longer than 40 code points is cut to its first 40
+ * and ends with an ellipsis inside the quotes.
  */
 export function describePatterns(patterns: DetectedPattern[]): string {
-  return patterns.map((p) => `${p.type.replaceAll('_', ' ')} "${printable(p.match)}"`).join(', ');
+  return patterns.map((p) => `${p.type.replaceAll('_', ' ')} ${quoted(p.match)}`).join(', ');
 }
 
 /**
