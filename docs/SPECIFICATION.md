@@ -174,7 +174,7 @@ interface FabricAdapter {
 
 The `/v1/infer` response of §3.4 carries a THIRD namespace, distinct from the class namespace of §4.2 and the emitted-token namespace of §4.3. §4.3 rule 4 carves it out; this section defines it, so a consumer implementing against `/v1/infer` needs only this specification.
 
-**Always-present fields.** `attackClass` and `classification` are emitted on every response, on the success path and on the HTTP 500 error body alike, so a consumer never has to distinguish "absent" from "empty".
+**Always-present fields.** `attackClass` and `classification` are emitted on every response, on the success path and on the error bodies alike, so a consumer never has to distinguish "absent" from "empty". An error body (HTTP 400, 404, 413, 429 or 500, with an `error` code and a `message`) carries `attackClass: ""` and `classification: "abstain"`: the model produced no verdict.
 
 **`attackClass` enum.** Exactly these five values, and no others:
 
@@ -193,7 +193,7 @@ The empty string is this namespace's not-applicable marker, exactly as `none` is
 | Value | Meaning |
 |-------|---------|
 | `classified` | The model produced a usable verdict (benign or an attack class) at or above the abstain confidence floor. `attackClass` is authoritative, and `""` is a confident benign. |
-| `abstain` | The model could not produce a usable verdict: inference threw, the engine reported no usable confidence, or the predicted class's confidence was below the floor. `attackClass` is forced to `""` and MUST NOT be read as benign; the raw guess, where there was one, is preserved in `evidence`. |
+| `abstain` | The model could not produce a usable verdict: the daemon answered with an HTTP 400, 404, 413 or 429 error before the model ran, inference threw, the engine reported no usable confidence, or the predicted class's confidence was below the floor. `attackClass` is forced to `""` and MUST NOT be read as benign; the raw guess, where there was one, is preserved in `evidence`. |
 
 The abstain confidence floor is `0.5`. It is a conservative Stage-1 heuristic, not a calibrated value.
 

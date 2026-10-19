@@ -305,6 +305,53 @@ describe('spec conformance', () => {
     );
   });
 
+  // §3.4.1 states the statuses of the error bodies and the two values each one
+  // carries; the daemon README "Error responses" table lists the error bodies.
+  // server.ts writes every error body through errorBody(), so this compares the
+  // values that helper writes and the codes it is called with against both.
+  it('§3.4.1 every error body carries attackClass and classification, written by errorBody() in server.ts', () => {
+    assert.ok(sec341.length > 0, `docs/SPECIFICATION.md: cannot find the \`${HEADING_341}\` heading`);
+    const stated = sec341.match(
+      /An error body \(HTTP ([^)]*?), with an `error` code and a `message`\) carries `attackClass: "([^"]*)"` and `classification: "([^"]*)"`/
+    );
+    assert.ok(stated, 'docs/SPECIFICATION.md §3.4.1 states the error-body statuses and the attackClass and classification each carries');
+    const [, specStatuses, attackClass, classification] = stated;
+    assert.ok(
+      tsUnionMembers(SERVER_TS, SERVER_TS_PATH, 'AttackClass').includes(attackClass),
+      `§3.4.1 error-body attackClass \`${attackClass}\` is not an AttackClass value`
+    );
+    assert.ok(
+      tsUnionMembers(SERVER_TS, SERVER_TS_PATH, 'ClassificationStatus').includes(classification),
+      `§3.4.1 error-body classification \`${classification}\` is not a ClassificationStatus value`
+    );
+
+    const helper = SERVER_TS.match(/^function errorBody\b[\s\S]*?^\}/m);
+    assert.ok(helper, `${SERVER_TS_PATH}: cannot parse \`function errorBody\``);
+    assert.ok(helper[0].includes(`attackClass: '${attackClass}'`), `${SERVER_TS_PATH}: errorBody() writes attackClass '${attackClass}'`);
+    assert.ok(
+      helper[0].includes(`classification: '${classification}'`),
+      `${SERVER_TS_PATH}: errorBody() writes classification '${classification}'`
+    );
+
+    // An `error` key written anywhere else is a body errorBody() did not build.
+    const inline = [...SERVER_TS.matchAll(/\berror: '([^']*)'/g)].map(m => m[1]);
+    assert.deepStrictEqual(inline, [], `${SERVER_TS_PATH}: error bodies written without errorBody()`);
+
+    const errorTable = readmeTable('### Error responses');
+    const codes = [...SERVER_TS.matchAll(/\berrorBody\(\s*'([^']*)'/g)].map(m => m[1]);
+    assert.ok(codes.length > 0, `${SERVER_TS_PATH}: errorBody() is never called with an error code`);
+    assert.deepStrictEqual(
+      new Set(codes),
+      new Set(errorTable.map(r => r[1])),
+      `${SERVER_TS_PATH}: the codes passed to errorBody() are the \`error\` column of ${DAEMON_README_PATH} "Error responses"`
+    );
+    assert.deepStrictEqual(
+      new Set(specStatuses.split(/,\s*|\s+or\s+/).filter(Boolean)),
+      new Set(errorTable.map(r => r[0])),
+      `§3.4.1 names the statuses of ${DAEMON_README_PATH} "Error responses"`
+    );
+  });
+
   it('§3.4 Request line is the real InferRequest field set', () => {
     assert.ok(sec34.length > 0, 'docs/SPECIFICATION.md: cannot find the `### 3.4` heading');
     const line = sec34.match(/^\s*Request:\s*\{([^}]*)\}/m);
