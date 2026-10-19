@@ -4,7 +4,12 @@
 
 The package test scripts need Node.js 22.6.0 or later, the first release with `--experimental-strip-types`; `engines` in the root `package.json` declares this minimum.
 
+Run `npm run build` before the workspace tests. The CLI and daemon tests import other `@nanomind/*` packages from this repository, and those packages load from the `dist/` directory their build writes.
+
 ```bash
+# Build the workspaces
+npm run build
+
 # The docs prose check, the tests in test/, then each workspace's test script
 npm test
 

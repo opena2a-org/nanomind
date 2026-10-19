@@ -27,7 +27,7 @@ if (!interactive) {
 
 ## Requires
 
-- `@nanomind/cli` 0.1.0, a peer dependency.
+- `@nanomind/cli` ^0.1.2, a peer dependency.
 
 ## License
 

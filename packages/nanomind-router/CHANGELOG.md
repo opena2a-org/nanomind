@@ -107,6 +107,10 @@
 - The README sample of what `classifyIntent` returns shows the `rawInput`
   field, the trimmed input. It showed `intent`, `confidence` and `entities`
   only.
+- The `@nanomind/engine` dependency is `^0.1.1`, where it was pinned to
+  `0.1.0`. The engine in this repository is 0.1.1, so an install from this
+  repository links it for the router instead of installing the 0.1.0
+  release. The router does not import the engine.
 
 ## 0.1.3 — 2026-04-28
 
