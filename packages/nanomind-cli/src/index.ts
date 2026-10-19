@@ -22,7 +22,7 @@ import { spawnSync, type SpawnSyncOptionsWithStringEncoding } from 'node:child_p
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { classifyIntent, mapToCommand, isATCIntent, type IntentClassification } from '@nanomind/router';
-import { ATCIntentHandler } from '@nanomind/atc';
+import { ATCIntentHandler, ATCLookupError } from '@nanomind/atc';
 import { screenInput, detectInputSource, type InputSource, type DetectedPattern } from '@nanomind/guard';
 import { SkillAdapter } from './adapt.ts';
 import { SessionManager, type Finding } from './session.ts';
@@ -321,7 +321,8 @@ export async function handleInput(
 /**
  * Route a request and print the result. Returns true when the request was
  * answered: a command ran, an artifact was generated or a trust question was
- * answered. A request with no route, or whose command failed, returns false.
+ * answered. A request with no route, whose command failed or whose registry
+ * lookup failed, returns false.
  */
 async function route(
   request: string,
@@ -332,9 +333,18 @@ async function route(
   const classification = classifyIntent(request);
 
   // ATC intents — answered here via ATCIntentHandler. The answer is recorded
-  // so that "my agent" afterwards names the agent it was about.
+  // so that "my agent" afterwards names the agent it was about. A lookup the
+  // registry could not answer is printed with the registry address and the
+  // reason, and is not recorded: it says nothing about the agent.
   if (isATCIntent(classification.intent)) {
-    const answer = await handleATCIntent(classification, atcHandler);
+    let answer: string;
+    try {
+      answer = await handleATCIntent(classification, atcHandler);
+    } catch (err) {
+      if (!(err instanceof ATCLookupError)) throw err;
+      console.log(`\n  ${err.message}\n`);
+      return false;
+    }
     console.log(answer);
     memory?.context.update(request, answer);
     return true;
@@ -419,7 +429,8 @@ function handleGenerate(input: string, session: NanoMindSession): void {
 
 /**
  * Answer an ATC request. Returns the text to print, so the caller can also
- * record it.
+ * record it. Throws an ATCLookupError when the registry could not answer the
+ * lookup the request needs.
  */
 async function handleATCIntent(
   classification: IntentClassification,

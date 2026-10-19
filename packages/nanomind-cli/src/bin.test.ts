@@ -1,9 +1,11 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { createServer } from 'node:http';
 import { createRequire } from 'node:module';
+import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -30,10 +32,30 @@ describe('nanomind command', () => {
       timeout: 30_000,
       env: {
         PATH: options.path ?? emptyPath,
-        // No test here asks a trust question, and none may reach a real registry.
+        // No test that runs the command through this helper asks a trust
+        // question, and none may reach a real registry.
         OPENA2A_REGISTRY_URL: 'http://127.0.0.1:9',
         ...(options.home ? { HOME: options.home, USERPROFILE: options.home } : {}),
       },
+    });
+  }
+
+  // Runs the session against `registryUrl` with `input` on its standard input
+  // and resolves with what it printed. Unlike nanomind(), it leaves this
+  // process free to answer the session from a registry it serves itself.
+  function session(registryUrl: string, input: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const child = spawn(process.execPath, [bin], {
+        timeout: 30_000,
+        env: { PATH: emptyPath, OPENA2A_REGISTRY_URL: registryUrl },
+      });
+      let stdout = '';
+      child.stdout.setEncoding('utf8').on('data', (chunk: string) => {
+        stdout += chunk;
+      });
+      child.on('error', reject);
+      child.on('close', () => resolve(stdout));
+      child.stdin.end(input);
     });
   }
 
@@ -187,8 +209,11 @@ describe('nanomind command', () => {
       timeout: 30_000,
     });
     assert.strictEqual(run.status, 0, run.stderr);
-    assert.ok(!run.stdout.includes('No ATC found for agent level'), run.stdout);
-    assert.ok(run.stdout.includes('No ATC found for agent current.'), run.stdout);
+    assert.ok(!run.stdout.includes('agent "level"'), run.stdout);
+    assert.ok(
+      run.stdout.includes('Could not look up agent "current": the registry at http://127.0.0.1:9 could not be reached ('),
+      run.stdout,
+    );
     assert.ok(run.stdout.includes('RAN hma explain CRED-001'), run.stdout);
   });
 
@@ -197,6 +222,40 @@ describe('nanomind command', () => {
     assert.strictEqual(run.status, 0, run.stderr);
     assert.ok(run.stdout.includes('hackmyagent was not found on PATH'), run.stdout);
     assert.ok(run.stdout.includes('npm install -g hackmyagent'), run.stdout);
+  });
+
+  it('reports a registry error or an unreachable registry as a failed lookup that names the registry address', async () => {
+    const requests: string[] = [];
+    // Answers 404, that it has no ATC, for unknown-agent, and 500 to any other request.
+    const registry = createServer((req, res) => {
+      requests.push(`${req.method} ${req.url}`);
+      res.statusCode = req.url === '/api/v1/atx/unknown-agent' ? 404 : 500;
+      res.end();
+    });
+    await new Promise<void>((resolve) => registry.listen(0, '127.0.0.1', resolve));
+    const address = `http://127.0.0.1:${(registry.address() as AddressInfo).port}`;
+    try {
+      const answered = await session(
+        address,
+        'what is the trust level of agent:test-agent\nwhat is the trust level of agent:unknown-agent\nexit\n',
+      );
+      assert.ok(
+        answered.includes(`Could not look up agent "test-agent": the registry at ${address} answered with status 500.`),
+        answered,
+      );
+      assert.ok(!answered.includes('No ATC found for agent "test-agent"'), answered);
+      assert.ok(answered.includes('No ATC found for agent "unknown-agent". The agent may not be registered yet.'), answered);
+      assert.deepStrictEqual(requests, ['GET /api/v1/atx/test-agent', 'GET /api/v1/atx/unknown-agent']);
+    } finally {
+      registry.close();
+    }
+
+    const unreachable = await session('http://127.0.0.1:9', 'what is the trust level of agent:test-agent\nexit\n');
+    assert.ok(
+      unreachable.includes('Could not look up agent "test-agent": the registry at http://127.0.0.1:9 could not be reached ('),
+      unreachable,
+    );
+    assert.ok(!unreachable.includes('No ATC found'), unreachable);
   });
 
   it('runs teach mode with nanomind teach and reads its answers from standard input', { skip: process.platform === 'win32' }, () => {

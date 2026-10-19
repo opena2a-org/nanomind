@@ -37,6 +37,24 @@ console.log(explanation.summary);
 //   Projected level 4 after fixes: 500 pts (230 present + 270 from fixes)
 ```
 
+## Not found and failed lookups
+
+A 404 from the registry means it has no ATC for the agent: `getTrustLevel` returns null, and `explainTrustLevel` explains how to get started. When the registry answers with another error status or with a body that could not be read as JSON, or cannot be reached, both methods reject with an `ATCLookupError`, so a failed lookup is not read as an unregistered agent. Its message names the agent, the registry address and the reason. It also carries `agentId`, `registryUrl` and `status`, which is undefined when the registry was not reached.
+
+```typescript
+import { ATCIntentHandler, ATCLookupError } from '@nanomind/atc';
+
+try {
+  const trust = await new ATCIntentHandler().getTrustLevel('billing-agent');
+  console.log(trust ? `Trust level ${trust.trustLevel}` : 'The registry has no ATC for billing-agent');
+} catch (err) {
+  if (!(err instanceof ATCLookupError)) throw err;
+  console.log(err.message);
+  // For a registry that answers 503:
+  // Could not look up agent "billing-agent": the registry at https://api.oa2a.org answered with status 503.
+}
+```
+
 ## License
 
 Apache-2.0

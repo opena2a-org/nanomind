@@ -3,7 +3,7 @@ import assert from 'node:assert';
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { ATCIntentHandler } from './index.ts';
+import { ATCIntentHandler, ATCLookupError } from './index.ts';
 
 const REGISTRY = 'https://registry.test';
 
@@ -69,20 +69,90 @@ describe('ATCIntentHandler', () => {
     });
   });
 
-  it('returns null when the registry answers with an error status', async (t) => {
+  it('returns null when the registry answers 404, that it has no ATC for the agent', async (t) => {
     t.mock.method(globalThis, 'fetch', async () => jsonResponse({ error: 'not found' }, 404));
     const handler = new ATCIntentHandler({ registryUrl: REGISTRY });
 
     assert.strictEqual(await handler.getTrustLevel('acme/missing'), null);
   });
 
-  it('returns null when the registry cannot be reached', async (t) => {
-    t.mock.method(globalThis, 'fetch', async () => {
-      throw new TypeError('fetch failed');
-    });
+  it('throws a lookup error that names the registry and the status for an error status other than 404', async (t) => {
+    const fetchMock = t.mock.method(globalThis, 'fetch');
+    for (const status of [500, 503, 403]) {
+      fetchMock.mock.mockImplementation(async () => jsonResponse({ error: 'unavailable' }, status));
+      const handler = new ATCIntentHandler({ registryUrl: REGISTRY });
+
+      await assert.rejects(handler.getTrustLevel('acme/agent'), (err: unknown) => {
+        assert.ok(err instanceof ATCLookupError, String(err));
+        assert.strictEqual(
+          err.message,
+          `Could not look up agent "acme/agent": the registry at ${REGISTRY} answered with status ${status}.`,
+        );
+        assert.strictEqual(err.name, 'ATCLookupError');
+        assert.strictEqual(err.agentId, 'acme/agent');
+        assert.strictEqual(err.registryUrl, REGISTRY);
+        assert.strictEqual(err.status, status);
+        return true;
+      });
+    }
+  });
+
+  it('throws a lookup error that names the registry and the cause when the registry cannot be reached', async (t) => {
+    const notFound = Object.assign(new Error('getaddrinfo ENOTFOUND registry.test'), { code: 'ENOTFOUND' });
+    // Node's fetch to a host with several addresses fails with an AggregateError that has a code and no message.
+    const refused = Object.assign(new AggregateError([], ''), { code: 'ECONNREFUSED' });
+    const cases = [
+      { error: new TypeError('fetch failed', { cause: notFound }), reason: 'fetch failed: getaddrinfo ENOTFOUND registry.test' },
+      { error: new TypeError('fetch failed', { cause: refused }), reason: 'fetch failed: ECONNREFUSED' },
+      { error: new TypeError('fetch failed'), reason: 'fetch failed' },
+    ];
+    const fetchMock = t.mock.method(globalThis, 'fetch');
+    for (const { error, reason } of cases) {
+      fetchMock.mock.mockImplementation(async () => {
+        throw error;
+      });
+      const handler = new ATCIntentHandler({ registryUrl: REGISTRY });
+
+      await assert.rejects(handler.getTrustLevel('acme/agent'), (err: unknown) => {
+        assert.ok(err instanceof ATCLookupError, String(err));
+        assert.strictEqual(
+          err.message,
+          `Could not look up agent "acme/agent": the registry at ${REGISTRY} could not be reached (${reason}).`,
+        );
+        assert.strictEqual(err.status, undefined);
+        assert.strictEqual(err.cause, error);
+        return true;
+      });
+    }
+  });
+
+  it('throws a lookup error when the registry answers with a body that is not JSON', async (t) => {
+    t.mock.method(globalThis, 'fetch', async () =>
+      new Response('<html>sign in to continue</html>', { status: 200, headers: { 'Content-Type': 'text/html' } }),
+    );
     const handler = new ATCIntentHandler({ registryUrl: REGISTRY });
 
+    await assert.rejects(handler.getTrustLevel('acme/agent'), (err: unknown) => {
+      assert.ok(err instanceof ATCLookupError, String(err));
+      assert.strictEqual(
+        err.message,
+        `Could not look up agent "acme/agent": the registry at ${REGISTRY} answered with status 200 and a body that could not be read as JSON.`,
+      );
+      assert.strictEqual(err.status, 200);
+      assert.ok(err.cause instanceof SyntaxError, String(err.cause));
+      return true;
+    });
+  });
+
+  it('queries the registry again after a failed lookup and after a 404', async (t) => {
+    const answers = [jsonResponse({}, 500), jsonResponse({}, 404), jsonResponse(FULL_ATC)];
+    const fetchMock = t.mock.method(globalThis, 'fetch', async () => answers.shift());
+    const handler = new ATCIntentHandler({ registryUrl: REGISTRY });
+
+    await assert.rejects(handler.getTrustLevel('acme/agent'), ATCLookupError);
     assert.strictEqual(await handler.getTrustLevel('acme/agent'), null);
+    assert.strictEqual((await handler.getTrustLevel('acme/agent'))?.trustLevel, 3);
+    assert.strictEqual(fetchMock.mock.callCount(), 3);
   });
 
   it('serves a repeat query from the cache within the TTL', async (t) => {
@@ -181,6 +251,32 @@ describe('ATCIntentHandler', () => {
     assert.strictEqual(explanation.projectedLevel, 4);
     assert.ok(explanation.factors.every(f => f.status === 'missing'));
     assert.ok(explanation.summary.startsWith('No ATC found for agent acme/new. To get started:'));
+  });
+
+  it('throws the lookup error, not the how-to-get-started summary, when the registry could not answer', async (t) => {
+    const cases = [
+      { answer: async () => jsonResponse({}, 500), reason: 'answered with status 500' },
+      {
+        answer: async () => new Response('not json', { status: 200 }),
+        reason: 'answered with status 200 and a body that could not be read as JSON',
+      },
+      {
+        answer: async (): Promise<Response> => {
+          throw new TypeError('fetch failed');
+        },
+        reason: 'could not be reached (fetch failed)',
+      },
+    ];
+    const fetchMock = t.mock.method(globalThis, 'fetch');
+    for (const { answer, reason } of cases) {
+      fetchMock.mock.mockImplementation(answer);
+      const handler = new ATCIntentHandler({ registryUrl: REGISTRY });
+
+      await assert.rejects(handler.explainTrustLevel('acme/agent'), {
+        name: 'ATCLookupError',
+        message: `Could not look up agent "acme/agent": the registry at ${REGISTRY} ${reason}.`,
+      });
+    }
   });
 });
 

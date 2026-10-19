@@ -34,7 +34,7 @@ The command is printed before it runs, and its output follows. Scan, fix, status
 npm install -g hackmyagent
 ```
 
-Trust level requests look the agent up in the OpenA2A registry. Set `OPENA2A_REGISTRY_URL` to use a different registry. Type `exit` or press Ctrl+C to leave the session.
+Trust level requests look the agent up in the OpenA2A registry. Set `OPENA2A_REGISTRY_URL` to use a different registry. A 404 from the registry means it has no ATC for the agent, and the session says so. When the registry answers with another error status or cannot be reached, the session prints `Could not look up agent "<id>"` followed by the registry address and the reason, and the registry step of teach mode prints the same line. Type `exit` or press Ctrl+C to leave the session.
 
 ### Teach mode
 
