@@ -119,6 +119,15 @@ describe('session input screening', () => {
     );
   });
 
+  it('names file input in the warning for a file redirected to stdin', () => {
+    withInputFile(`${HIGH_SEVERITY}\n`, (fd) => {
+      const { stdout } = runSession(fd);
+      assert.ok(stdout.includes('WARNING: Suspicious pattern detected in file input: role switching "act as a"'), stdout);
+      assert.ok(!stdout.includes('piped input'), stdout);
+      assert.ok(stdout.includes('RAN hma secure'), stdout);
+    });
+  });
+
   it('escapes a terminal control character when it names the match', () => {
     const esc = String.fromCharCode(0x1b);
     const screened = screenLine(`scan ${esc}[2J this project`, 'piped');

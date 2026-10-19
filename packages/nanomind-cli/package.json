@@ -15,7 +15,7 @@
     "@nanomind/engine": "0.1.0",
     "@nanomind/router": "0.1.0",
     "@nanomind/atc": "0.1.0",
-    "@nanomind/guard": "0.1.0"
+    "@nanomind/guard": "0.1.1"
   },
   "license": "Apache-2.0",
   "repository": {
