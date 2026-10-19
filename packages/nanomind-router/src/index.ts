@@ -1,7 +1,7 @@
 /**
  * @nanomind/router — Intent classification + command mapping
  *
- * Classifies natural language input into one of 16 intent types,
+ * Classifies natural language input into one of 22 intent types or UNKNOWN,
  * then maps to the appropriate CLI command or handler.
  */
 

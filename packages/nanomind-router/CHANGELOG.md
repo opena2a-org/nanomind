@@ -57,6 +57,9 @@
   `IntentType` names 22 intents plus `UNKNOWN`. It listed `SCAN_SKILL`,
   `SCAN_MCP`, `SCAN_SOUL`, `SCAN_CREDENTIAL`, `SCAN_CODE` and `COMPILE_AST`,
   which `IntentType` does not define, and a count of 17.
+- The module comment at the top of `dist/index.js` and `dist/index.d.ts`
+  says input is classified into one of 22 intent types or `UNKNOWN`, the
+  values `IntentType` names. It said one of 16 intent types.
 
 ## 0.1.3 — 2026-04-28
 
