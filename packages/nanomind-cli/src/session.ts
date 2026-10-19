@@ -18,7 +18,8 @@ export interface SessionContext {
   startedAt: number;
 }
 
-interface Finding {
+/** A finding a command printed: its check id, title and severity. */
+export interface Finding {
   id: string;
   title: string;
   severity: string;
@@ -49,15 +50,19 @@ export class SessionManager {
   }
 
   /**
-   * Update context after a command execution.
+   * Record a command and its output. Returns the findings this output lists.
+   * When there are some they replace the remembered findings; when there are
+   * none the earlier findings stay, so "the first one" keeps naming the first
+   * finding of the last command that printed any.
    */
-  update(command: string, output: string): void {
+  update(command: string, output: string): Finding[] {
     this.context.lastCommand = command;
     this.context.lastOutput = output;
     this.context.turnCount++;
 
-    // Extract findings from scan output
-    const findingMatches = output.matchAll(/\[([A-Z]+-\d+)]\s+(.+?)(?:\s+\((\w+)\))?$/gm);
+    // A finding line: a check id in brackets, such as [CRED-001] or
+    // [SKILL-SEMANTIC-007], a title, and the severity in parentheses if given.
+    const findingMatches = output.matchAll(/\[([A-Z]+(?:-[A-Z]+)*-\d+)]\s+(.+?)(?:\s+\((\w+)\))?$/gm);
     const findings: Finding[] = [];
     for (const match of findingMatches) {
       findings.push({ id: match[1], title: match[2], severity: match[3] || 'medium' });
@@ -66,8 +71,11 @@ export class SessionManager {
       this.context.lastFindings = findings;
     }
 
-    // Extract agent ID
-    const agentMatch = output.match(/agent[:\s]+(\S+)/i);
+    // The agent an "Agent: <id>" line names, as a trust lookup prints it, or
+    // a "Your agent <id>" sentence, as a trust explanation does. The id runs
+    // as far as it is a plain identifier, so a quoted mention is not one and
+    // a sentence's final period is not part of it.
+    const agentMatch = output.match(/\b(?:agent:|your agent)\s+([A-Za-z0-9@][\w@:\/+-]*(?:\.[\w@:\/+-]+)*)/i);
     if (agentMatch) {
       this.context.lastAgentId = agentMatch[1];
     }
@@ -84,6 +92,8 @@ export class SessionManager {
         passed: parseInt(summaryMatch[2]) === 0,
       };
     }
+
+    return findings;
   }
 
   /**

@@ -9,3 +9,7 @@ NanoMind replaces the help screen when a CLI tool is run with no arguments. It c
 ## Prompt Injection Guard
 
 Input that does not come from a terminal is screened before routing. Piped stdin is screened as `piped` and a file redirected to stdin as `file`. Agent output reaches a session the same way, through a pipe or a file. A caller that passes agent output to `screenInput` directly labels it `agent-output`. Output from the commands a session runs is printed and never routed.
+
+## Session context
+
+A session keeps the findings the last command printed, read from lines of the form `[CRED-001] title (severity)`, and the agent the last trust answer named. A later line that says "the first one", "that finding" or "my agent" is read with that id in place of the words, and the session prints the line as it read it before routing it. An id is taken only as far as it is made of the characters a command argument may contain, and the output itself is never routed. Lines are handled one at a time, in order, so a follow-up refers to the output of the line before it even when several lines arrive together from a pipe or a file.

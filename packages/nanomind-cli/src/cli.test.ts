@@ -74,6 +74,29 @@ describe('SessionManager', () => {
     const resolved = session.resolveReference('why is my agent level 2');
     assert.ok(resolved.includes('billing-agent'));
   });
+
+  it('returns the findings of this output and keeps the earlier ones when it lists none', () => {
+    const session = new SessionManager();
+    const found = session.update('scan', '[CRED-001] Hardcoded API key (critical)\n[SKILL-SEMANTIC-007] Exfiltration pattern (high)');
+    assert.deepStrictEqual(found.map((f) => f.id), ['CRED-001', 'SKILL-SEMANTIC-007']);
+    assert.strictEqual(found[1].severity, 'high');
+    assert.deepStrictEqual(session.update('secure --fix', 'Fixed 1 finding'), []);
+    assert.strictEqual(session.getContext().lastFindings[0].id, 'CRED-001');
+    assert.strictEqual(session.resolveReference('explain that finding'), 'explain CRED-001');
+  });
+
+  it('takes the agent from an "Agent:" line or a "Your agent" sentence, not from a quoted mention', () => {
+    const session = new SessionManager();
+    session.update('trust', 'No ATC found for agent "x;echo". The agent may not be registered yet.');
+    assert.strictEqual(session.getContext().lastAgentId, null);
+    session.update('trust', 'Please specify an agent: "what is the trust level of <agent-id>"');
+    assert.strictEqual(session.getContext().lastAgentId, null);
+    session.update('trust', 'Your agent billing-agent is trust level 2 because:\n  Missing: HMA scan');
+    assert.strictEqual(session.getContext().lastAgentId, 'billing-agent');
+    session.update('trust', '  Agent: pay.agent.v2\n  Trust Level: 3');
+    assert.strictEqual(session.getContext().lastAgentId, 'pay.agent.v2');
+    assert.strictEqual(session.resolveReference('why is my agent level 2'), 'why is agent: pay.agent.v2 level 2');
+  });
 });
 
 describe('CodeGen', () => {

@@ -23,6 +23,8 @@ import { join } from 'node:path';
 import { classifyIntent, mapToCommand, isATCIntent, type IntentClassification } from '@nanomind/router';
 import { ATCIntentHandler } from '@nanomind/atc';
 import { screenInput, detectInputSource, type InputSource, type DetectedPattern } from '@nanomind/guard';
+import { SkillAdapter } from './adapt.ts';
+import { SessionManager, type Finding } from './session.ts';
 import { generateArtifact, detectArtifactType, artifactTypeFromInput, listArtifactTypes } from './codegen.ts';
 import { runTeachMode } from './teach.ts';
 
@@ -121,6 +123,28 @@ export function screenLine(input: string, source: InputSource, noGuard = false):
   return { blocked: false, message };
 }
 
+/**
+ * What a session keeps between turns: the output and findings of the last
+ * command, so a follow-up such as "fix the first one" can name the finding it
+ * refers to, and the lines typed so far, from which the skill level that sets
+ * how much the session says is inferred. startSession creates one per
+ * session; handleInput without one handles each line on its own.
+ */
+export interface SessionMemory {
+  context: SessionManager;
+  skill: SkillAdapter;
+}
+
+export function createSessionMemory(): SessionMemory {
+  return { context: new SessionManager(), skill: new SkillAdapter() };
+}
+
+// A message in three lengths; the skill level picks one. Without a memory the
+// session has no level and says the middle one.
+function say(memory: SessionMemory | undefined, full: string, concise: string, terse: string): string {
+  return memory ? memory.skill.formatResponse(full, concise, terse) : concise;
+}
+
 const WELCOME = `
   NanoMind: interactive assistant for AI security tools
   Type a question or command. Examples:
@@ -138,7 +162,9 @@ type Ask = (question: string) => Promise<string>;
  * Read the lines of `rl` one at a time: print the prompt, then return the next
  * line, or null once the input has ended. A session reads its requests and
  * teach mode its answers through one reader, so the answer to a question is
- * the line after it, also when the lines are piped in at once.
+ * the line after it, also when the lines are piped in at once. A session reads
+ * its next request only after the last one was handled, so a follow-up such as
+ * "fix the first one" is read against what the line before it printed.
  */
 function lineReader(rl: readline.Interface): ReadLine {
   const lines = rl[Symbol.asyncIterator]();
@@ -197,6 +223,7 @@ async function startTeachMode(session: NanoMindSession, ask: Ask): Promise<void>
 export async function startSession(session: NanoMindSession): Promise<void> {
   const atcHandler = new ATCIntentHandler({ registryUrl: session.registryUrl });
   const inputSource = detectInputSource();
+  const memory = createSessionMemory();
 
   console.log(WELCOME);
   console.log(`  Connected to: ${session.cliName} v${session.cliVersion}\n`);
@@ -231,7 +258,7 @@ export async function startSession(session: NanoMindSession): Promise<void> {
         if (input.toLowerCase() === TEACH_COMMAND) {
           await startTeachMode(session, ask);
         } else {
-          await handleInput(input, session, atcHandler);
+          await handleInput(input, session, atcHandler, memory);
         }
       } catch (err) {
         console.log(`\n  Error: ${err instanceof Error ? err.message : 'Unknown error'}\n`);
@@ -244,23 +271,57 @@ export async function startSession(session: NanoMindSession): Promise<void> {
   })();
 }
 
+/**
+ * Handle one line of session input. With `memory`, a reference in the line
+ * ("the first one", "that finding", "my agent") is first replaced by what the
+ * memory holds for it, and the session prints how it read the line. What the
+ * line's command prints is then recorded for the next reference, and the line
+ * itself for the skill level. Without `memory`, the line is handled on its own.
+ */
 export async function handleInput(
   input: string,
   session: NanoMindSession,
   atcHandler: ATCIntentHandler,
+  memory?: SessionMemory,
 ): Promise<void> {
-  const classification = classifyIntent(input);
+  const request = memory ? memory.context.resolveReference(input) : input;
+  if (request !== input) {
+    console.log(`\n  > Reading "${input}" as "${request}"`);
+  }
+  let answered = false;
+  try {
+    answered = await route(request, session, atcHandler, memory);
+  } finally {
+    memory?.skill.record(input, answered);
+  }
+}
 
-  // ATC intents — handle directly via ATCIntentHandler
+/**
+ * Route a request and print the result. Returns true when the request was
+ * answered: a command ran, an artifact was generated or a trust question was
+ * answered. A request with no route, or whose command failed, returns false.
+ */
+async function route(
+  request: string,
+  session: NanoMindSession,
+  atcHandler: ATCIntentHandler,
+  memory?: SessionMemory,
+): Promise<boolean> {
+  const classification = classifyIntent(request);
+
+  // ATC intents — answered here via ATCIntentHandler. The answer is recorded
+  // so that "my agent" afterwards names the agent it was about.
   if (isATCIntent(classification.intent)) {
-    await handleATCIntent(classification, atcHandler);
-    return;
+    const answer = await handleATCIntent(classification, atcHandler);
+    console.log(answer);
+    memory?.context.update(request, answer);
+    return true;
   }
 
   // GENERATE — print the artifact from the local templates; no CLI command runs
   if (classification.intent === 'GENERATE') {
-    handleGenerate(input, session);
-    return;
+    handleGenerate(request, session);
+    return true;
   }
 
   // Map to CLI command
@@ -268,24 +329,49 @@ export async function handleInput(
 
   if (!mapping) {
     if (classification.intent === 'UNKNOWN') {
-      console.log(`\n  I'm not sure how to help with that. Try "help" for examples.\n`);
+      console.log(say(
+        memory,
+        `\n  I'm not sure how to help with that. Requests are matched against fixed patterns, so name the action, for example "scan this project", "fix the credential issue" or "what is the trust level of <agent-id>". Try "help" for examples.\n`,
+        `\n  I'm not sure how to help with that. Try "help" for examples.\n`,
+        `\n  No matching request. Try "help".\n`,
+      ));
     } else {
       console.log(`\n  ${session.cliName} has no command for ${classification.intent} requests. Try "help" for examples.\n`);
     }
-    return;
+    return false;
   }
 
   console.log(`\n  > ${mapping.description}`);
   console.log(`  > Running: ${mapping.command} ${mapping.args.join(' ')}\n`);
 
+  let output: string;
   try {
-    const output = await session.onCommand(mapping.command, mapping.args);
-    if (output) {
-      console.log(output);
-    }
+    output = await session.onCommand(mapping.command, mapping.args);
   } catch (err) {
     console.log(`  Command failed: ${err instanceof Error ? err.message : 'Unknown error'}\n`);
+    return false;
   }
+  if (output) {
+    console.log(output);
+  }
+
+  const findings = memory?.context.update([mapping.command, ...mapping.args].join(' '), output ?? '') ?? [];
+  if (findings.length > 0) {
+    const note = followUpNote(memory, findings[0]);
+    if (note) console.log(`\n  ${note}\n`);
+  }
+  return true;
+}
+
+// What the session says, once a command has printed findings, about the
+// references it now resolves. An expert is told nothing.
+function followUpNote(memory: SessionMemory | undefined, first: Finding): string {
+  return say(
+    memory,
+    `Follow-ups: "the first one" and "that finding" now mean ${first.id}, the first finding above, until a later command prints findings. The session prints how it reads such a line.`,
+    `"the first one" and "that finding" now mean ${first.id}.`,
+    '',
+  );
 }
 
 function handleGenerate(input: string, session: NanoMindSession): void {
@@ -309,40 +395,42 @@ function handleGenerate(input: string, session: NanoMindSession): void {
   console.log(`  For another type, ask "generate a ${others[0]} config". Types: ${others.join(', ')}\n`);
 }
 
+/**
+ * Answer an ATC request. Returns the text to print, so the caller can also
+ * record it.
+ */
 async function handleATCIntent(
   classification: IntentClassification,
   atcHandler: ATCIntentHandler,
-): Promise<void> {
+): Promise<string> {
   const agentId = classification.entities.agentId || classification.entities.packageName || '';
 
   switch (classification.intent) {
     case 'TRUST_QUERY': {
       if (!agentId) {
-        console.log('\n  Please specify an agent: "what is the trust level of <agent-id>"\n');
-        return;
+        return '\n  Please specify an agent: "what is the trust level of <agent-id>"\n';
       }
       const summary = await atcHandler.getTrustLevel(agentId);
       if (!summary) {
-        console.log(`\n  No ATC found for agent "${agentId}". The agent may not be registered yet.\n`);
-        return;
+        return `\n  No ATC found for agent "${agentId}". The agent may not be registered yet.\n`;
       }
-      console.log(`\n  Agent: ${summary.agentId}`);
-      console.log(`  Trust Level: ${summary.trustLevel}`);
-      console.log(`  Trust Score: ${summary.trustScore}`);
-      console.log(`  Version: ${summary.version}`);
-      console.log(`  Signatures: ${summary.signatureCount}`);
-      console.log(`  Expires: ${summary.expiresAt}\n`);
-      return;
+      return [
+        `\n  Agent: ${summary.agentId}`,
+        `  Trust Level: ${summary.trustLevel}`,
+        `  Trust Score: ${summary.trustScore}`,
+        `  Version: ${summary.version}`,
+        `  Signatures: ${summary.signatureCount}`,
+        `  Expires: ${summary.expiresAt}\n`,
+      ].join('\n');
     }
 
     case 'ATC_STATUS': {
       const explanation = await atcHandler.explainTrustLevel(agentId || 'current');
-      console.log(`\n${explanation.summary}\n`);
-      return;
+      return `\n${explanation.summary}\n`;
     }
 
-    case 'ATTEST': {
-      console.log(`
+    case 'ATTEST':
+      return `
   To add trust attestation to your CI pipeline, add this to your GitHub Actions workflow:
 
   - uses: opena2a-org/opena2a-registry/action@main
@@ -354,12 +442,10 @@ async function handleATCIntent(
       publisher: your-org
 
   This issues an Agent Trust Credential (ATC) on every successful build.
-`);
-      return;
-    }
+`;
 
     default:
-      console.log(`\n  ATC intent "${classification.intent}" is not yet implemented.\n`);
+      return `\n  ATC intent "${classification.intent}" is not yet implemented.\n`;
   }
 }
 
