@@ -155,7 +155,8 @@
             "tokenizer.json",
             "tokenizer_config.json",
             "chat_template.jinja",
-            "nanomind-security-analyst.Q4_K_M.gguf"
+            "nanomind-security-analyst.Q4_K_M.gguf",
+            "README.md"
           ],
           "formats": {
             "safetensors": {
