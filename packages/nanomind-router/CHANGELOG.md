@@ -87,6 +87,9 @@
 - The module comment at the top of `dist/index.js` and `dist/index.d.ts`
   says input is classified into one of 22 intent types or `UNKNOWN`, the
   values `IntentType` names. It said one of 16 intent types.
+- The README sample of what `classifyIntent` returns shows the `rawInput`
+  field, the trimmed input. It showed `intent`, `confidence` and `entities`
+  only.
 
 ## 0.1.3 — 2026-04-28
 
