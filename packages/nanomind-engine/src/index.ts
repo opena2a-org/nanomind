@@ -1,9 +1,10 @@
 /**
  * @nanomind/engine — Core inference backend
  *
- * Wraps llamafile for local LLM inference. It downloads nothing: the
- * llamafile and the model must already be on disk (see ensureReady).
- * Target model: SmolLM2-135M (Q4_K_M quantization, ~80MB)
+ * Wraps llamafile for local LLM inference. When the llamafile or the model is
+ * missing, the first call downloads it from a pinned URL and checks its size
+ * and SHA-256 before it runs (see ensureReady and download.ts).
+ * Target model: SmolLM2-135M (Q4_K_M quantization)
  *
  * Inference tiers:
  *   - Local Fast and Local Full: SmolLM2-135M via llamafile. infer() times each
@@ -16,20 +17,17 @@
 
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdir, writeFile, chmod } from 'node:fs/promises';
-import { join } from 'node:path';
-import { homedir } from 'node:os';
-import { createHash } from 'node:crypto';
-import { get } from 'node:https';
+import {
+  LLAMAFILE_DOWNLOAD,
+  MODEL_DOWNLOAD,
+  defaultLlamafilePath,
+  defaultModelPath,
+  downloadVerified,
+  sha256File,
+  type DownloadSource,
+} from './download.ts';
 
-// Model configuration
-const MODEL_DIR = join(homedir(), '.nanomind', 'models');
-const MODEL_NAME = 'SmolLM2-135M.Q4_K_M.gguf';
-const MODEL_PATH = join(MODEL_DIR, MODEL_NAME);
-
-// llamafile binary
-const LLAMAFILE_DIR = join(homedir(), '.nanomind', 'bin');
-const LLAMAFILE_PATH = join(LLAMAFILE_DIR, 'llamafile');
+export { LLAMAFILE_DOWNLOAD, MODEL_DOWNLOAD, type DownloadSource } from './download.ts';
 
 export interface InferenceResult {
   text: string;
@@ -44,19 +42,29 @@ export interface EngineConfig {
   maxTokens?: number;
   temperature?: number;
   topP?: number;
+  /** Where a missing llamafile is downloaded from. Defaults to LLAMAFILE_DOWNLOAD. */
+  llamafileDownload?: DownloadSource;
+  /** Where a missing model is downloaded from. Defaults to MODEL_DOWNLOAD. */
+  modelDownload?: DownloadSource;
+  /** Set to true to download nothing: a missing file then makes infer() reject. */
+  noAutoDownload?: boolean;
 }
 
 export class NanoMindEngine {
   private config: Required<EngineConfig>;
   private ready = false;
+  private preparing: Promise<void> | null = null;
 
   constructor(config: EngineConfig = {}) {
     this.config = {
-      modelPath: config.modelPath ?? MODEL_PATH,
-      llamafilePath: config.llamafilePath ?? LLAMAFILE_PATH,
+      modelPath: config.modelPath ?? defaultModelPath(),
+      llamafilePath: config.llamafilePath ?? defaultLlamafilePath(),
       maxTokens: config.maxTokens ?? 256,
       temperature: config.temperature ?? 0.1,
       topP: config.topP ?? 0.9,
+      llamafileDownload: config.llamafileDownload ?? LLAMAFILE_DOWNLOAD,
+      modelDownload: config.modelDownload ?? MODEL_DOWNLOAD,
+      noAutoDownload: config.noAutoDownload ?? false,
     };
   }
 
@@ -72,42 +80,69 @@ export class NanoMindEngine {
   }
 
   /**
-   * Check that the llamafile and the model are on disk. infer() calls this
-   * before it runs the llamafile. It downloads nothing. When a file is
-   * missing, it creates ~/.nanomind/bin and ~/.nanomind/models if they do not
-   * exist, then throws an error that names the path it checked.
+   * Make sure the llamafile and the model are on disk. infer() calls this
+   * before it runs the llamafile. A file already on disk is used as it is. A
+   * missing file is downloaded to its path from llamafileDownload or
+   * modelDownload, and moved there only once its size and SHA-256 match (see
+   * downloadVerified); one line goes to stderr before and after each download.
+   * Calls made while a download runs wait for that download. With
+   * noAutoDownload, a missing file is not downloaded: this throws an error
+   * that names the path it checked.
    */
   async ensureReady(): Promise<void> {
     if (await this.isReady()) return;
+    this.preparing ??= this.prepare().finally(() => {
+      this.preparing = null;
+    });
+    await this.preparing;
+  }
 
-    await mkdir(MODEL_DIR, { recursive: true });
-    await mkdir(LLAMAFILE_DIR, { recursive: true });
+  private async prepare(): Promise<void> {
+    const files = [
+      {
+        name: 'the llamafile',
+        notFound: 'llamafile not found',
+        path: this.config.llamafilePath,
+        source: this.config.llamafileDownload,
+        mode: 0o755,
+        fix: 'put an executable llamafile at that path, pass llamafilePath to the NanoMindEngine constructor',
+      },
+      {
+        name: 'the model',
+        notFound: 'Model not found',
+        path: this.config.modelPath,
+        source: this.config.modelDownload,
+        mode: 0o644,
+        fix: 'put a GGUF model file at that path, pass modelPath to the NanoMindEngine constructor',
+      },
+    ];
 
-    if (!existsSync(this.config.llamafilePath)) {
-      throw new Error(
-        `llamafile not found at ${this.config.llamafilePath}. The engine does not download it: ` +
-          'put an executable llamafile at that path, or pass llamafilePath to the NanoMindEngine constructor.',
+    for (const file of files) {
+      if (existsSync(file.path)) continue;
+      if (this.config.noAutoDownload) {
+        throw new Error(
+          `${file.notFound} at ${file.path}. noAutoDownload is set, so the engine does not download it: ` +
+            `${file.fix}, or leave noAutoDownload unset.`,
+        );
+      }
+      process.stderr.write(
+        `NanoMind: downloading ${file.name} (${file.source.size} bytes) from ${file.source.url} to ${file.path}\n`,
       );
-    }
-
-    if (!existsSync(this.config.modelPath)) {
-      throw new Error(
-        `Model not found at ${this.config.modelPath}. The engine does not download it: ` +
-          'put a GGUF model file at that path, or pass modelPath to the NanoMindEngine constructor.',
-      );
+      await downloadVerified(file.source, file.path, file.mode);
+      process.stderr.write(`NanoMind: saved ${file.path}, SHA-256 verified\n`);
     }
 
     this.ready = true;
   }
 
   /**
-   * Run inference with the local model.
+   * Run inference with the local model. The time it takes to download a
+   * missing file is not part of latencyMs.
    */
   async infer(prompt: string, options?: Partial<EngineConfig>): Promise<InferenceResult> {
-    const start = Date.now();
-
     await this.ensureReady();
 
+    const start = Date.now();
     const maxTokens = options?.maxTokens ?? this.config.maxTokens;
     const temperature = options?.temperature ?? this.config.temperature;
 
@@ -172,14 +207,7 @@ Category:`;
    * Compute SHA-256 hash of a file (for integrity verification).
    */
   static async computeFileHash(filePath: string): Promise<string> {
-    const { createReadStream } = await import('node:fs');
-    return new Promise((resolve, reject) => {
-      const hash = createHash('sha256');
-      const stream = createReadStream(filePath);
-      stream.on('data', (chunk: Buffer) => hash.update(chunk));
-      stream.on('end', () => resolve(hash.digest('hex')));
-      stream.on('error', reject);
-    });
+    return sha256File(filePath);
   }
 }
 

@@ -1,11 +1,13 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { LLAMAFILE_DOWNLOAD, MODEL_DOWNLOAD } from './download.ts';
 
 // These tests run the built file that npm links as the `nanomind` command, so
 // they need `npm run build` first, as CI does.
@@ -20,7 +22,7 @@ describe('nanomind command', () => {
   let findingToolPath: string;
   let projectPath: string;
 
-  function nanomind(args: string[], options: { input?: string; path?: string; cwd?: string } = {}) {
+  function nanomind(args: string[], options: { input?: string; path?: string; cwd?: string; home?: string } = {}) {
     return spawnSync(process.execPath, [bin, ...args], {
       input: options.input ?? '',
       cwd: options.cwd,
@@ -30,6 +32,7 @@ describe('nanomind command', () => {
         PATH: options.path ?? emptyPath,
         // No test here asks a trust question, and none may reach a real registry.
         OPENA2A_REGISTRY_URL: 'http://127.0.0.1:9',
+        ...(options.home ? { HOME: options.home, USERPROFILE: options.home } : {}),
       },
     });
   }
@@ -85,9 +88,9 @@ describe('nanomind command', () => {
   }
 
   it('rejects an unknown command instead of exiting silently', () => {
-    const run = nanomind(['setup']);
+    const run = nanomind(['frobnicate']);
     assert.strictEqual(run.status, 1);
-    assert.match(run.stderr, /Unknown command: setup/);
+    assert.match(run.stderr, /Unknown command: frobnicate/);
     assert.match(run.stderr, /Usage:/);
     assert.strictEqual(run.stdout, '');
   });
@@ -113,9 +116,9 @@ describe('nanomind command', () => {
 
   it('lists --no-guard in the help and rejects an unknown argument beside it', () => {
     assert.match(nanomind(['--help']).stdout, /nanomind --no-guard/);
-    const run = nanomind(['--no-guard', 'setup']);
+    const run = nanomind(['--no-guard', 'frobnicate']);
     assert.strictEqual(run.status, 1);
-    assert.match(run.stderr, /Unknown command: setup/);
+    assert.match(run.stderr, /Unknown command: frobnicate/);
     const option = nanomind(['--no-guard', '--frobnicate']);
     assert.strictEqual(option.status, 1);
     assert.match(option.stderr, /Unknown option: --frobnicate/);
@@ -194,6 +197,57 @@ describe('nanomind command', () => {
       assert.match(run.stderr, /Usage:/);
       assert.ok(!run.stdout.includes('Teach Mode'), 'teach mode must not start');
     }
+  });
+
+  it('lists setup in the help and rejects an argument beside it', () => {
+    assert.match(nanomind(['--help']).stdout, /nanomind setup/);
+    for (const args of [['setup', 'now'], ['--no-guard', 'setup'], ['setup', '--no-guard']]) {
+      const run = nanomind(args);
+      assert.strictEqual(run.status, 1, args.join(' '));
+      assert.match(run.stderr, /nanomind setup takes no other arguments/);
+      assert.match(run.stderr, /Usage:/);
+      assert.strictEqual(run.stdout, '');
+    }
+  });
+
+  // The setup tests below send no request to the pinned URLs: the files are
+  // already there, or the download stops before its request is sent.
+  it('leaves files that differ from the pinned ones as they are and exits with status 1 from setup', () => {
+    const home = join(scratch, 'home-with-other-files');
+    const llamafile = join(home, '.nanomind', 'bin', 'llamafile');
+    const model = join(home, '.nanomind', 'models', 'SmolLM2-135M.Q4_K_M.gguf');
+    mkdirSync(dirname(llamafile), { recursive: true });
+    mkdirSync(dirname(model), { recursive: true });
+    writeFileSync(llamafile, 'another llamafile');
+    writeFileSync(model, 'another model');
+    const sha256 = (text: string) => createHash('sha256').update(text).digest('hex');
+    const advice = 'Setup leaves it as it is. Delete it and run nanomind setup again to download the pinned file.';
+
+    const run = nanomind(['setup'], { home });
+
+    assert.strictEqual(run.status, 1, run.stderr);
+    assert.deepStrictEqual(run.stdout.trimEnd().split('\n'), [
+      `llamafile: ${llamafile} is already there, but its SHA-256 is ${sha256('another llamafile')}, ` +
+        `not the pinned ${LLAMAFILE_DOWNLOAD.sha256}. ${advice}`,
+      `model: ${model} is already there, but its SHA-256 is ${sha256('another model')}, ` +
+        `not the pinned ${MODEL_DOWNLOAD.sha256}. ${advice}`,
+    ]);
+    assert.strictEqual(readFileSync(llamafile, 'utf8'), 'another llamafile');
+    assert.strictEqual(readFileSync(model, 'utf8'), 'another model');
+  });
+
+  it('names the pinned llamafile URL and exits with status 1 when setup cannot download it', () => {
+    const home = join(scratch, 'home-with-a-file-for-bin');
+    mkdirSync(join(home, '.nanomind'), { recursive: true });
+    // A file where the llamafile's directory goes, so the download stops before its request.
+    writeFileSync(join(home, '.nanomind', 'bin'), '');
+    const llamafile = join(home, '.nanomind', 'bin', 'llamafile');
+
+    const run = nanomind(['setup'], { home });
+
+    assert.strictEqual(run.status, 1);
+    assert.strictEqual(run.stdout, `llamafile: downloading ${LLAMAFILE_DOWNLOAD.size} bytes from ${LLAMAFILE_DOWNLOAD.url}\n`);
+    assert.ok(run.stderr.includes(`Could not download ${LLAMAFILE_DOWNLOAD.url} to ${llamafile}: `), run.stderr);
   });
 
   it('refuses to run a command that a shell could reinterpret', () => {

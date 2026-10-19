@@ -2,7 +2,7 @@ import { describe, it, before, after, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -108,7 +108,7 @@ describe('NanoMindEngine', () => {
   });
 });
 
-describe('first call on a machine without the llamafile or the model', () => {
+describe('first call with noAutoDownload on a machine without the llamafile or the model', () => {
   let home: string;
 
   beforeEach(async () => {
@@ -119,13 +119,13 @@ describe('first call on a machine without the llamafile or the model', () => {
     await rm(home, { recursive: true, force: true });
   });
 
-  // Calls infer() with the default paths in a new Node process whose home
-  // directory is `home`, and returns the lines that process printed. The last
-  // line is the outcome of the call.
-  function firstInfer(): string[] {
+  // Calls infer() with the default paths and noAutoDownload in a new Node
+  // process whose home directory is `home`. Returns the lines that process
+  // printed, the last of which is the outcome of the call, and its stderr.
+  function firstInfer(): { lines: string[]; stderr: string } {
     const index = JSON.stringify(new URL('./index.ts', import.meta.url).href);
     const script = `const { NanoMindEngine } = await import(${index});
-await new NanoMindEngine().infer('Classify: scan this project').then(
+await new NanoMindEngine({ noAutoDownload: true }).infer('Classify: scan this project').then(
   (result) => console.log('resolved: ' + result.text),
   (error) => console.log('rejected: ' + error.message),
 );`;
@@ -135,27 +135,34 @@ await new NanoMindEngine().infer('Classify: scan this project').then(
     });
 
     assert.strictEqual(run.status, 0, run.stderr);
-    return run.stdout.trimEnd().split('\n');
+    return { lines: run.stdout.trimEnd().split('\n'), stderr: run.stderr };
   }
 
-  it('names the llamafile path it checked and prints nothing else', () => {
+  it('names the llamafile path it checked, prints nothing else and creates nothing', () => {
     const llamafilePath = join(home, '.nanomind', 'bin', 'llamafile');
+    const { lines, stderr } = firstInfer();
 
-    assert.deepStrictEqual(firstInfer(), [
-      `rejected: llamafile not found at ${llamafilePath}. The engine does not download it: ` +
-        'put an executable llamafile at that path, or pass llamafilePath to the NanoMindEngine constructor.',
+    assert.deepStrictEqual(lines, [
+      `rejected: llamafile not found at ${llamafilePath}. noAutoDownload is set, so the engine does not download it: ` +
+        'put an executable llamafile at that path, pass llamafilePath to the NanoMindEngine constructor, ' +
+        'or leave noAutoDownload unset.',
     ]);
+    assert.ok(!stderr.includes('NanoMind:'), stderr);
+    assert.strictEqual(existsSync(join(home, '.nanomind')), false);
   });
 
   it('names the model path it checked and prints nothing else', async () => {
     await mkdir(join(home, '.nanomind', 'bin'), { recursive: true });
     await writeFile(join(home, '.nanomind', 'bin', 'llamafile'), '#!/bin/sh\n', { mode: 0o755 });
     const modelPath = join(home, '.nanomind', 'models', 'SmolLM2-135M.Q4_K_M.gguf');
+    const { lines, stderr } = firstInfer();
 
-    assert.deepStrictEqual(firstInfer(), [
-      `rejected: Model not found at ${modelPath}. The engine does not download it: ` +
-        'put a GGUF model file at that path, or pass modelPath to the NanoMindEngine constructor.',
+    assert.deepStrictEqual(lines, [
+      `rejected: Model not found at ${modelPath}. noAutoDownload is set, so the engine does not download it: ` +
+        'put a GGUF model file at that path, pass modelPath to the NanoMindEngine constructor, ' +
+        'or leave noAutoDownload unset.',
     ]);
+    assert.ok(!stderr.includes('NanoMind:'), stderr);
   });
 });
 
