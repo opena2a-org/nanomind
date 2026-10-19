@@ -381,6 +381,34 @@ describe('ATCIntentHandler', () => {
   });
 });
 
+describe('ATCLookupError', () => {
+  // The text with each run of whitespace made one space, so a sentence reads
+  // the same wherever its lines break.
+  const oneSpace = (text: string) => text.replace(/\s+/g, ' ').trim();
+
+  it('documents status as the README does: undefined when the registry sent no status, as for a lookup the registry took and never answered', { timeout: 10_000 }, async (t) => {
+    const registry = await localRegistry(t, () => {});
+    const handler = new ATCIntentHandler({ registryUrl: registry.address, timeoutMs: 100 });
+
+    await assert.rejects(handler.getTrustLevel('a'), (err: unknown) => {
+      assert.ok(err instanceof ATCLookupError, String(err));
+      assert.strictEqual(err.status, undefined);
+      return true;
+    });
+    assert.deepStrictEqual(registry.requests, ['GET /api/v1/atx/a']);
+
+    // The doc comment on status, which tsc copies into dist/index.d.ts, with its comment prefixes dropped.
+    const source = readFileSync(new URL('./index.ts', import.meta.url), 'utf8');
+    const comment = source.match(/\/\*\*((?:(?!\*\/)[\s\S])*)\*\/\s*readonly status\b/)?.[1];
+    assert.ok(comment, 'index.ts has a doc comment on ATCLookupError.status');
+    const doc = oneSpace(comment.replace(/^\s*\*\s?/gm, ''));
+    const readme = oneSpace(readFileSync(new URL('../README.md', import.meta.url), 'utf8'));
+    const stated = readme.match(/`status`, which is (undefined when [^.]+)\./)?.[1];
+    assert.ok(stated, 'README.md says when status is undefined');
+    assert.ok(doc.includes(stated), `The doc comment on status does not say "${stated}", as README.md does: ${doc}`);
+  });
+});
+
 describe('test script', () => {
   // The options Node reads from a `node ...` script: every token after `node` up to
   // the first argument that is not an option. Node does not read later tokens as options.

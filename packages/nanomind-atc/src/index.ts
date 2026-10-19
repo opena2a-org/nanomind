@@ -71,7 +71,10 @@ export interface ATCConfig {
 export class ATCLookupError extends Error {
   readonly agentId: string;
   readonly registryUrl: string;
-  /** The status the registry answered with; undefined when it was not reached. */
+  /**
+   * The status the registry answered with; undefined when the registry sent
+   * no status: it could not be reached, or it sent none within the timeout.
+   */
   readonly status: number | undefined;
 
   constructor(agentId: string, registryUrl: string, reason: string, status?: number, cause?: unknown) {
