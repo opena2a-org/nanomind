@@ -203,6 +203,48 @@ describe('ATCIntentHandler', () => {
     });
   });
 
+  it('refuses a timeoutMs that is not a whole number of milliseconds from 0 to 2147483647 when the handler is made', () => {
+    const accepted = 'timeoutMs must be a whole number of milliseconds from 0 to 2147483647';
+    const refused: [unknown, string, string][] = [
+      [1500.5, 'RangeError', `${accepted}, received 1500.5`],
+      [Infinity, 'RangeError', `${accepted}, received Infinity`],
+      [NaN, 'RangeError', `${accepted}, received NaN`],
+      [-1, 'RangeError', `${accepted}, received -1`],
+      // AbortSignal.timeout takes these two, but sets the timeout to 1 millisecond.
+      [2147483648, 'RangeError', `${accepted}, received 2147483648`],
+      [4294967295, 'RangeError', `${accepted}, received 4294967295`],
+      [4294967296, 'RangeError', `${accepted}, received 4294967296`],
+      ['300', 'TypeError', `${accepted}, received the string "300"`],
+      [true, 'TypeError', `${accepted}, received a value of type boolean`],
+    ];
+    for (const [timeoutMs, name, message] of refused) {
+      assert.throws(
+        () => new ATCIntentHandler({ registryUrl: REGISTRY, timeoutMs: timeoutMs as number }),
+        { name, message },
+        `timeoutMs ${String(timeoutMs)}`,
+      );
+    }
+  });
+
+  it('makes a handler with a timeoutMs of 0', async (t) => {
+    t.mock.method(globalThis, 'fetch', async () => jsonResponse(FULL_ATC));
+    const handler = new ATCIntentHandler({ registryUrl: REGISTRY, timeoutMs: 0 });
+
+    assert.strictEqual((await handler.getTrustLevel('acme/agent'))?.trustLevel, 3);
+  });
+
+  it('waits for a registry that answers after 50 ms with the longest timeoutMs, 2147483647', { timeout: 10_000 }, async (t) => {
+    const registry = await localRegistry(t, (res) => {
+      setTimeout(() => {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(FULL_ATC));
+      }, 50);
+    });
+    const handler = new ATCIntentHandler({ registryUrl: registry.address, timeoutMs: 2147483647 });
+
+    assert.strictEqual((await handler.getTrustLevel('acme/agent'))?.trustLevel, 3);
+  });
+
   it('queries the registry again after a failed lookup and after a 404', async (t) => {
     const answers = [jsonResponse({}, 500), jsonResponse({}, 404), jsonResponse(FULL_ATC)];
     const fetchMock = t.mock.method(globalThis, 'fetch', async () => answers.shift());
