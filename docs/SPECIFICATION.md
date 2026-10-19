@@ -21,12 +21,14 @@ Achieve **99.999% accuracy** in classifying AI agent security threats. Every fal
 
 | Metric | Current (v0.4.0) | Target | Gap |
 |--------|-------------------|--------|-----|
-| Overall accuracy | 96.73% | 99.999% | 3.27% |
-| Macro F1 | 0.949 | 0.999 | 0.050 |
-| Weakest class (exfiltration) | 0.840 F1 | 0.999 F1 | 0.159 |
-| Strongest class (social_engineering) | 1.000 F1 | 1.000 F1 | 0.000 |
+| Overall accuracy (released checkpoint) | 96.73% | 99.999% | 3.27% |
+| Macro F1 (final checkpoint) | 0.949 | 0.999 | 0.050 |
+| Weakest class (exfiltration, final checkpoint) | 0.840 F1 | 0.999 F1 | 0.159 |
+| Strongest class (social_engineering, final checkpoint) | 1.000 F1 | 1.000 F1 | 0.000 |
 | Training samples | 3,337 | 50,000+ | ~47,000 |
 | Eval samples | 398 | 5,000+ | ~4,600 |
+
+The [v0.4.0 model card](model-cards/v0.4.0.md#evaluation-metrics) reports two checkpoints of one training run. The released one, the best checkpoint, scored 96.73%. The macro F1 and the class F1 figures come from the final checkpoint, which scored 95.73%, because the card has per-class figures for that checkpoint only.
 
 The path to 99.999% is primarily a data problem, not an architecture problem. The Mamba TME architecture learns well: it hits 100% training accuracy. The gap is generalization, which requires more diverse, high-quality training data.
 
@@ -568,7 +570,7 @@ The path to 99.999% is not manual curation. It is the **Registry intelligence pi
 
 | Phase | Source | Training Samples | Eval Samples | Expected Accuracy |
 |-------|--------|-----------------|--------------|-------------------|
-| Current (v0.4.0) | Local corpus only | 3,337 | 398 | 96.73% |
+| Current (v0.4.0) | Local corpus only | 3,337 | 398 | 96.73% (released checkpoint) |
 | Phase 1 | + Registry export (high-confidence) | 10,000 | 2,000 | ~98% |
 | Phase 2 | + AgentPwn + ARIA confirmed | 50,000 | 10,000 | ~99% |
 | Phase 3 | + Full Registry catalog + feedback loop | 200,000+ | 40,000+ | ~99.9% |

@@ -58,13 +58,15 @@ Example:
 
 ## Evaluation Metrics
 
+{Name the released checkpoint (best or final) and its weights file, and mark its row below "(released)". Give the macro F1, the per-class table and the confusion matrix of the released checkpoint; a figure from another checkpoint names that checkpoint in its row or heading.}
+
 ### Overall
 
-| Metric | Value | Target | Status |
-|--------|-------|--------|--------|
-| Best eval accuracy | {X}% | >= 95% | PASS/FAIL |
-| Final accuracy | {X}% | >= 95% | PASS/FAIL |
-| Macro F1 | {X} | >= 0.94 | PASS/FAIL |
+| Metric | Checkpoint | Value | Target | Status |
+|--------|------------|-------|--------|--------|
+| Eval accuracy | best | {X}% | >= 95% | PASS/FAIL |
+| Eval accuracy | final | {X}% | >= 95% | PASS/FAIL |
+| Macro F1 | {CHECKPOINT} | {X} | >= 0.94 | PASS/FAIL |
 
 ### Per-Class
 
@@ -76,7 +78,7 @@ Example:
 
 ### Confusion Matrix
 
-{Paste confusion matrix from eval-report.json}
+{Paste the confusion matrix of the released checkpoint}
 
 ### Regression vs Previous Version
 
