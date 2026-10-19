@@ -12,6 +12,20 @@
   repeated to 16 KB, 32 KB and 64 KB classified in 24 ms, 92 ms and
   385 ms, and classifies in 0.14 ms, 0.28 ms and 0.50 ms; 1 MiB of it,
   the daemon's request body limit, classifies in 7.8 ms.
+- An agent id is taken from the input only where the input marks one:
+  `agent:<id>` or `agent: <id>`, a quoted id after "agent"
+  (`agent "<id>"`, `agent '<id>'`), or a DID after "agent"
+  (`agent did:web:example.org`). "why is my agent level 2" gives no
+  `agentId`, where it gave `level`, so its ATC_STATUS route runs
+  `opena2a trust explain` where it ran `opena2a trust explain level`.
+  "is this agent trusted" gives no `agentId`, where it gave `trusted`.
+  An id after an unmarked "agent" is not taken either: "why is agent
+  billing-agent level 2" gives no `agentId`, where it gave
+  `billing-agent`, and "why is agent: billing-agent level 2" gives
+  `billing-agent`. A quoted id is taken without its quotes, so
+  `is agent "my-agent" trusted` runs `opena2a trust my-agent`, where the
+  value kept its quotes, `isPlainArgument` refused it and TRUST_QUERY
+  mapped to `null`.
 - NAVIGATE has a pattern: "open", "show", "view" or "display" before
   "dashboard" or "report", tried after the SECRETS_EXPOSE patterns and
   before SCAN. "open the dashboard" and "show the report" give NAVIGATE
