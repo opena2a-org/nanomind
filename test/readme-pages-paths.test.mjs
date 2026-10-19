@@ -42,6 +42,20 @@ function linkedPaths(page, text) {
     .map((target) => normalize(join(dirname(page), target.split('#')[0])));
 }
 
+// A pull request or issue cited by a number after #, or a commit cited by its
+// hash, in the text of a page rather than in a link target. Written as text, a
+// citation names no repository, and a hash resolves only in a clone that holds
+// the commit. A hash here is 7 to 40 lowercase hex characters with at least
+// one digit and one letter, standing alone, so a SHA-256 digest (64
+// characters), a date, a UUID and a word such as "defaced" are not read as one.
+const PULL_REQUEST_NUMBER = /(?<![\w&#/])#\d+\b/g;
+const COMMIT_HASH = /(?<![\w./-])(?=[0-9a-f]*\d)(?=[0-9a-f]*[a-f])[0-9a-f]{7,40}(?![\w/-])/g;
+
+function citations(text) {
+  const prose = text.replace(LINK_TARGET, ']()');
+  return [...new Set([...(prose.match(PULL_REQUEST_NUMBER) ?? []), ...(prose.match(COMMIT_HASH) ?? [])])];
+}
+
 // Every command line in a fenced block, with its continuation lines joined.
 function fencedCommands(text) {
   const blocks = text.match(/^```[^\n]*\n[\s\S]*?^```/gm) ?? [];
@@ -107,6 +121,10 @@ for (const page of PAGES) {
     assert.deepEqual(linkedPaths(page, read(page)).filter((path) => !inRepository(path)), []);
   });
 
+  test(`${page} cites no pull request or commit as a bare number or hash`, () => {
+    assert.deepEqual(citations(read(page)), []);
+  });
+
   test(`every @nanomind package ${page} imports or installs is a workspace of this repository`, () => {
     const names = new Set(workspaces().map((manifest) => manifest.name));
     const specifiers = [IMPORT, INSTALL].flatMap((pattern) => packageSpecifiers(read(page), pattern));
@@ -137,6 +155,17 @@ for (const page of PAGES) {
     assert.deepEqual(problems, []);
   });
 }
+
+// The input-classifier gate and the NanoMind-Guard daemon the models page
+// describes are code in packages/nanomind-analyst.
+test('docs/models.md links the input-classifier gate and the NanoMind-Guard daemon to their code', () => {
+  const linked = linkedPaths('docs/models.md', read('docs/models.md')).map(trim);
+  const code = [
+    'packages/nanomind-analyst/src/nanomind_analyst/daemon/input_classifier',
+    'packages/nanomind-analyst/src/nanomind_analyst/daemon/nanomind_guard_daemon.py',
+  ];
+  assert.deepEqual(code.filter((path) => !linked.includes(path) || !inRepository(path)), []);
+});
 
 // The specification's **File:** and **Files:** lines name a source file of
 // this repository by the repository's name (nanomind/packages/...) and then
