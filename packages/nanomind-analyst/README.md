@@ -84,6 +84,8 @@ Not supported in v0.1. The daemon is bf16 on Apple MPS; fp16 yields 0% accuracy 
 
 `hackmyagent` (npm) `--nanomind` flag uses this daemon. After installing this package, `hackmyagent nanomind setup` detects the `nanomind-analyst` CLI on PATH and shells out to `nanomind-analyst install`. If the CLI is missing, it prints the `pip install` instructions.
 
+With the default on-demand install, a client of the socket has to start the daemon when it is not running. The daemon does not start at login, it removes `/tmp/nanomind-guard.sock` when it exits after 15 minutes with no request, and nothing starts it when a client connects. A client that finds no socket runs `nanomind-analyst start`, then sends its request once a `healthz` request on the socket returns `daemonState: ready`.
+
 ## Model card
 
 [opena2a/nanomind-security-analyst](https://huggingface.co/opena2a/nanomind-security-analyst). v3.0.0 (Qwen3-1.7B SFT LoRA r=64), Apache-2.0.
