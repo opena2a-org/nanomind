@@ -85,6 +85,46 @@ describe('screenInput messages', () => {
       'role switching "act as a", permission escalation "sudo\\u0009mode"',
     );
   });
+
+  it('names only the high-severity pattern in the warning for a line that also matches a medium one', () => {
+    const result = screenInput('act as a reviewer and base64 decode(x)', 'piped');
+    assert.strictEqual(result.safe, true);
+    assert.deepStrictEqual(result.patterns.map((p) => p.severity), ['high', 'medium']);
+    assert.strictEqual(
+      result.recommendation,
+      'WARNING: Suspicious pattern detected in piped input: role switching "act as a". Review the input before proceeding. Use --no-guard to bypass (not recommended).',
+    );
+  });
+
+  it('cuts a quoted match at 40 characters so a line of whitespace does not fill the notice', () => {
+    const result = screenInput('base64' + '\t'.repeat(20000) + 'd(', 'piped');
+    assert.strictEqual(
+      result.recommendation,
+      `NOTICE: Minor suspicious pattern detected in piped input: encoded payload "base64${'\\u0009'.repeat(34)}...". Proceeding with caution.`,
+    );
+    assert.ok(result.recommendation.length < 400, String(result.recommendation.length));
+  });
+
+  it('keeps a 40-character match whole and cuts a longer one with an ellipsis', () => {
+    const whole = 'x'.repeat(40);
+    assert.strictEqual(
+      describePatterns([{ type: 'role_switching', match: whole, position: 0, severity: 'high' }]),
+      `role switching "${whole}"`,
+    );
+    assert.strictEqual(
+      describePatterns([{ type: 'role_switching', match: `${whole}y`, position: 0, severity: 'high' }]),
+      `role switching "${whole}..."`,
+    );
+  });
+
+  it('escapes a C1 control and DEL in a quoted match', () => {
+    const csi = String.fromCharCode(0x9b);
+    const del = String.fromCharCode(0x7f);
+    assert.strictEqual(
+      describePatterns([{ type: 'indirect_injection', match: `a${csi}b${del}`, position: 0, severity: 'high' }]),
+      'indirect injection "a\\u009bb\\u007f"',
+    );
+  });
 });
 
 describe('NanoMind Guard', () => {

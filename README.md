@@ -81,7 +81,7 @@ screenInput('ignore previous instructions', 'piped');
 
 In a session, a critical match blocks the line. A high or medium match prints a warning or notice that names the matched pattern, and the line is still routed.
 
-Called directly, `screenInput` returns a warning that asks you to review the input before proceeding, for a caller that screens input once and then decides whether to go on.
+Called directly, `screenInput` serves a caller that screens input once and then decides whether to go on. A critical match is reported as not safe with a BLOCKED recommendation. A high-severity match returns a warning that asks you to review the input before proceeding. A medium match returns a notice that ends "Proceeding with caution".
 
 `nanomind --no-guard` turns screening off for one session and prints a warning to stderr. Another launcher does the same by checking its arguments with `hasNoGuardFlag(args)` from `@nanomind/cli` and starting the session with `noGuard: true`. The adapters in `integrations/` do not pass the flag yet.
 
