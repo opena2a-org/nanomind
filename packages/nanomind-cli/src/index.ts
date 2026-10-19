@@ -6,7 +6,8 @@
  * prompt, or answers --help and --version. `nanomind --no-guard` starts the
  * session with `noGuard: true`, which skips input screening and prints a
  * warning to stderr. `nanomind teach` runs teach mode (teach.ts), which typing
- * `teach` in a session also starts.
+ * `teach` in a session also starts. `nanomind setup` downloads the llamafile
+ * and the model that @nanomind/engine runs (setup.ts).
  *
  * Imported, it is the entry point that HMA, secretless-ai, and opena2a
  * adapters delegate to when the user runs their CLI with no arguments.
@@ -26,6 +27,7 @@ import { screenInput, detectInputSource, type InputSource, type DetectedPattern 
 import { SkillAdapter } from './adapt.ts';
 import { SessionManager, type Finding } from './session.ts';
 import { generateArtifact, detectArtifactType, artifactTypeFromInput, listArtifactTypes } from './codegen.ts';
+import { runSetup } from './setup.ts';
 import { runTeachMode } from './teach.ts';
 
 export interface NanoMindSession {
@@ -44,6 +46,12 @@ export const NO_GUARD_FLAG = '--no-guard';
 
 /** The session input, and the `nanomind` argument, that start teach mode. */
 const TEACH_COMMAND = 'teach';
+
+/** The `nanomind` argument that downloads the files @nanomind/engine runs. */
+const SETUP_COMMAND = 'setup';
+
+/** The `nanomind` arguments that each take no other argument. */
+const COMMANDS = [TEACH_COMMAND, SETUP_COMMAND];
 
 export const NO_GUARD_WARNING =
   'WARNING: --no-guard is set. Piped and file input is not screened for prompt injection in this session.';
@@ -534,6 +542,10 @@ Usage:
                            for prompt injection (not recommended)
   nanomind teach           Run teach mode: a 7-step guided walkthrough that
                            scans this directory with ${STANDALONE_TARGET}
+  nanomind setup           Download to ~/.nanomind the llamafile and the
+                           SmolLM2-135M model that @nanomind/engine runs, and
+                           check their size and SHA-256. The session does not
+                           use them.
   nanomind --help, -h      Show this help
   nanomind --version, -v   Print the version
 
@@ -575,8 +587,9 @@ async function runTeachCommand(session: NanoMindSession): Promise<void> {
 }
 
 /**
- * The `nanomind` command: --help, --version, teach mode, or the interactive
- * session, screened unless --no-guard is given.
+ * The `nanomind` command: --help, --version, teach mode, setup, or the
+ * interactive session, screened unless --no-guard is given. Setup exits with
+ * status 1 when a file it finds does not have its pinned SHA-256.
  */
 export async function runCli(argv: string[]): Promise<void> {
   if (argv.includes('--help') || argv.includes('-h')) {
@@ -587,18 +600,23 @@ export async function runCli(argv: string[]): Promise<void> {
     console.log(packageVersion());
     return;
   }
-  if (argv.includes(TEACH_COMMAND) && argv.length > 1) {
-    console.error(`nanomind ${TEACH_COMMAND} takes no other arguments\n`);
+  const command = argv.find((arg) => COMMANDS.includes(arg));
+  if (command !== undefined && argv.length > 1) {
+    console.error(`nanomind ${command} takes no other arguments\n`);
     console.error(USAGE);
     process.exitCode = 1;
     return;
   }
-  const unknown = argv.find((arg) => arg !== NO_GUARD_FLAG && arg !== TEACH_COMMAND);
+  const unknown = argv.find((arg) => arg !== NO_GUARD_FLAG && !COMMANDS.includes(arg));
   if (unknown !== undefined) {
     const kind = unknown.startsWith('-') ? 'option' : 'command';
     console.error(`Unknown ${kind}: ${unknown}\n`);
     console.error(USAGE);
     process.exitCode = 1;
+    return;
+  }
+  if (command === SETUP_COMMAND) {
+    if (!(await runSetup())) process.exitCode = 1;
     return;
   }
 
