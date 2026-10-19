@@ -14,11 +14,12 @@ nanomind-analyst install
 The install step:
 
 1. Verifies platform (Apple Silicon required).
-2. Copies the input-classifier-v1 artifacts (bundled in the wheel) into `~/Library/Application Support/nanomind-analyst/artifacts/input-classifier-v1/`. SHA256 verified before copy.
+2. Verifies the input-classifier-v1 artifacts (bundled in the wheel) against their pinned SHA256 values, before the fetch starts.
 3. Fetches the Analyst NLM (~3.4 GB) from `opena2a/nanomind-security-analyst` at the pinned v3.0.0 commit. SHA256 verified after fetch.
-4. Writes a launchd plist to `~/Library/LaunchAgents/org.opena2a.nanomind-analyst.plist`.
-5. Bootstraps the LaunchAgent into the user's gui session. By default the daemon runs on demand: it does not start at login, and it exits on its own after 15 minutes with no request, releasing the model's memory. `nanomind-analyst install --resident` keeps it running instead: it starts at every login and never exits for being idle.
-6. Starts the daemon once, waits up to 60 seconds for it to bind the socket and pass its healthz probe, and prints the seconds that took on this machine. `--skip-healthz-wait` skips both the start and the wait.
+4. Copies the input-classifier-v1 artifacts into `~/Library/Application Support/nanomind-analyst/artifacts/input-classifier-v1/`. SHA256 verified again before copy.
+5. Writes a launchd plist to `~/Library/LaunchAgents/org.opena2a.nanomind-analyst.plist`.
+6. Bootstraps the LaunchAgent into the user's gui session. By default the daemon runs on demand: it does not start at login, and it exits on its own after 15 minutes with no request, releasing the model's memory. `nanomind-analyst install --resident` keeps it running instead: it starts at every login and never exits for being idle.
+7. Starts the daemon once, waits up to 60 seconds for it to bind the socket and pass its healthz probe, and prints the seconds that took on this machine. `--skip-healthz-wait` skips both the start and the wait.
 
 The fetch step is the long one. How long it takes depends on the network, so `install` prints the seconds the fetch and its SHA256 verify took on this machine. Subsequent runs use the cached files.
 
