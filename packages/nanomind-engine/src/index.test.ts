@@ -1,9 +1,9 @@
-import { describe, it, before, after } from 'node:test';
+import { describe, it, before, after, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -105,6 +105,57 @@ describe('NanoMindEngine', () => {
     const expected = createHash('sha256').update('not a real model').digest('hex');
 
     assert.strictEqual(await NanoMindEngine.computeFileHash(modelPath), expected);
+  });
+});
+
+describe('first call on a machine without the llamafile or the model', () => {
+  let home: string;
+
+  beforeEach(async () => {
+    home = await mkdtemp(join(tmpdir(), 'nanomind-engine-home-'));
+  });
+
+  afterEach(async () => {
+    await rm(home, { recursive: true, force: true });
+  });
+
+  // Calls infer() with the default paths in a new Node process whose home
+  // directory is `home`, and returns the lines that process printed. The last
+  // line is the outcome of the call.
+  function firstInfer(): string[] {
+    const index = JSON.stringify(new URL('./index.ts', import.meta.url).href);
+    const script = `const { NanoMindEngine } = await import(${index});
+await new NanoMindEngine().infer('Classify: scan this project').then(
+  (result) => console.log('resolved: ' + result.text),
+  (error) => console.log('rejected: ' + error.message),
+);`;
+    const run = spawnSync(process.execPath, ['--experimental-strip-types', '--input-type=module', '--eval', script], {
+      env: { ...process.env, HOME: home },
+      encoding: 'utf8',
+    });
+
+    assert.strictEqual(run.status, 0, run.stderr);
+    return run.stdout.trimEnd().split('\n');
+  }
+
+  it('names the llamafile path it checked and prints nothing else', () => {
+    const llamafilePath = join(home, '.nanomind', 'bin', 'llamafile');
+
+    assert.deepStrictEqual(firstInfer(), [
+      `rejected: llamafile not found at ${llamafilePath}. The engine does not download it: ` +
+        'put an executable llamafile at that path, or pass llamafilePath to the NanoMindEngine constructor.',
+    ]);
+  });
+
+  it('names the model path it checked and prints nothing else', async () => {
+    await mkdir(join(home, '.nanomind', 'bin'), { recursive: true });
+    await writeFile(join(home, '.nanomind', 'bin', 'llamafile'), '#!/bin/sh\n', { mode: 0o755 });
+    const modelPath = join(home, '.nanomind', 'models', 'SmolLM2-135M.Q4_K_M.gguf');
+
+    assert.deepStrictEqual(firstInfer(), [
+      `rejected: Model not found at ${modelPath}. The engine does not download it: ` +
+        'put a GGUF model file at that path, or pass modelPath to the NanoMindEngine constructor.',
+    ]);
   });
 });
 

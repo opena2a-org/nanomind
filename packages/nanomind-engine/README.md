@@ -23,7 +23,7 @@ No timing figure is given here. How long a call takes depends on the machine and
 
 ## Model
 
-Uses SmolLM2-135M (Q4_K_M quantization, ~80MB). Downloaded on first use via `nanomind setup`.
+Uses SmolLM2-135M (Q4_K_M quantization, ~80MB). The engine does not download the model or llamafile; both must be on disk before the first call. By default `infer()` looks for the model at `~/.nanomind/models/SmolLM2-135M.Q4_K_M.gguf` and for the llamafile at `~/.nanomind/bin/llamafile`. Pass `modelPath` and `llamafilePath` to the constructor to use other paths. If the llamafile or the model is missing, `infer()` rejects with an error that names the path it checked.
 
 ## License
 
