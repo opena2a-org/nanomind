@@ -40,6 +40,12 @@ export interface DaemonConfig {
   ipcPath: string;
   maxConcurrent: number;
   idleUnloadSeconds: number;
+  /**
+   * Requests per second each client address may make, and the bucket size
+   * (default RATE_LIMIT_PER_SECOND). A value that is not a finite number of
+   * at least 1 makes the constructor throw a RangeError.
+   */
+  rateLimitPerSecond: number;
 }
 
 export interface InferRequest {
@@ -138,10 +144,10 @@ class RequestTooLargeError extends Error {
 }
 
 /**
- * Requests per second each client address may make, counted across every
- * route except RATE_LIMIT_EXEMPT_ROUTES. Also the bucket size, so an idle
- * client can send one second of requests at once. A request over the limit is
- * answered with HTTP 429.
+ * Default `rateLimitPerSecond`: requests per second each client address may
+ * make, counted across every route except RATE_LIMIT_EXEMPT_ROUTES. Also the
+ * bucket size, so an idle client can send one second of requests at once. A
+ * request over the limit is answered with HTTP 429.
  */
 export const RATE_LIMIT_PER_SECOND = 100;
 
@@ -245,6 +251,7 @@ export const DEFAULT_CONFIG: DaemonConfig = {
     : '/tmp/nanomind.sock',  // /var/run requires root; /tmp is accessible
   maxConcurrent: 4,
   idleUnloadSeconds: 300,
+  rateLimitPerSecond: RATE_LIMIT_PER_SECOND,
 };
 
 /**
@@ -270,13 +277,24 @@ export class NanoMindDaemon extends EventEmitter {
   // /v1/infer loads the model again.
   private idleUnloaded = false;
   private startedAt: Date | null = null;
-  private rateLimiter = new TokenBucketRateLimiter(RATE_LIMIT_PER_SECOND);
+  private rateLimiter: TokenBucketRateLimiter;
   private refusals: RefusalCounts = { rateLimited: 0, queueFull: 0 };
 
   constructor(config: Partial<DaemonConfig> & { engine?: DaemonEngine } = {}) {
     super();
     const { engine, ...daemonConfig } = config;
     this.config = { ...DEFAULT_CONFIG, ...daemonConfig };
+    // A finite rate below 1 leaves the bucket without a whole token, so the
+    // limiter would refuse every request; NaN, Infinity or -Infinity would
+    // let every request through. From 1 up, a token comes back within the
+    // second that the 429's Retry-After header names.
+    const rate = this.config.rateLimitPerSecond;
+    if (!(Number.isFinite(rate) && rate >= 1)) {
+      throw new RangeError(
+        `rateLimitPerSecond must be a finite number of at least 1, got ${typeof rate === 'number' ? rate : typeof rate}`,
+      );
+    }
+    this.rateLimiter = new TokenBucketRateLimiter(rate);
     // Default to ONNX (production NanoMind v0.5.0), run in a child process
     // so an idle unload returns the model's memory. Tests inject stubs;
     // legacy `NanoMindEngine` (llamafile) still satisfies DaemonEngine
@@ -415,7 +433,7 @@ export class NanoMindDaemon extends EventEmitter {
       res.writeHead(429);
       res.end(JSON.stringify({
         error: 'rate_limited',
-        message: `Rate limit of ${RATE_LIMIT_PER_SECOND} requests/second exceeded. Try again shortly.`,
+        message: `Rate limit of ${this.config.rateLimitPerSecond} requests/second exceeded. Try again shortly.`,
       }));
       return;
     }

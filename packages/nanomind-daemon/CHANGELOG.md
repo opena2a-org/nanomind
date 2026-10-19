@@ -75,6 +75,12 @@ The classifier runs in a child process of the daemon. `OnnxProcessEngine`, the e
 - `ensureReady()` calls made while the model loads share one child process.
 - An idle child process does not keep a script that only calls `daemon.infer()` running.
 
+### Configurable rate limit (#107)
+
+- `DaemonConfig.rateLimitPerSecond` sets the requests per second each client address may make, which is also the bucket size. It defaults to 100 (`DEFAULT_CONFIG.rateLimitPerSecond`). The 429 `rate_limited` message names the configured rate.
+- The field is required in the `DaemonConfig` type, so a TypeScript object typed as a full `DaemonConfig` must set it. The `NanoMindDaemon` constructor takes a `Partial<DaemonConfig>`, and a call that leaves the field out gets the default.
+- The `NanoMindDaemon` constructor throws a `RangeError` when `rateLimitPerSecond` is not a finite number of at least 1. A finite rate below 1 would leave the bucket without a whole token and refuse every rate-limited request, and `NaN`, `Infinity` or `-Infinity` would let every request through.
+
 ### Tests
 
 - 21/21 pass (was 18; +3: a no-confidence engine result abstains; sub-floor confidence abstains and blanks attackClass; a verdict exactly at the inclusive floor classifies through).
