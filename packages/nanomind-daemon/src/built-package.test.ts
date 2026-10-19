@@ -19,6 +19,7 @@ import type { DaemonEngine } from './server.ts';
 // tests skip until the package is built. CI builds before it tests.
 const PKG_DIR = join(fileURLToPath(new URL('.', import.meta.url)), '..');
 const PKG = JSON.parse(readFileSync(join(PKG_DIR, 'package.json'), 'utf-8')) as {
+  version: string;
   main: string;
   types: string;
   bin: Record<string, string>;
@@ -49,6 +50,53 @@ describe('@nanomind/daemon entry point', { skip: !ENTRY_BUILT && 'dist/ is not b
     }
     assert.ok(values.includes('ABSTAIN_CONFIDENCE_FLOOR'), `value exports: ${values.join(', ')}`);
     assert.ok(types.includes('ClassificationStatus'), `type exports: ${types.join(', ')}`);
+  });
+});
+
+// The build is CommonJS. A require() of an ES module from it needs
+// require(esm), which this flag turns off, as it is off on Node releases
+// that do not enable it by default.
+describe('built package on a Node runtime without require(esm)', { skip: !CLI_BUILT && 'dist/ is not built' }, () => {
+  let home: string;
+
+  before(() => {
+    home = mkdtempSync(join(tmpdir(), 'nanomind-no-require-esm-'));
+  });
+
+  after(() => {
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  function runWithoutRequireEsm(args: string[], env: Record<string, string> = {}) {
+    return spawnSync(process.execPath, ['--no-experimental-require-module', ...args], {
+      env: { PATH: process.env.PATH ?? '', HOME: home, USERPROFILE: home, ...env },
+      encoding: 'utf-8',
+      timeout: 60_000,
+    });
+  }
+
+  it('nanomind-daemon --version prints the package version', () => {
+    const run = runWithoutRequireEsm([CLI, '--version']);
+    assert.strictEqual(run.status, 0, run.stderr);
+    assert.strictEqual(run.stdout, `${PKG.version}\n`);
+  });
+
+  it('require() of the entry point returns its exports', () => {
+    const run = runWithoutRequireEsm(['-e', `console.log(typeof require(${JSON.stringify(PKG_DIR)}).NanoMindDaemon)`]);
+    assert.strictEqual(run.status, 0, run.stderr);
+    assert.strictEqual(run.stdout, 'function\n');
+  });
+
+  it('nanomind-daemon start runs the model host from dist/', () => {
+    // The "not found" error comes from the model host process, so it shows
+    // the daemon found the host file and the host loaded.
+    const modelDir = join(home, 'models');
+    const run = runWithoutRequireEsm([CLI, 'start', '--no-download'], { NANOMIND_MODEL_DIR: modelDir });
+    assert.strictEqual(run.status, 1, run.stderr);
+    assert.ok(
+      run.stderr.startsWith(`Fatal: NanoMind model not found at ${join(modelDir, 'nanomind-tme.onnx')}`),
+      `stderr does not open with the host's load error:\n${run.stderr}`,
+    );
   });
 });
 
