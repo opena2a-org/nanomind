@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { delimiter, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { checkText, inScope, trackedDocs } from '../scripts/check-docs-prose.mjs';
@@ -13,8 +13,8 @@ const lines = (text) => checkText(text).map(({ line, rule }) => `${line}: ${rule
 const script = fileURLToPath(new URL('../scripts/check-docs-prose.mjs', import.meta.url));
 const run = (path, args, options = {}) => spawnSync(process.execPath, [path, ...args], { encoding: 'utf8', ...options });
 
-function scratch(t, files) {
-  const dir = mkdtempSync(join(tmpdir(), 'docs-prose-'));
+function scratch(t, files, parent = tmpdir()) {
+  const dir = mkdtempSync(join(parent, 'docs-prose-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   for (const [path, text] of Object.entries(files)) {
     mkdirSync(dirname(join(dir, path)), { recursive: true });
@@ -29,11 +29,18 @@ function scratch(t, files) {
 const plain = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith('GIT_')));
 const git = (cwd, ...args) => spawnSync('git', args, { cwd, env: plain, encoding: 'utf8' });
 
+// The files that git, run in cwd with the variables in env added to plain,
+// lists for the pathspecs trackedDocs gives it.
+const gitLists = (cwd, env = {}) =>
+  spawnSync('git', ['ls-files', '-z', '--', '*.md', '*.mdx'], { cwd, env: { ...plain, ...env }, encoding: 'utf8' })
+    .stdout.split('\0')
+    .filter(Boolean);
+
 // A scratch repository holding files, of which the paths in tracked are added
-// to its index. Returns null when git cannot be started; any other failure of
-// git fails the test.
-function scratchRepo(t, files, tracked = Object.keys(files)) {
-  const dir = scratch(t, files);
+// to its index, made inside parent when one is given. Returns null when git
+// cannot be started; any other failure of git fails the test.
+function scratchRepo(t, files, tracked = Object.keys(files), parent = tmpdir()) {
+  const dir = scratch(t, files, parent);
   const init = git(dir, 'init', '-q');
   if (init.error) return null;
   assert.equal(init.status, 0, `git init failed: ${init.stderr}`);
@@ -54,6 +61,17 @@ function withEnv(values, fn) {
       else process.env[name] = value;
     }
   }
+}
+
+// A stand-in for git that lists README.md and docs/guide.md and, for each
+// variable of names that it receives, a file named after that variable, such
+// as GIT_PREFIX.md. Returns the directory that holds it, to be put first on
+// PATH, or null when it cannot be started.
+function gitStandIn(t, names) {
+  const checks = names.map((name) => `[ -z "\${${name}+set}" ] || printf '%s\\0' ${name}.md`);
+  const bin = scratch(t, { git: ['#!/bin/sh', "printf '%s\\0' README.md docs/guide.md", ...checks, ''].join('\n') });
+  chmodSync(join(bin, 'git'), 0o755);
+  return spawnSync(join(bin, 'git')).error ? null : bin;
 }
 
 test('a dash used in prose is reported with its line', () => {
@@ -318,33 +336,78 @@ test('a repository named in GIT_DIR, as a hook in a linked worktree receives it,
   assert.doesNotMatch(result.stderr, /tracked\.md|fatal|\n\s+at /);
 });
 
-test('the variables that name a repository or change how git matches a pathspec do not change the files listed', (t) => {
+test('the repository and pathspec variables that change the files git lists do not change the files listed', (t) => {
   const repo = scratchRepo(t, { 'tracked.md': 'Tracked prose.\n' });
-  const dir = scratchRepo(
+  // The checkout lies inside the work tree of repo, so git given a
+  // GIT_WORK_TREE that names that work tree lists none of the checkout's
+  // files. *.md matches docs/NOTES.MD only when case is ignored. docs/draft.md
+  // is on disk but not tracked, so it shows when git lists no file and the
+  // files on disk are listed instead.
+  const dir = repo && scratchRepo(
     t,
-    { 'README.md': 'Plain prose.\n', 'docs/guide.md': 'Plain prose.\n', 'docs/draft.md': 'Untracked prose.\n' },
-    ['README.md', 'docs/guide.md'],
+    {
+      'README.md': 'Plain prose.\n',
+      'docs/guide.md': 'Plain prose.\n',
+      'docs/NOTES.MD': 'Plain prose.\n',
+      'docs/draft.md': 'Untracked prose.\n',
+    },
+    ['README.md', 'docs/guide.md', 'docs/NOTES.MD'],
+    repo,
   );
   if (repo === null || dir === null) {
     t.skip('git cannot be started');
     return;
   }
   const missing = join(repo, 'missing');
+  // GIT_PREFIX and GIT_ALTERNATE_OBJECT_DIRECTORIES are not here: git lists
+  // the same files with either one set, so the next test shows with a
+  // stand-in for git that neither reaches it.
   const settings = {
     GIT_DIR: join(repo, '.git'),
     GIT_WORK_TREE: repo,
     GIT_INDEX_FILE: join(repo, '.git', 'index'),
-    GIT_PREFIX: 'docs/',
     GIT_COMMON_DIR: missing,
     GIT_OBJECT_DIRECTORY: missing,
-    GIT_ALTERNATE_OBJECT_DIRECTORIES: missing,
     GIT_GLOB_PATHSPECS: '1',
     GIT_NOGLOB_PATHSPECS: '1',
     GIT_ICASE_PATHSPECS: '1',
     GIT_LITERAL_PATHSPECS: '1',
   };
+  const expected = ['README.md', 'docs/guide.md'];
+  assert.deepEqual(gitLists(dir), expected);
   for (const [name, value] of Object.entries(settings)) {
-    assert.deepEqual(withEnv({ [name]: value }, () => trackedDocs(dir)), ['README.md', 'docs/guide.md'], name);
+    assert.notDeepEqual(gitLists(dir, { [name]: value }), expected, `git with ${name}`);
+    assert.deepEqual(withEnv({ [name]: value }, () => trackedDocs(dir)), expected, name);
+  }
+});
+
+test('a stand-in for git receives none of the repository and pathspec variables, also those that do not change the files git lists', (t) => {
+  const names = [
+    'GIT_DIR',
+    'GIT_WORK_TREE',
+    'GIT_INDEX_FILE',
+    'GIT_PREFIX',
+    'GIT_COMMON_DIR',
+    'GIT_OBJECT_DIRECTORY',
+    'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+    'GIT_GLOB_PATHSPECS',
+    'GIT_NOGLOB_PATHSPECS',
+    'GIT_ICASE_PATHSPECS',
+    'GIT_LITERAL_PATHSPECS',
+  ];
+  const bin = gitStandIn(t, names);
+  if (bin === null) {
+    t.skip('a script in the temporary directory cannot be started');
+    return;
+  }
+  // The directory is empty, so trackedDocs lists README.md and docs/guide.md
+  // in it only when the stand-in is the git it runs.
+  const dir = scratch(t, {});
+  const searchPath = `${bin}${delimiter}${process.env.PATH}`;
+  for (const name of names) {
+    const env = { PATH: searchPath, [name]: '1' };
+    assert.deepEqual(gitLists(dir, env), ['README.md', 'docs/guide.md', `${name}.md`], `stand-in with ${name}`);
+    assert.deepEqual(withEnv(env, () => trackedDocs(dir)), ['README.md', 'docs/guide.md'], name);
   }
 });
 
