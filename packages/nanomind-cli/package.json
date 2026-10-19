@@ -12,9 +12,9 @@
     "test": "node --test --experimental-strip-types src/**/*.test.ts"
   },
   "dependencies": {
-    "@nanomind/engine": "0.1.0",
-    "@nanomind/router": "0.1.0",
-    "@nanomind/atc": "0.1.0",
+    "@nanomind/engine": "^0.1.1",
+    "@nanomind/router": "^0.1.3",
+    "@nanomind/atc": "^0.1.1",
     "@nanomind/guard": "0.1.1"
   },
   "license": "Apache-2.0",

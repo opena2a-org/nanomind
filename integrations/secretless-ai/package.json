@@ -8,7 +8,7 @@
     "build": "tsc"
   },
   "peerDependencies": {
-    "@nanomind/cli": "0.1.0"
+    "@nanomind/cli": "^0.1.2"
   },
   "license": "Apache-2.0",
   "repository": {
