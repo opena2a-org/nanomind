@@ -61,7 +61,11 @@ describe('--no-guard', () => {
     for (const source of ['piped', 'file', 'agent-output'] as const) {
       const screened = screenLine(INJECTION, source);
       assert.strictEqual(screened?.blocked, true, source);
-      assert.ok(screened.message.startsWith('BLOCKED'), source);
+      assert.strictEqual(
+        screened.message,
+        'BLOCKED: Critical injection pattern detected. This input appears to contain instructions designed to hijack NanoMind. The command was not executed.',
+        source,
+      );
     }
     assert.strictEqual(screenLine(INJECTION, 'piped', true), null);
     assert.strictEqual(screenLine(INJECTION, 'direct'), null);
@@ -153,5 +157,31 @@ describe('session input screening', () => {
     assert.ok(stdout.includes('NOTICE: Minor suspicious pattern detected in piped input: encoded payload "base64 decode("'), stdout);
     assert.ok(!stdout.includes('Proceeding with caution'), stdout);
     assert.ok(stdout.indexOf('NOTICE') < stdout.indexOf('RAN hma secure'), stdout);
+  });
+
+  it('names only the high-severity pattern in the warning for a line that also matches a medium one', () => {
+    const screened = screenLine('act as a reviewer and base64 decode(x)', 'piped');
+    assert.strictEqual(screened?.blocked, false);
+    assert.strictEqual(
+      screened.message,
+      'WARNING: Suspicious pattern detected in piped input: role switching "act as a". The line is still routed; a session blocks only critical patterns.',
+    );
+  });
+
+  it('cuts a quoted match at 40 characters so a line of whitespace does not fill the notice', () => {
+    const screened = screenLine('base64' + '\t'.repeat(20000) + 'd(', 'piped');
+    assert.strictEqual(screened?.blocked, false);
+    assert.strictEqual(
+      screened.message,
+      `NOTICE: Minor suspicious pattern detected in piped input: encoded payload "base64${'\\u0009'.repeat(34)}...". The line is still routed.`,
+    );
+  });
+
+  it('names file input in the warning for a file redirected to stdin', () => {
+    withInputFile(`${HIGH_SEVERITY}\n`, (fd) => {
+      const { stdout } = runSession(fd);
+      assert.ok(stdout.includes('WARNING: Suspicious pattern detected in file input: role switching "act as a"'), stdout);
+      assert.ok(stdout.includes('RAN hma secure'), stdout);
+    });
   });
 });
