@@ -11,7 +11,7 @@
 
 NanoMind is the embedded machine learning layer for the OpenA2A security ecosystem. It provides on-device neural inference for threat classification, behavioral anomaly detection, and intent routing, without requiring cloud API calls.
 
-NanoMind is NOT a product. It is infrastructure. It runs inside other tools (HMA, ai-trust, OASB, AIM, aibrowserguard, ARP) as a dependency. End users never interact with NanoMind directly.
+NanoMind is NOT a product. It is infrastructure. It runs inside other tools (HMA, ai-trust, OASB, AIM, aibrowserguard, ARP) as a dependency. Users also run three of its commands themselves: `nanomind` from `@nanomind/cli` (the interactive CLI), `nanomind-daemon` from `@nanomind/daemon` (the classifier server of §3.4) and `nanomind-analyst` from the `nanomind-analyst` Python package (which installs and manages the security analyst daemon).
 
 ## 2. Mission
 
@@ -19,14 +19,16 @@ Achieve **99.999% accuracy** in classifying AI agent security threats. Every fal
 
 ### 2.1 Current Reality vs Target
 
-| Metric | Current (v0.4.0) | Target | Gap |
+| Metric | Current (v0.5.0) | Target | Gap |
 |--------|-------------------|--------|-----|
-| Overall accuracy (released checkpoint) | 96.73% | 99.999% | 3.27% |
-| Macro F1 (final checkpoint) | 0.949 | 0.999 | 0.050 |
-| Weakest class (exfiltration, final checkpoint) | 0.840 F1 | 0.999 F1 | 0.159 |
-| Strongest class (social_engineering, final checkpoint) | 1.000 F1 | 1.000 F1 | 0.000 |
-| Training samples | 3,337 | 50,000+ | ~47,000 |
-| Eval samples | 398 | 5,000+ | ~4,600 |
+| Overall accuracy | 98.45% | 99.999% | 1.55% |
+| Macro F1 | 0.978 | 0.999 | 0.021 |
+| Weakest class (persistence) | 0.923 F1 | 0.999 F1 | 0.076 |
+| Strongest classes (exfiltration, credential_abuse, social_engineering, benign, steganography) | 1.000 F1 | 1.000 F1 | 0.000 |
+| Training samples | 3,168 | 50,000+ | ~47,000 |
+| Eval samples | 194 | 5,000+ | ~4,800 |
+
+The current column is the v0.5.0 entry in [`nanomind-models.json`](../nanomind-models.json) and the [v0.5.0 model card](model-cards/v0.5.0.md), measured on its 194-sample eval set; overall accuracy is the card's best eval accuracy.
 
 The [v0.4.0 model card](model-cards/v0.4.0.md#evaluation-metrics) reports two checkpoints of one training run. The released one, the best checkpoint, scored 96.73%. The macro F1 and the class F1 figures come from the final checkpoint, which scored 95.73%, because the card has per-class figures for that checkpoint only.
 
@@ -284,11 +286,13 @@ Fallback: If ONNX runtime is unavailable, vocabulary-based scoring provides degr
 
 | Mode | Package | What It Does | Latency Target |
 |------|---------|-------------|----------------|
-| CLI Threat Classification | @nanomind/engine | Classify agent configs, prompts, skills | <10ms |
+| CLI Threat Classification | @nanomind/daemon (`OnnxEngine`) | Classify agent configs, prompts, skills with nanomind-security-classifier | <10ms |
 | Intent Routing | @nanomind/router | Map natural language to CLI commands | <5ms |
 | Prompt Injection Guard | @nanomind/guard | Screen non-direct input for injection | <2ms |
 | Runtime Anomaly Detection | @nanomind/runtime-core | Behavioral anomaly scoring (L1 ARP) | <2ms |
 | Daemon Server | @nanomind/daemon | Persistent inference server (port 47200) | <5ms |
+
+`nanomind-daemon` runs `OnnxEngine` in a child process of its own (`OnnxProcessEngine`). `@nanomind/engine` is none of these modes: it wraps llamafile to generate text from a prompt with SmolLM2-135M.
 
 ## 4. Model Inventory
 
@@ -296,7 +300,7 @@ Fallback: If ONNX runtime is unavailable, vocabulary-based scoring provides degr
 
 | Model | Purpose | Status | Consumers |
 |-------|---------|--------|-----------|
-| nanomind-security-classifier | Threat classification (10 classes) | v0.4.0 (latest) | HMA, OpenA2A CLI |
+| nanomind-security-classifier | Threat classification (10 classes) | v0.5.0 (latest) | HMA, OpenA2A CLI |
 | nanomind-mcp-analyzer | MCP server behavioral analysis | Planned | HMA |
 | nanomind-trust-scorer | Trust scoring for Registry | Planned | ai-trust |
 | nanomind-runtime-guard | Runtime behavioral anomaly | Planned | ARP |
@@ -485,8 +489,9 @@ NanoMind models run on user machines: laptops, CI runners, Raspberry Pis. They m
 
 | Model | Version | ONNX Size | Data Size | Tokenizer | Total | Budget | Status |
 |-------|---------|-----------|-----------|-----------|-------|--------|--------|
-| security-classifier | v0.4.0 | 121 KB | 6.0 MB | 165 KB | 6.3 MB | 10 MB | Within budget |
-| security-classifier | v0.3.0 | 121 KB | 5.0 MB | 81 KB | 5.2 MB | 10 MB | Within budget |
+| security-classifier | v0.5.0 (latest) | 140 KB | 8.0 MB | 165 KB | 8.3 MB | 10 MB | Within budget |
+| security-classifier | v0.4.0 (stable) | 121 KB | 6.0 MB | 165 KB | 6.3 MB | 10 MB | Within budget |
+| security-classifier | v0.3.0 (stable) | 121 KB | 5.0 MB | 81 KB | 5.2 MB | 10 MB | Within budget |
 
 ### 7.3 Monitoring
 
@@ -574,7 +579,7 @@ The path to 99.999% is not manual curation. It is the **Registry intelligence pi
 
 | Phase | Source | Training Samples | Eval Samples | Expected Accuracy |
 |-------|--------|-----------------|--------------|-------------------|
-| Current (v0.4.0) | Local corpus only | 3,337 | 398 | 96.73% (released checkpoint) |
+| Current (v0.5.0) | Local corpus only | 3,168 | 194 | 98.45% |
 | Phase 1 | + Registry export (high-confidence) | 10,000 | 2,000 | ~98% |
 | Phase 2 | + AgentPwn + ARIA confirmed | 50,000 | 10,000 | ~99% |
 | Phase 3 | + Full Registry catalog + feedback loop | 200,000+ | 40,000+ | ~99.9% |
@@ -590,7 +595,7 @@ The path to 99.999% is not manual curation. It is the **Registry intelligence pi
 
 | Phase | Architecture | Why | Size Budget |
 |-------|-------------|-----|-------------|
-| Current | Mamba TME (8 blocks, 128d) | Good speed/accuracy balance | 6.3 MB |
+| Current | Mamba TME (8 blocks, 128d) | Good speed/accuracy balance | 8.3 MB (v0.5.0) |
 | Next | Mamba TME (12 blocks, 256d) | More capacity for 15+ classes and 50K+ data | ~15 MB |
 | Future | Hybrid Mamba + character-level tokenizer | Better Unicode handling for stego | ~20 MB |
 | Research | Knowledge distillation from a frontier LLM | Transfer LLM understanding to small model | Budget TBD |
