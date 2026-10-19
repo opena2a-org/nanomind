@@ -94,6 +94,11 @@ The classifier runs in a child process of the daemon. `OnnxProcessEngine`, the e
 - `POST /v1/infer` answers an engine error that is an `AggregateError` with an empty message, Node's error for a connection refused on every address of a host, with the reasons in the 500 body's `message`, for example `connect ECONNREFUSED ::1:443; connect ECONNREFUSED 127.0.0.1:443`. The `message` was empty.
 - The `nanomind-daemon status` test for a daemon that does not report `refusals` compares the whole output, so a `status` that prints "Daemon is not running" after the Uptime line fails it.
 
+### `--help` response fields (#112)
+
+- The `Response:` line of `nanomind-daemon --help` lists `classification` and marks `evidence` with `?`, as the daemon sends `evidence` only when the model returns a raw label. It listed `remediation` and left out `classification`. A line under it names `remediation` as reserved: `InferResponse` declares it and the daemon does not send it.
+- New test: it runs the built `nanomind-daemon --help` and compares its `Response:` line with the fields `daemon.infer()` returns. It skips until `npm run build` has written `dist/`.
+
 ### Tests
 
 - New tests: a no-confidence engine result abstains; sub-floor confidence abstains and blanks attackClass; a verdict exactly at the inclusive floor classifies through.
