@@ -4,9 +4,7 @@
  * standalone: the package has no dependency on hackmyagent, and the
  * tests use a minimal EventEngineLike stub.
  *
- * The 6 integration tests in hackmyagent/src/arp/intelligence/
- * runtime-twin.test.ts continue to exercise the twin inside a real
- * ARP EventEngine. Those remain the authoritative integration coverage.
+ * No test in this repository runs the twin inside a real ARP EventEngine.
  */
 
 import { test } from 'node:test';
