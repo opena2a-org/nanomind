@@ -6,6 +6,7 @@ import { existsSync, lstatSync, mkdtempSync, readdirSync, readFileSync, renameSy
 import { request } from 'node:http';
 import { createRequire } from 'node:module';
 import { createServer as createNetServer, connect } from 'node:net';
+import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
 import { homedir, tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -29,11 +30,25 @@ after(() => {
   assert.deepStrictEqual(listHomeModels(), HOME_MODELS_BEFORE, `the daemon tests wrote model files into ${HOME_MODELS_DIR}`);
 });
 
+// A port that was free a moment ago, for each daemon a test starts. Another
+// socket on the machine can hold a fixed port, and the daemon's listen() on it
+// then fails with EADDRINUSE after start() has returned.
+async function freePort(): Promise<number> {
+  const probe = createNetServer();
+  probe.listen(0, '127.0.0.1');
+  await once(probe, 'listening');
+  const { port } = probe.address() as AddressInfo;
+  probe.close();
+  await once(probe, 'close');
+  return port;
+}
+
 describe('NanoMindDaemon', () => {
   let daemon: NanoMindDaemon;
-  const TEST_PORT = 47299; // Use non-default port for tests
+  let TEST_PORT: number;
 
   before(async () => {
+    TEST_PORT = await freePort();
     // A stub engine: with the default OnnxEngine, start() downloads the
     // model files into the home directory when they are missing.
     daemon = new NanoMindDaemon({
@@ -290,8 +305,8 @@ describe('NanoMindDaemon', () => {
 
 describe('NanoMindDaemon /health/ready (NMD-02)', () => {
   let daemon: NanoMindDaemon;
-  const READY_PORT = 47298; // distinct from the main suite's 47299
-  const BASE = `http://127.0.0.1:${READY_PORT}`;
+  let READY_PORT: number;
+  let BASE: string;
   const PKG = JSON.parse(
     readFileSync(join(fileURLToPath(new URL('.', import.meta.url)), '..', 'package.json'), 'utf-8'),
   ) as { version: string };
@@ -308,6 +323,8 @@ describe('NanoMindDaemon /health/ready (NMD-02)', () => {
   };
 
   before(async () => {
+    READY_PORT = await freePort();
+    BASE = `http://127.0.0.1:${READY_PORT}`;
     daemon = new NanoMindDaemon({
       httpPort: READY_PORT,
       ipcPath: join(SOCKET_DIR, 'ready.sock'),
@@ -445,8 +462,8 @@ async function waitFor(condition: () => boolean, what: string, timeoutMs = 5000)
 
 describe('NanoMindDaemon idle unload', () => {
   let daemon: NanoMindDaemon;
-  const IDLE_PORT = 47297; // distinct from the suites on 47298 and 47299
-  const BASE = `http://127.0.0.1:${IDLE_PORT}`;
+  let IDLE_PORT: number;
+  let BASE: string;
 
   // Stub engine that tracks whether its model is resident, so the suite can
   // tell a real release from a flag flip.
@@ -469,6 +486,8 @@ describe('NanoMindDaemon idle unload', () => {
   };
 
   before(async () => {
+    IDLE_PORT = await freePort();
+    BASE = `http://127.0.0.1:${IDLE_PORT}`;
     daemon = new NanoMindDaemon({
       httpPort: IDLE_PORT,
       idleUnloadSeconds: 0.2,
@@ -559,7 +578,7 @@ describe('NanoMindDaemon idle timer and a request longer than idleUnloadSeconds'
 
 describe('NanoMindDaemon idle timer with an engine that cannot unload', () => {
   it('keeps reporting the model as loaded and the daemon as ready', async () => {
-    const port = 47296;
+    const port = await freePort();
     const daemon = new NanoMindDaemon({
       httpPort: port,
       idleUnloadSeconds: 0.1,
@@ -661,7 +680,7 @@ function unixRequest(
 describe('NanoMindDaemon Unix socket at ipcPath', {
   skip: process.platform === 'win32' ? 'ipcPath is a named pipe on Windows' : false,
 }, () => {
-  const IPC_PORT = 47297; // distinct from the suites above
+  let IPC_PORT: number;
   const sockPath = join(SOCKET_DIR, 'ipc.sock');
   let daemon: NanoMindDaemon;
   const stubEngine = {
@@ -676,6 +695,7 @@ describe('NanoMindDaemon Unix socket at ipcPath', {
   };
 
   before(async () => {
+    IPC_PORT = await freePort();
     daemon = new NanoMindDaemon({
       httpPort: IPC_PORT,
       ipcPath: sockPath,
@@ -729,7 +749,7 @@ describe('NanoMindDaemon Unix socket at ipcPath', {
 
   it('removes the socket file on stop', async () => {
     const path = join(SOCKET_DIR, 'stop.sock');
-    const other = new NanoMindDaemon({ httpPort: 47296, ipcPath: path, engine: stubEngine });
+    const other = new NanoMindDaemon({ httpPort: await freePort(), ipcPath: path, engine: stubEngine });
     await other.start();
     try {
       assert.ok(existsSync(path), 'socket exists while running');
@@ -749,7 +769,7 @@ describe('NanoMindDaemon Unix socket at ipcPath', {
     await new Promise<void>(resolve => listener.close(() => resolve()));
     assert.ok(lstatSync(path).isSocket(), 'precondition: a stale socket file is present');
 
-    const other = new NanoMindDaemon({ httpPort: 47295, ipcPath: path, engine: stubEngine });
+    const other = new NanoMindDaemon({ httpPort: await freePort(), ipcPath: path, engine: stubEngine });
     await other.start();
     try {
       const health = await unixRequest(path, 'GET', '/health');
@@ -763,7 +783,7 @@ describe('NanoMindDaemon Unix socket at ipcPath', {
     const path = join(SOCKET_DIR, 'taken.sock');
     const listener = createNetServer(socket => socket.end());
     await new Promise<void>(resolve => listener.listen(path, resolve));
-    const other = new NanoMindDaemon({ httpPort: 47294, ipcPath: path, engine: stubEngine });
+    const other = new NanoMindDaemon({ httpPort: await freePort(), ipcPath: path, engine: stubEngine });
     try {
       await assert.rejects(other.start(), /in use by another process/);
       assert.strictEqual(other.getStatus().running, false, 'HTTP is not bound after the refusal');
@@ -783,7 +803,7 @@ describe('NanoMindDaemon Unix socket at ipcPath', {
   it('refuses to replace a path that is not a socket', async () => {
     const path = join(SOCKET_DIR, 'not-a-socket');
     writeFileSync(path, 'keep');
-    const other = new NanoMindDaemon({ httpPort: 47293, ipcPath: path, engine: stubEngine });
+    const other = new NanoMindDaemon({ httpPort: await freePort(), ipcPath: path, engine: stubEngine });
     try {
       await assert.rejects(other.start(), /exists and is not a socket/);
       assert.strictEqual(readFileSync(path, 'utf-8'), 'keep', 'the file is left untouched');
@@ -795,7 +815,7 @@ describe('NanoMindDaemon Unix socket at ipcPath', {
 
 describe('NanoMindDaemon /v1/infer request body cap', () => {
   let daemon: NanoMindDaemon;
-  const CAP_PORT = 47297; // distinct from the other suites' ports
+  let CAP_PORT: number;
   const DOCUMENTED_CAP_BYTES = 1_048_576; // README: "Request size capped at 1MB."
 
   let inferCalls = 0;
@@ -850,6 +870,7 @@ describe('NanoMindDaemon /v1/infer request body cap', () => {
   }
 
   before(async () => {
+    CAP_PORT = await freePort();
     daemon = new NanoMindDaemon({
       httpPort: CAP_PORT,
       idleUnloadSeconds: 60,
@@ -896,8 +917,8 @@ describe('NanoMindDaemon /v1/infer request body cap', () => {
 
 describe('NanoMindDaemon rate limit', () => {
   let daemon: NanoMindDaemon;
-  const RATE_PORT = 47291; // distinct from the other suites' ports
-  const BASE = `http://127.0.0.1:${RATE_PORT}`;
+  let RATE_PORT: number;
+  let BASE: string;
   const RATE = 100; // README: "Rate limited to 100 requests/second", also the burst
 
   let inferCalls = 0;
@@ -951,6 +972,8 @@ describe('NanoMindDaemon rate limit', () => {
   const refusals = () => daemon.getStatus().refusals;
 
   before(async () => {
+    RATE_PORT = await freePort();
+    BASE = `http://127.0.0.1:${RATE_PORT}`;
     daemon = new NanoMindDaemon({
       httpPort: RATE_PORT,
       ipcPath: join(SOCKET_DIR, 'rate.sock'),
@@ -1105,7 +1128,7 @@ describe('NanoMindDaemon error bodies', () => {
   // "abstain", so a consumer that reads the body without the status code
   // finds an abstain, not two absent fields.
   let daemon: NanoMindDaemon;
-  const ERRORS_PORT = 47290; // distinct from the other suites' ports
+  let ERRORS_PORT: number;
 
   // Input "throw" makes inference fail. Input "hold" keeps the call pending
   // until release() runs, so a test can take the only slot.
@@ -1120,6 +1143,7 @@ describe('NanoMindDaemon error bodies', () => {
   };
 
   before(async () => {
+    ERRORS_PORT = await freePort();
     daemon = new NanoMindDaemon({
       httpPort: ERRORS_PORT,
       ipcPath: join(SOCKET_DIR, 'errors.sock'),
@@ -1341,11 +1365,6 @@ describe('NanoMindDaemon rateLimitPerSecond', () => {
 });
 
 describe('NanoMindDaemon.infer() direct inference', () => {
-  // One port for each daemon a test starts, distinct from the other suites'
-  // ports, so no test reaches a server an earlier test has just stopped.
-  const PARITY_PORT = 47296;
-  const NON_OBJECT_PORT = 47295;
-  const QUEUE_PORT = 47294;
   const DIST_ENTRY = join(fileURLToPath(new URL('.', import.meta.url)), '..', 'dist', 'index.js');
 
   type EngineResult = Awaited<ReturnType<DaemonEngine['infer']>>;
@@ -1523,6 +1542,7 @@ describe('NanoMindDaemon.infer() direct inference', () => {
   });
 
   it('answers POST /v1/infer and a direct call with the same response', async () => {
+    const PARITY_PORT = await freePort();
     const daemon = daemonWith(recordingEngine(), { httpPort: PARITY_PORT, idleUnloadSeconds: 60 });
     await daemon.start();
     await new Promise(resolve => setTimeout(resolve, 100));
@@ -1544,6 +1564,7 @@ describe('NanoMindDaemon.infer() direct inference', () => {
 
   it('answers 400 to a JSON body that is not an object', async () => {
     const engine = recordingEngine();
+    const NON_OBJECT_PORT = await freePort();
     const daemon = daemonWith(engine, { httpPort: NON_OBJECT_PORT, idleUnloadSeconds: 60 });
     await daemon.start();
     await new Promise(resolve => setTimeout(resolve, 100));
@@ -1568,6 +1589,7 @@ describe('NanoMindDaemon.infer() direct inference', () => {
 
   it('answers 429 over HTTP while a direct call holds the only slot', async () => {
     const { engine, release } = heldEngine();
+    const QUEUE_PORT = await freePort();
     const daemon = daemonWith(engine, { httpPort: QUEUE_PORT, idleUnloadSeconds: 60, maxConcurrent: 1 });
     await daemon.start();
     await new Promise(resolve => setTimeout(resolve, 100));
@@ -1818,7 +1840,7 @@ describe('README POST /v1/infer examples', () => {
   }
 
   it('match what the shipped model returns for each request', { skip: skipReason }, async () => {
-    const EXAMPLES_PORT = 47292; // distinct from the suites above
+    const EXAMPLES_PORT = await freePort();
     const daemon = new NanoMindDaemon({
       httpPort: EXAMPLES_PORT,
       ipcPath: join(SOCKET_DIR, 'examples.sock'),
