@@ -83,7 +83,7 @@ In a session, a critical match blocks the line. A high or medium match prints a 
 
 Called directly, `screenInput` serves a caller that screens input once and then decides whether to go on. A critical match is reported as not safe with a BLOCKED recommendation. A high-severity match returns a warning that asks you to review the input before proceeding. A medium match returns a notice that ends "Proceeding with caution".
 
-`nanomind --no-guard` turns screening off for one session and prints a warning to stderr. Another launcher does the same by checking its arguments with `hasNoGuardFlag(args)` from `@nanomind/cli` and starting the session with `noGuard: true`. The adapters in `integrations/` do not pass the flag yet.
+`nanomind --no-guard` turns screening off for one session and prints a warning to stderr. Another launcher does the same by checking its arguments with `hasNoGuardFlag(args)` from `@nanomind/cli` and starting the session with `noGuard: true`. The `hma`, `opena2a` and `secretless-ai` adapters in `integrations/` start their session with `noGuard: true` when their CLI is run with `--no-guard` and no other argument.
 
 Detects: instruction override, role switching, permission escalation, zero-width character injection, encoded payloads.
 

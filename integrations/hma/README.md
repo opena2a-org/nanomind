@@ -23,7 +23,7 @@ if (!interactive) {
 }
 ```
 
-`launchHmaInteractive` takes the arguments `hma` was run with. With none, it starts the session and resolves `true` once the prompt is shown; the session exits the process when the user types `exit`. When `hma` was given arguments, `--help` and `--no-smart` among them, it resolves `false` and starts nothing.
+`launchHmaInteractive` takes the arguments `hma` was run with. With none, it starts the session and resolves `true` once the prompt is shown; the session exits the process when the user types `exit`. With `--no-guard` and no other argument, it does the same with input screening off: the session prints a warning to stderr and does not screen piped or file input for prompt injection. When `hma` was given other arguments, `--help` and `--no-smart` among them, it resolves `false` and starts nothing, with or without `--no-guard`.
 
 ## Requires
 

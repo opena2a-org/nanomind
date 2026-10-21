@@ -3,7 +3,8 @@
  *
  * Integrates NanoMind with HackMyAgent CLI.
  * When `hma` is invoked with no args, this adapter launches NanoMind
- * interactive mode instead of the help screen.
+ * interactive mode instead of the help screen. `hma --no-guard` launches it
+ * with input screening off, and the session prints a warning to stderr.
  *
  * Usage in HMA's cli.ts:
  *
@@ -22,7 +23,16 @@ import { execSync } from 'node:child_process';
 import { startSession, type NanoMindSession } from '@nanomind/cli';
 
 /**
- * Check if NanoMind should launch (no args, no --help, no --no-smart).
+ * The launch flag that turns off input screening for one session. It is
+ * matched here, not with hasNoGuardFlag from @nanomind/cli: the peer
+ * dependency range admits the published @nanomind/cli 0.1.2, which does not
+ * export it.
+ */
+const NO_GUARD_FLAG = '--no-guard';
+
+/**
+ * Check if NanoMind should launch (no args or --no-guard alone, no --help,
+ * no --no-smart).
  */
 export function shouldLaunchNanoMind(argv: string[]): boolean {
   const args = argv.slice(2); // remove node and script path
@@ -33,16 +43,18 @@ export function shouldLaunchNanoMind(argv: string[]): boolean {
   // --help always goes to traditional help
   if (args.includes('--help') || args.includes('-h')) return false;
 
-  // If there are actual commands/subcommands, don't intercept
-  if (args.length > 0) return false;
+  // If there are actual commands/subcommands, don't intercept. --no-guard
+  // only turns off input screening for the session.
+  if (args.some((arg) => arg !== NO_GUARD_FLAG)) return false;
 
   return true;
 }
 
 /**
- * Launch NanoMind interactive session for HMA.
+ * Launch NanoMind interactive session for HMA. With `noGuard`, the session
+ * starts with input screening off and prints a warning to stderr.
  */
-export async function launchNanoMind(): Promise<void> {
+export async function launchNanoMind({ noGuard = false }: { noGuard?: boolean } = {}): Promise<void> {
   // Detect HMA version
   let hmaVersion = 'unknown';
   try {
@@ -74,6 +86,7 @@ export async function launchNanoMind(): Promise<void> {
         return err.stdout || err.message;
       }
     },
+    noGuard,
   };
 
   await startSession(session);
@@ -82,12 +95,13 @@ export async function launchNanoMind(): Promise<void> {
 /**
  * Launch NanoMind interactive mode for the arguments hma was run with, without
  * the node and script paths. With none, it starts the session and resolves
- * true once the prompt is shown. Otherwise it resolves false and starts nothing.
+ * true once the prompt is shown. With --no-guard alone, it does the same with
+ * input screening off. Otherwise it resolves false and starts nothing.
  */
 export async function launchHmaInteractive(args: string[]): Promise<boolean> {
   // shouldLaunchNanoMind reads a full argv, node and script path first
   if (!shouldLaunchNanoMind(['node', 'hma', ...args])) return false;
-  await launchNanoMind();
+  await launchNanoMind({ noGuard: args.includes(NO_GUARD_FLAG) });
   return true;
 }
 
