@@ -27,9 +27,9 @@ This twin produces 9-dimensional gradients that feed `/api/v1/telemetry/behavior
 
 ## What does NOT belong here
 
-- Any ARP integration wiring (EventEngine attach, proxy integration, telemetry forwarder): lives in `hackmyagent/src/arp/`.
+- Any ARP integration wiring (EventEngine attach, proxy integration, telemetry forwarder): that belongs to the ARP integration that uses the twin.
 - Any rule-based classifier: that is L0, not L1.
-- Any classification-drift detection: that is `guard-anomaly`, still in `hackmyagent/src/arp/intelligence/`.
+- Any classification-drift detection: that is `guard-anomaly`, which is not part of this package.
 
 ## License
 
