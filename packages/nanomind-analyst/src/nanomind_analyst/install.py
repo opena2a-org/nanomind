@@ -107,6 +107,18 @@ def _pause_before_retry(deadline: float) -> bool:
     return time.monotonic() < deadline
 
 
+def _bound_socket_wait(sock: socket.socket, deadline: float) -> bool:
+    """Let the next connect, send or read on `sock` block for up to two
+    seconds, never past `deadline`. Returns False once no time is left, and
+    then leaves the timeout alone: a timeout of zero would make the socket
+    non-blocking."""
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        return False
+    sock.settimeout(min(2.0, remaining))
+    return True
+
+
 def _healthz_probe(timeout_sec: float = HEALTHZ_WAIT_SEC) -> bool:
     """Connect to the daemon's Unix socket and ask for healthz.
 
@@ -127,7 +139,12 @@ def _healthz_probe(timeout_sec: float = HEALTHZ_WAIT_SEC) -> bool:
             break
         polled = True
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        sock.settimeout(2.0)
+        # Each connect, send and read below is bounded by the time left, so
+        # one still waiting at the deadline (a daemon that accepts and never
+        # replies) ends there instead of running to its own timeout.
+        if not _bound_socket_wait(sock, deadline):
+            sock.close()
+            break
         try:
             # Verify ownership BEFORE connect so we never feed bytes to an
             # attacker-bound socket.
@@ -146,9 +163,11 @@ def _healthz_probe(timeout_sec: float = HEALTHZ_WAIT_SEC) -> bool:
             sock.close()
             continue
         try:
+            if not _bound_socket_wait(sock, deadline):
+                break
             sock.sendall(b'{"op":"healthz"}\n')
             buf = bytearray()
-            while b"\n" not in buf and time.monotonic() < deadline:
+            while b"\n" not in buf and _bound_socket_wait(sock, deadline):
                 try:
                     chunk = sock.recv(64 * 1024)
                 except TimeoutError:

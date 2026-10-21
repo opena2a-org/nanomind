@@ -52,9 +52,12 @@ after upgrading to regenerate the plist.
 - The `install` healthz wait now ends at its 60-second timeout. Before,
   each retry slept a full second without checking how much time was
   left, so a failed connect or a not-ready reply near the deadline let
-  the wait run up to a second past it. An empty or non-JSON reply also
-  skipped the pause and reconnected in a tight loop; it now waits like
-  every other retry.
+  the wait run up to a second past it. A read still waiting at the
+  deadline also ran to its own two-second socket timeout, so a daemon
+  that accepted the connection and never replied held the wait up to
+  two seconds past it; each connect, send and read now waits no longer
+  than the time left. An empty or non-JSON reply also skipped the pause
+  and reconnected in a tight loop; it now waits like every other retry.
 - `NANOMIND_GUARD_DEVICE` now places the input-classifier embedder as
   well as the NLM. Before, the embedder always let sentence-transformers
   choose and took MPS whenever torch reported it, so on a Mac whose
