@@ -148,6 +148,39 @@ def fake_daemon(monkeypatch):
         sock_path.unlink()
 
 
+@pytest.fixture
+def silent_daemon(monkeypatch):
+    """Accept every healthz connection on a short /tmp socket and never reply,
+    holding each connection open until the test ends."""
+    sock_path = Path(f"/tmp/nm-analyst-pv-{secrets.token_hex(4)}.sock")
+    monkeypatch.setattr(paths, "SOCK_PATH", str(sock_path))
+    server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    server.bind(str(sock_path))
+    server.listen(4)
+    server.settimeout(0.2)
+    stop = threading.Event()
+    held: list[socket.socket] = []
+
+    def serve():
+        while not stop.is_set():
+            try:
+                conn, _ = server.accept()
+            except OSError:
+                continue
+            held.append(conn)
+
+    t = threading.Thread(target=serve, daemon=True)
+    t.start()
+    yield
+    stop.set()
+    t.join(timeout=2.0)
+    for conn in held:
+        conn.close()
+    server.close()
+    if sock_path.exists():
+        sock_path.unlink()
+
+
 READY_V1 = {"ok": True, "daemonState": "ready", "requestsServed": 3, "uptimeSec": 9.0}
 
 
@@ -290,8 +323,9 @@ class _ProbeClock:
 
 
 class TestInstallProbeStopsOnTime:
-    """Every retry pause is bounded by the deadline, so the wait ends at
-    `timeout_sec` instead of up to a second after it."""
+    """Every retry pause and every socket wait is bounded by the deadline, so
+    the wait ends at `timeout_sec`. A full one-second pause ran up to a second
+    past it, and a fixed two-second socket timeout up to two seconds past."""
 
     TIMEOUT = 1.5
     # Polls at 0s and 1s, then the last pause is cut to the 0.5s left. A full
@@ -372,3 +406,57 @@ class TestInstallProbeStopsOnTime:
         # One attempt before each pause and none after the last.
         assert len(attempts) == len(self.PAUSES)
         assert "FileNotFoundError" in capsys.readouterr().err
+
+    def test_unanswered_request_ends_at_the_timeout(self, silent_daemon, capsys):
+        """A daemon that accepts the connection and never replies: the read
+        still waiting at the deadline ends there. With a fixed two-second
+        socket timeout it ran on, and this wait ended at two seconds."""
+        started = time.monotonic()
+        assert install._healthz_probe(timeout_sec=0.5) is False
+        elapsed = time.monotonic() - started
+        assert 0.5 <= elapsed < 1.5
+        # The probe reached the daemon, and its read ended with no reply.
+        assert "(last: empty response)" in capsys.readouterr().err
+
+    @pytest.fixture
+    def socket_waits(self, monkeypatch, clock) -> list[tuple[float, float]]:
+        """Every timeout the probe sets on a socket, beside the clock reading
+        when it was set."""
+        waits: list[tuple[float, float]] = []
+
+        class _TimedSocket(socket.socket):
+            def settimeout(self, value):
+                waits.append((value, clock.now))
+                super().settimeout(value)
+
+        monkeypatch.setattr(
+            install,
+            "socket",
+            SimpleNamespace(
+                socket=_TimedSocket,
+                AF_UNIX=socket.AF_UNIX,
+                SOCK_STREAM=socket.SOCK_STREAM,
+            ),
+        )
+        return waits
+
+    def test_socket_waits_end_at_the_deadline(
+        self, fake_daemon, clock, socket_waits
+    ):
+        fake_daemon({"daemonState": "loading", "protocolVersion": 1})
+        timeout = 3.5
+        deadline = clock.now + timeout
+        assert install._healthz_probe(timeout_sec=timeout) is False
+        # Polls at 0s, 1s, 2s and 3s, then the last pause is cut to the 0.5s
+        # left.
+        assert clock.pauses == pytest.approx([1.0, 1.0, 1.0, 0.5])
+        # Every socket timeout is two seconds at most, and no longer than the
+        # time left when it is set.
+        for value, at in socket_waits:
+            assert value == pytest.approx(min(2.0, deadline - at))
+        # The polls at 0s and 1s keep the two-second cap; the polls at 2s and
+        # 3s are cut to the 1.5s and 0.5s left. A fixed timeout set 2.0 at
+        # every poll.
+        assert sorted({value for value, _ in socket_waits}) == pytest.approx(
+            [0.5, 1.5, 2.0]
+        )
