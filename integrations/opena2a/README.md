@@ -27,7 +27,7 @@ if (!interactive) {
 
 ## Requires
 
-- `@nanomind/cli` ^0.1.2, a peer dependency.
+- `@nanomind/cli` ^0.1.2, a peer dependency. `--no-guard` needs a `@nanomind/cli` release later than 0.1.2: 0.1.2 has no `noGuard` session option, so with 0.1.2 installed, `launchOpena2aInteractive(["--no-guard"])` starts a session that still screens piped and file input and prints no `--no-guard` warning.
 
 ## License
 
