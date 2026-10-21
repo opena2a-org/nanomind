@@ -3,6 +3,7 @@ import assert from 'node:assert';
 import { once } from 'node:events';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { createServer } from 'node:http';
+import { createServer as createNetServer } from 'node:net';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -11,11 +12,23 @@ import { BaseFabricAdapter } from './fabric-adapter.ts';
 import { NanoMindDaemon, RATE_LIMIT_PER_SECOND, TokenBucketRateLimiter } from './server.ts';
 import type { DaemonEngine } from './server.ts';
 
+// A port that was free a moment ago, for the daemon a suite starts. Another
+// socket on the machine can hold a fixed port, and the daemon's listen() on it
+// then fails with EADDRINUSE after start() has returned.
+async function freePort(): Promise<number> {
+  const probe = createNetServer();
+  probe.listen(0, '127.0.0.1');
+  await once(probe, 'listening');
+  const { port } = probe.address() as AddressInfo;
+  probe.close();
+  await once(probe, 'close');
+  return port;
+}
+
 describe('BaseFabricAdapter.infer() on a 429', () => {
-  const DAEMON_PORT = 47286; // distinct from the other suites' ports
   const socketDir = mkdtempSync(join(tmpdir(), 'nmd-'));
   let daemon: NanoMindDaemon;
-  const adapter = new BaseFabricAdapter('test', { daemonUrl: `http://127.0.0.1:${DAEMON_PORT}` });
+  let adapter: BaseFabricAdapter;
 
   // While `gate` is set, inference waits for it, so a test can hold the
   // daemon's only inference slot.
@@ -29,8 +42,10 @@ describe('BaseFabricAdapter.infer() on a 429', () => {
   };
 
   before(async () => {
+    const daemonPort = await freePort();
+    adapter = new BaseFabricAdapter('test', { daemonUrl: `http://127.0.0.1:${daemonPort}` });
     daemon = new NanoMindDaemon({
-      httpPort: DAEMON_PORT,
+      httpPort: daemonPort,
       ipcPath: join(socketDir, 'adapter.sock'),
       idleUnloadSeconds: 60,
       maxConcurrent: 1,
@@ -74,8 +89,7 @@ describe('BaseFabricAdapter.infer() on a 429', () => {
 });
 
 describe('BaseFabricAdapter.infer() on a 429 without an error code', () => {
-  const PORT = 47287; // distinct from the other suites' ports
-  const adapter = new BaseFabricAdapter('test', { daemonUrl: `http://127.0.0.1:${PORT}` });
+  let adapter: BaseFabricAdapter;
   let retryAfter: string | null = null;
   const server = createServer((_req, res) => {
     if (retryAfter !== null) res.setHeader('Retry-After', retryAfter);
@@ -84,8 +98,10 @@ describe('BaseFabricAdapter.infer() on a 429 without an error code', () => {
   });
 
   before(async () => {
-    server.listen(PORT, '127.0.0.1');
+    server.listen(0, '127.0.0.1');
     await once(server, 'listening');
+    const { port } = server.address() as AddressInfo;
+    adapter = new BaseFabricAdapter('test', { daemonUrl: `http://127.0.0.1:${port}` });
   });
 
   after(() => {
