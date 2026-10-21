@@ -520,20 +520,32 @@ export class RuntimeTwin {
 
   /**
    * Differential privacy: clip to L2 norm 1.0, add Gaussian noise at
-   * sigma consistent with epsilon=1.0, delta=1e-5. Matches the v1
+   * sigma consistent with epsilon=1.0, delta=1e-5, then clip the noised
+   * vector to L2 norm 1.0 again, the clipping bound the registry holds a
+   * submitted gradient to. Clipping after the noise is post-processing
+   * and leaves the (epsilon, delta) guarantee unchanged. Matches the v1
    * guarantees in the retired @nanomind/runtime/fleet.ts.
    */
   private addPrivacyNoise(gradient: number[]): number[] {
-    const norm = Math.sqrt(gradient.reduce((s, g) => s + g * g, 0));
-    const clipped = norm <= 1.0 ? [...gradient] : gradient.map(g => g / norm);
+    const clipped = this.clipToUnitNorm(gradient);
 
     const sigma = 1.0 * Math.sqrt(2 * Math.log(1.25 / 1e-5)) / 1.0;
-    return clipped.map(g => {
+    const noised = clipped.map(g => {
       const u1 = Math.random();
       const u2 = Math.random();
       const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
       return g + sigma * z;
     });
+    return this.clipToUnitNorm(noised);
+  }
+
+  /**
+   * Divide the vector by its L2 norm when that norm is above 1.0. A vector
+   * whose norm is 1.0 or less is returned as an unchanged copy.
+   */
+  private clipToUnitNorm(vector: number[]): number[] {
+    const norm = Math.sqrt(vector.reduce((s, g) => s + g * g, 0));
+    return norm <= 1.0 ? [...vector] : vector.map(g => g / norm);
   }
 
   /**
