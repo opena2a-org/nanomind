@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -43,6 +44,23 @@ test('the README names drift detection only as work outside this package', () =>
     if (heading === 'What does NOT belong here') continue;
     assert.doesNotMatch(text, /\bdrift\b/i, `the ${heading ? `"${heading}"` : 'opening'} section names drift detection`);
   }
+});
+
+test('the files package.json lists under files cite no path in hackmyagent, which this repository cannot check', () => {
+  // Tracked files only: dist/ is build output.
+  const tracked = execFileSync('git', ['ls-files', '-z', '--', PACKAGE], { cwd: root, encoding: 'utf8' }).split('\0').filter(Boolean);
+  const listed = tracked.filter((path) =>
+    manifest.files.some((entry) => (entry.endsWith('/') ? path.startsWith(`${PACKAGE}/${entry}`) : path === `${PACKAGE}/${entry}`)),
+  );
+  assert.ok(
+    listed.includes(`${PACKAGE}/README.md`) && listed.includes(`${PACKAGE}/src/index.ts`),
+    `the tracked files package.json lists under files do not include README.md and src/index.ts: ${listed.join(', ')}`,
+  );
+  assert.deepEqual(
+    listed.filter((path) => /\bhackmyagent\/\S/.test(read(path))),
+    [],
+    'these files cite a path in hackmyagent: say what this repository can check instead',
+  );
 });
 
 test('the README status calls the package published, as package.json and the release workflow have it', () => {

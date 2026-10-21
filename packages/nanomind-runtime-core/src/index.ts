@@ -17,9 +17,9 @@
  *   - RuntimeTwin class: constructor, attach hook, processEvent,
  *     scoreARPEvent (readonly path for the coordinator IPC),
  *     gradient accumulation and fleet submission.
- *   - The minimal ARPEvent shape the twin requires. Mirrors the ARPEvent
- *     type in hackmyagent/src/arp/types.ts. The twin intentionally does
- *     not import that type so the package stays free of hackmyagent
+ *   - The minimal ARPEvent shape the twin requires. The twin declares
+ *     the event fields it reads instead of importing an ARP engine's
+ *     event type, so the package stays free of hackmyagent
  *     coupling (per audit Section 2.3 "circular imports: none after the
  *     move").
  *
@@ -34,8 +34,8 @@ import * as os from 'os';
 
 // === Minimal ARPEvent shape ===
 //
-// This is a structural subset of the ARPEvent interface defined in
-// hackmyagent/src/arp/types.ts. The twin consumes only these fields, so
+// The ARP event fields the twin reads, declared here rather than
+// imported from an ARP engine. The twin consumes only these fields, so
 // any object that satisfies this shape can be scored. Keeping the shape
 // local eliminates the cross-repo type dependency the audit flagged.
 
