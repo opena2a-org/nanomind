@@ -442,7 +442,7 @@ The Registry collects two tiers of feedback that feed directly into retraining:
 
 | Tier | Endpoint | Data | Privacy |
 |------|----------|------|---------|
-| Tier 1: Telemetry | `POST /api/v1/nanomind/telemetry` | Classification statistics: content hash, classification, confidence, verdict, model version, timestamp; no content | |
+| Tier 1: Telemetry | `POST /api/v1/nanomind/telemetry` | Classification statistics: content type, content hash, classification, confidence, verdict, model version, timestamp, and the sending tool's name and version; no content | |
 | Tier 2: Feedback | `POST /api/v1/nanomind/feedback` | Full content + corrected labels | Requires auth |
 
 **Retraining triggers** (when Registry data indicates model degradation):
