@@ -76,7 +76,8 @@ NanoMind is NOT a standalone train-and-ship pipeline. It is a **closed-loop inte
 ┌─────────────────────────────────────────────────────────────────┐
 │  2. REGISTRY INGESTION                                          │
 │     POST /api/v1/trust/publish  — Unified scan results          │
-│     POST /api/v1/nanomind/telemetry — Tier 1: anonymous stats   │
+│     POST /api/v1/nanomind/telemetry —                           │
+│       Tier 1: classification statistics                         │
 │     POST /api/v1/nanomind/feedback — Tier 2: labeled corrections│
 │     POST /api/v1/telemetry/behavioral-gradient — Federated L2   │
 │                                                                 │
@@ -441,7 +442,7 @@ The Registry collects two tiers of feedback that feed directly into retraining:
 
 | Tier | Endpoint | Data | Privacy |
 |------|----------|------|---------|
-| Tier 1: Telemetry | `POST /api/v1/nanomind/telemetry` | Anonymous stats (no content) | IP hashed, no PII |
+| Tier 1: Telemetry | `POST /api/v1/nanomind/telemetry` | Classification statistics: content hash, classification, confidence, verdict, model version, timestamp; no content | |
 | Tier 2: Feedback | `POST /api/v1/nanomind/feedback` | Full content + corrected labels | Requires auth |
 
 **Retraining triggers** (when Registry data indicates model degradation):
@@ -637,7 +638,7 @@ As the model scales to handle more nuance, the class taxonomy will expand toward
 | Endpoint | Method | Rate | Purpose |
 |----------|--------|------|---------|
 | `/api/v1/nanomind/latest` | GET | N/A | Auto-update: latest model version, SHA-256, download URL |
-| `/api/v1/nanomind/telemetry` | POST | 60/min | Tier 1: anonymous classification stats (no content) |
+| `/api/v1/nanomind/telemetry` | POST | 60/min | Tier 1: classification stats (no content) |
 | `/api/v1/nanomind/feedback` | POST | 30/min | Tier 2: labeled feedback with content for retraining |
 | `/api/v1/nanomind/stats` | GET | N/A | 7-day aggregate: classifications by tool, correction rates |
 | `/api/v1/trust/publish` | POST | N/A | Unified scan ingestion (all tools → Registry) |
@@ -660,7 +661,7 @@ As the model scales to handle more nuance, the class taxonomy will expand toward
 
 | Table | Migration | Purpose |
 |-------|-----------|---------|
-| `nanomind_telemetry` | 178 | Anonymous Tier 1 classification stats |
+| `nanomind_telemetry` | 178 | Tier 1 classification stats |
 | `nanomind_feedback` | 178 | Labeled Tier 2 corrections for retraining |
 | `nanomind_model_versions` | 178 | Version tracking with SHA-256 and accuracy |
 | `nanomind_training_data` | 193 | Confirmed attack sessions (validated trap data) |
