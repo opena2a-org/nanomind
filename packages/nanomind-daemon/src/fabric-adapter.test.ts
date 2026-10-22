@@ -13,8 +13,8 @@ import { NanoMindDaemon, RATE_LIMIT_PER_SECOND, TokenBucketRateLimiter } from '.
 import type { DaemonEngine } from './server.ts';
 
 // A port that was free a moment ago, for the daemon a suite starts. Another
-// socket on the machine can hold a fixed port, and the daemon's listen() on it
-// then fails with EADDRINUSE after start() has returned.
+// socket on the machine can hold a fixed port, and the daemon's start() on it
+// then rejects with EADDRINUSE.
 async function freePort(): Promise<number> {
   const probe = createNetServer();
   probe.listen(0, '127.0.0.1');

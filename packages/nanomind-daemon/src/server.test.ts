@@ -31,8 +31,8 @@ after(() => {
 });
 
 // A port that was free a moment ago, for each daemon a test starts. Another
-// socket on the machine can hold a fixed port, and the daemon's listen() on it
-// then fails with EADDRINUSE after start() has returned.
+// socket on the machine can hold a fixed port, and the daemon's start() on it
+// then rejects with EADDRINUSE.
 async function freePort(): Promise<number> {
   const probe = createNetServer();
   probe.listen(0, '127.0.0.1');
@@ -809,6 +809,79 @@ describe('NanoMindDaemon Unix socket at ipcPath', {
       assert.strictEqual(readFileSync(path, 'utf-8'), 'keep', 'the file is left untouched');
     } finally {
       await other.stop();
+    }
+  });
+});
+
+describe('NanoMindDaemon.start() and the HTTP port', {
+  skip: process.platform === 'win32' ? 'ipcPath is a named pipe on Windows' : false,
+}, () => {
+  const stubEngine: DaemonEngine = {
+    ensureReady: async () => {},
+    infer: async () => ({ text: 'benign', attackClass: '', confidence: 0.99, rawLabel: 'benign' }),
+  };
+
+  it('resolves once the port is bound, after emitting started', async () => {
+    const path = join(SOCKET_DIR, 'bound.sock');
+    const port = await freePort();
+    const daemon = new NanoMindDaemon({ httpPort: port, ipcPath: path, engine: stubEngine });
+    const started: unknown[] = [];
+    daemon.on('started', info => started.push(info));
+    await daemon.start();
+    try {
+      assert.deepStrictEqual(started, [{ port, ipcPath: path }], 'started is emitted before start() resolves');
+      assert.ok(daemon.getStatus().startedAt instanceof Date, 'startedAt is set when start() resolves');
+      const resp = await fetch(`http://127.0.0.1:${port}/health`);
+      assert.strictEqual(resp.status, 200);
+    } finally {
+      await daemon.stop();
+    }
+  });
+
+  it('rejects with the listen error when another socket holds httpPort, and removes its socket file', async () => {
+    const path = join(SOCKET_DIR, 'port-taken.sock');
+    const holder = createNetServer();
+    holder.listen(0, '127.0.0.1');
+    await once(holder, 'listening');
+    const { port } = holder.address() as AddressInfo;
+    const daemon = new NanoMindDaemon({ httpPort: port, ipcPath: path, engine: stubEngine });
+    let started = false;
+    daemon.on('started', () => {
+      started = true;
+    });
+    try {
+      await assert.rejects(daemon.start(), {
+        code: 'EADDRINUSE',
+        message: `listen EADDRINUSE: address already in use 127.0.0.1:${port}`,
+      });
+      assert.strictEqual(daemon.getStatus().running, false, 'running reads true after the rejection');
+      assert.strictEqual(started, false, 'started is emitted for a port that was not bound');
+      assert.ok(!existsSync(path), 'start() left the socket file it bound');
+      // The socket is released: a daemon on a free port binds the same path.
+      const next = new NanoMindDaemon({ httpPort: await freePort(), ipcPath: path, engine: stubEngine });
+      await next.start();
+      try {
+        assert.strictEqual((await unixRequest(path, 'GET', '/health')).status, 200);
+      } finally {
+        await next.stop();
+      }
+    } finally {
+      await daemon.stop();
+      holder.close();
+      await once(holder, 'close');
+    }
+  });
+
+  it('rejects with the error listen() throws for a port that is not a number, and removes its socket file', async () => {
+    const path = join(SOCKET_DIR, 'bad-port.sock');
+    // The port the CLI passes on for a NANOMIND_PORT that is not a number.
+    const daemon = new NanoMindDaemon({ httpPort: Number.parseInt('not-a-port', 10), ipcPath: path, engine: stubEngine });
+    try {
+      await assert.rejects(daemon.start(), { code: 'ERR_SOCKET_BAD_PORT' });
+      assert.strictEqual(daemon.getStatus().running, false, 'running reads true after the rejection');
+      assert.ok(!existsSync(path), 'start() left the socket file it bound');
+    } finally {
+      await daemon.stop();
     }
   });
 });

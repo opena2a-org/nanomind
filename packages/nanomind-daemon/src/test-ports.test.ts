@@ -5,10 +5,9 @@ import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // Another socket on the machine can hold a fixed port. A test that listens on
-// it then fails with EADDRINUSE; for a daemon the error arrives after start()
-// has returned, and the suite's tests then fail on connect. These tests read
-// the other test files of this package and fail on a listen() call or an
-// httpPort option whose port is a fixed number.
+// it then fails with EADDRINUSE, and a daemon's start() rejects with it. These
+// tests read the other test files of this package and fail on a listen() call
+// or an httpPort option whose port is a fixed number.
 
 /**
  * Each line of `source` where a listen() call or an httpPort option has a

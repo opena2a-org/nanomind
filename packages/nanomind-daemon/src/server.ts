@@ -337,16 +337,26 @@ export class NanoMindDaemon extends EventEmitter {
     // Bind the IPC socket before HTTP, so a socket that cannot be bound
     // (another daemon owns ipcPath, or the path is not a socket) rejects
     // start() with nothing left listening.
-    this.ipcServer = await this.listenIPC();
+    const ipcServer = await this.listenIPC();
+    this.ipcServer = ipcServer;
 
     // Now safe to start the HTTP server on localhost only (non-routable).
-    this.httpServer = createServer((req, res) => this.handleHTTP(req, res));
-    this.httpServer.listen(this.config.httpPort, '127.0.0.1', () => {
-      this.startedAt = new Date();
-      this.emit('started', { port: this.config.httpPort, ipcPath: this.config.ipcPath });
-    });
-
+    // start() resolves once the port is bound. When it cannot be bound
+    // (another socket holds httpPort), start() closes the IPC socket and
+    // rejects with the listen error, again with nothing left listening.
+    const httpServer = createServer((req, res) => this.handleHTTP(req, res));
+    try {
+      await whenListening(httpServer, () => httpServer.listen(this.config.httpPort, '127.0.0.1'));
+    } catch (err) {
+      // Closing a Unix socket server also removes its socket file.
+      ipcServer.close();
+      this.ipcServer = null;
+      throw err;
+    }
+    this.httpServer = httpServer;
+    this.startedAt = new Date();
     this.resetIdleTimer();
+    this.emit('started', { port: this.config.httpPort, ipcPath: this.config.ipcPath });
   }
 
   /**
@@ -364,12 +374,7 @@ export class NanoMindDaemon extends EventEmitter {
     if (isUnixSocket) await removeStaleSocket(ipcPath);
 
     const server = createServer((req, res) => this.handleHTTP(req, res));
-    await new Promise<void>((resolve, reject) => {
-      server.once('error', reject);
-      server.once('listening', () => {
-        server.off('error', reject);
-        resolve();
-      });
+    await whenListening(server, () => {
       // listen() binds the socket synchronously, so a 0177 umask held
       // around the call creates it as 0600 with no moment at a wider mode.
       // Worker threads cannot set the umask; the chmod below still applies.
@@ -716,6 +721,21 @@ export class NanoMindDaemon extends EventEmitter {
     // process open, and this timer must not keep it open either.
     this.idleTimer.unref();
   }
+}
+
+// Calls `listen` to bind `server` and resolves once the server is listening.
+// Rejects with the error the bind emits, or the one `listen` throws. A server
+// with no 'error' listener throws the bind error as an unhandled 'error'
+// event, which ends the process.
+function whenListening(server: ReturnType<typeof createServer>, listen: () => void): Promise<void> {
+  return new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.once('listening', () => {
+      server.off('error', reject);
+      resolve();
+    });
+    listen();
+  });
 }
 
 // Removes a socket file at `path` that no process is listening on, so a

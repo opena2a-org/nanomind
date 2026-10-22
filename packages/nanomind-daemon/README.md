@@ -251,6 +251,8 @@ curl --unix-socket /tmp/nanomind.sock -X POST http://localhost/v1/infer \
 
 A socket file left at `ipcPath` by a daemon that exited without closing it is replaced on the next start. If another process is listening on `ipcPath`, or the path exists and is not a socket, `start()` rejects without binding either listener; set a different `NANOMIND_IPC_PATH` to run a second daemon. `stop()` removes the socket file.
 
+`start()` resolves once the HTTP port is bound. If another socket holds `httpPort`, `start()` closes the Unix socket, which removes its file, and rejects with the listen error, whose `code` is `EADDRINUSE`. `nanomind-daemon start` prints that error on one line, for example `Fatal: listen EADDRINUSE: address already in use 127.0.0.1:47200`, and exits 1. A second daemon needs its own `NANOMIND_PORT` as well as its own `NANOMIND_IPC_PATH`.
+
 ## Known model-quality limitations (v0.5.0 classifier)
 
 The v0.5.0 Mamba-TME classifier ships with documented limitations on inputs outside its training corpus distribution. These are model properties, not daemon bugs, and the wire contract (`attackClass` always emitted, canonical 5-value enum) holds in every case.
