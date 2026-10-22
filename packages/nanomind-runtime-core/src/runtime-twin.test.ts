@@ -188,13 +188,23 @@ function restoreEnv(name: string, value: string | undefined): void {
   else process.env[name] = value;
 }
 
+interface PostedBody {
+  agentCategory: string;
+  gradientVector: number[];
+  localLoss: number;
+  eventCount: number;
+  privacyEpsilon: number;
+  modelVersion: string;
+  timestamp: string;
+}
+
 /**
- * Run `drive` against a twin with fleetEnabled and return the
- * gradientVector of each request the twin posted meanwhile.
+ * Run `drive` against a twin with fleetEnabled and return the parsed
+ * body of each request the twin posted meanwhile.
  */
-async function capturePostedGradients(
+async function capturePostedBodies(
   drive: (twin: RuntimeTwin) => Promise<void>,
-): Promise<number[][]> {
+): Promise<PostedBody[]> {
   const bodies: string[] = [];
   const realFetch = globalThis.fetch;
   const realHome = process.env.HOME;
@@ -214,7 +224,14 @@ async function capturePostedGradients(
     restoreEnv('USERPROFILE', realUserProfile);
     fs.rmSync(home, { recursive: true, force: true });
   }
-  return bodies.map(body => JSON.parse(body).gradientVector);
+  return bodies.map(body => JSON.parse(body));
+}
+
+/** The gradientVector of each request capturePostedBodies records. */
+async function capturePostedGradients(
+  drive: (twin: RuntimeTwin) => Promise<void>,
+): Promise<number[][]> {
+  return (await capturePostedBodies(drive)).map(body => body.gradientVector);
 }
 
 /** Call shutdown() with Math.random returning `value` on each call. */
@@ -271,4 +288,62 @@ test('a noised gradient within L2 norm 1 is posted unchanged', async () => {
   // 0.707, which is posted as it is rather than scaled up to 1.
   assert.equal(gradients.length, 1);
   assertClose(gradients[0], [0.5, 0, 0.5, 0, 0, 0, 0, 0, 0]);
+});
+
+// Section 4.3 of spec/NANOMIND-SPEC.md names the fields sent exact beside the
+// noised gradientVector and what a reader of one submission learns from each.
+
+test('localLoss and eventCount are posted exact: the mean score and the number of the events of the round', async () => {
+  const scores: number[] = [];
+  const bodies = await capturePostedBodies(async twin => {
+    twin._setBaselineForTest({
+      eventTypeCounts: { TOOL_CALL: 500 },
+      avgTimingDelta: 100,
+      stdTimingDelta: 20,
+      capabilitySet: new Set(['db:read']),
+      avgResponseSize: 512,
+      totalEvents: 500,
+      errorRate: 0.0,
+    });
+    // Capabilities outside the baseline and an L0 alert raise the score of
+    // some of the events, so the scores of the round differ.
+    for (const capability of ['db:read', 'admin:delete_all', 'db:read', 'net:egress']) {
+      scores.push(twin.processEvent(behavioralEvent({ capability })).score);
+    }
+    scores.push(twin.processEvent(behavioralEvent({ l0Decision: 'alert' })).score);
+    await twin.shutdown();
+  });
+  assert.ok(new Set(scores).size > 1, `the scores ${scores.join(', ')} should differ`);
+  assert.equal(bodies.length, 1);
+  assert.equal(bodies[0].eventCount, scores.length);
+  assert.equal(bodies[0].localLoss, scores.reduce((sum, score) => sum + score, 0) / scores.length);
+  // The twin was given no agentCategory; privacyEpsilon and modelVersion are
+  // constants.
+  assert.equal(bodies[0].agentCategory, 'general');
+  assert.equal(bodies[0].privacyEpsilon, 1.0);
+  assert.equal(bodies[0].modelVersion, '1.0.0');
+});
+
+test('a round is posted when it holds 300 events and the rest at shutdown(), each stamped with the time it was posted', async () => {
+  const windows: Array<[number, number]> = [];
+  const bodies = await capturePostedBodies(async twin => {
+    for (let i = 0; i < 299; i++) twin.processEvent(behavioralEvent());
+    let start = Date.now();
+    twin.processEvent(behavioralEvent());
+    windows.push([start, Date.now()]);
+    twin.processEvent(behavioralEvent());
+    start = Date.now();
+    await twin.shutdown();
+    windows.push([start, Date.now()]);
+  });
+  assert.deepEqual(bodies.map(body => body.eventCount), [300, 1]);
+  bodies.forEach((body, i) => {
+    assert.match(body.timestamp, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+    const posted = Date.parse(body.timestamp);
+    const [start, end] = windows[i];
+    assert.ok(
+      start <= posted && posted <= end,
+      `round ${i + 1} is stamped ${body.timestamp}, outside the call that posted it`,
+    );
+  });
 });

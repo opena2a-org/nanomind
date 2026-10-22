@@ -114,8 +114,10 @@ Endpoints submit anonymized gradients to `POST /api/v1/telemetry/behavioral-grad
   "agentCategory": "financial",
   "gradientVector": [0.01, -0.02, ...],
   "localLoss": 0.023,
-  "eventCount": 10000,
-  "privacyEpsilon": 1.0
+  "eventCount": 300,
+  "privacyEpsilon": 1.0,
+  "modelVersion": "1.0.0",
+  "timestamp": "2026-10-22T08:00:00.000Z"
 }
 ```
 
@@ -128,7 +130,17 @@ Endpoints submit anonymized gradients to `POST /api/v1/telemetry/behavioral-grad
 
 ### 4.3 Raw Data Guarantee
 
-Raw behavioral events NEVER leave the endpoint. Only differentially-private gradient updates are transmitted.
+Raw behavioral events NEVER leave the endpoint. Differential privacy (§4.2) covers one field of a submission, `gradientVector`. The other fields are sent exact. The table gives each field `RuntimeTwin` (`@nanomind/runtime-core`) sends and what a reader of one submission learns from it.
+
+| Field | Sent | What a reader of one submission learns |
+|-------|------|----------------------------------------|
+| `agentCategory` | exact | The category the twin was configured with, `general` when none was set |
+| `gradientVector` | clipped and noised (§4.2) | The round's nine behavioral features after the clipping and noise of §4.2 |
+| `localLoss` | exact | The mean anomaly score (§3.2) of the round's events, and with `eventCount` the sum of their scores. A value above 0 shows that at least one event in the round scored above 0 |
+| `eventCount` | exact | The number of events in the round. The twin sends a round when it holds 300 events and sends the rest when `shutdown()` is called, so a count below 300 marks a round that `shutdown()` sent |
+| `privacyEpsilon` | exact | The ε of the noise on `gradientVector`, a constant 1.0 in the twin |
+| `modelVersion` | exact | A constant, `1.0.0` in the twin |
+| `timestamp` | exact | When the round was sent, to the millisecond: when its last event was processed, or when `shutdown()` was called |
 
 ## 5. Guard Protocol
 
