@@ -25,6 +25,16 @@ The daemon now listens on `ipcPath` (default `/tmp/nanomind.sock`) as well as `1
 - `stop()` closes the socket and removes its file.
 - The CLI reads `NANOMIND_IPC_PATH` for the socket path and prints it on start.
 
+### `start()` waits for the HTTP port (#226)
+
+`start()` called `listen()` for the HTTP port without waiting for the bind and without an `'error'` listener. It resolved before the port was bound, and `getStatus().running` read `true`. When another socket held `httpPort`, the listen error was then emitted as an unhandled `'error'` event, which ended the process with a stack trace and left the socket file at `ipcPath` behind.
+
+- `start()` resolves once the HTTP port is bound. `startedAt` is set and the `started` event is emitted before it resolves.
+- When another socket holds `httpPort`, `start()` closes the Unix socket it bound first, which removes the socket file, and rejects with the listen error, `listen EADDRINUSE: address already in use 127.0.0.1:<port>` with `code` `EADDRINUSE`. `getStatus().running` reads `false` and `started` is not emitted.
+- An `httpPort` that `listen()` refuses, such as the `NaN` the CLI passes on for a `NANOMIND_PORT` that is not a number, rejects `start()` with `ERR_SOCKET_BAD_PORT` and closes the Unix socket as well. Before, `start()` rejected with that error and left the Unix socket listening, `getStatus().running` read `true`, and `nanomind-daemon start` left the socket file at `NANOMIND_IPC_PATH` behind.
+- `nanomind-daemon start` on a port another socket holds prints the listen error on one line, `Fatal: listen EADDRINUSE: address already in use 127.0.0.1:<port>`, in place of the stack trace, exits 1, writes no PID file and leaves no socket file at `NANOMIND_IPC_PATH`.
+- New tests: three in `src/server.test.ts` for the `start()` cases above, and one in `src/built-package.test.ts` that runs the built `nanomind-daemon start` on a held port and skips until `npm run build` has written `dist/`. Both suites skip on Windows, where `ipcPath` is a named pipe.
+
 ### `InferRequest.intent` is optional (#145)
 
 `InferRequest` declares `intent?: string`, and the specification's `/v1/infer` Request line reads `{ intent?, input, context?, priority? }`. The daemon already routed an intent from `input` when a request had none, but the type required one, so a TypeScript caller of `infer({ input })` needed a cast.

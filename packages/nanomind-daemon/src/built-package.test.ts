@@ -211,6 +211,58 @@ describe('nanomind-daemon start: model download refused on every address', { ski
   });
 });
 
+describe('nanomind-daemon start: HTTP port held by another socket', {
+  skip: (!CLI_BUILT && 'dist/ is not built') || (process.platform === 'win32' && 'ipcPath is a named pipe on Windows'),
+}, () => {
+  let dir: string;
+  let preload: string;
+  let port: number;
+  // Holds the port the CLI is given, so the daemon cannot bind it.
+  const holder = createServer();
+
+  before(async () => {
+    dir = mkdtempSync(join(tmpdir(), 'nanomind-port-'));
+    // Loaded before the CLI: ensureReady() resolves without starting the
+    // model host, so start() goes on to bind the Unix socket and the port.
+    preload = join(dir, 'model-ready.cjs');
+    writeFileSync(
+      preload,
+      [
+        `const { OnnxProcessEngine } = require(${JSON.stringify(join(CLI, '..', 'onnx-process-engine.js'))});`,
+        'OnnxProcessEngine.prototype.ensureReady = async () => {};',
+        '',
+      ].join('\n'),
+    );
+    holder.listen(0, '127.0.0.1');
+    await once(holder, 'listening');
+    port = (holder.address() as AddressInfo).port;
+  });
+
+  after(() => {
+    holder.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('prints the listen error on one Fatal line, exits 1 and removes its socket file', () => {
+    const ipcPath = join(dir, 'daemon.sock');
+    const run = spawnSync(process.execPath, ['--require', preload, CLI, 'start'], {
+      env: {
+        PATH: process.env.PATH ?? '',
+        HOME: dir,
+        USERPROFILE: dir,
+        NANOMIND_PORT: String(port),
+        NANOMIND_IPC_PATH: ipcPath,
+      },
+      encoding: 'utf-8',
+      timeout: 60_000,
+    });
+    assert.strictEqual(run.status, 1, run.stderr);
+    assert.strictEqual(run.stderr, `Fatal: listen EADDRINUSE: address already in use 127.0.0.1:${port}\n`);
+    assert.ok(!existsSync(ipcPath), 'the CLI left a socket file at NANOMIND_IPC_PATH');
+    assert.ok(!existsSync(join(dir, '.nanomind', 'daemon.pid')), 'the CLI wrote a PID file for a daemon that did not start');
+  });
+});
+
 describe('nanomind-daemon status: refusals', { skip: !CLI_BUILT && 'dist/ is not built' }, () => {
   let home: string;
   let port: number;
