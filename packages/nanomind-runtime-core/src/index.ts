@@ -109,7 +109,11 @@ export interface AnomalyResult {
 export interface RuntimeTwinConfig {
   /** When false, the twin is inert: attach becomes a no-op, scoring returns null. */
   enabled?: boolean;
-  /** Opt-in to federated learning gradient submission. Default false. */
+  /**
+   * Opt-in to federated learning gradient submission. Default false. Only
+   * the boolean true turns it on; the strings 'true' and 'false' and the
+   * numbers 1 and 0 leave it off.
+   */
   fleetEnabled?: boolean;
   /** Broad agent category used for fleet aggregation bucketing. Default 'general'. */
   agentCategory?: string;
@@ -159,7 +163,9 @@ export class RuntimeTwin {
     this.agentId = agentId;
     this.sessionId = crypto.randomUUID();
     this.enabled = config?.enabled ?? true;
-    this.fleetEnabled = config?.fleetEnabled ?? false;
+    // Strict test: a JavaScript caller can pass a string read from an
+    // environment variable, and the string 'false' is truthy.
+    this.fleetEnabled = config?.fleetEnabled === true;
     this.agentCategory = config?.agentCategory ?? 'general';
     this.eventLogPath = path.join(os.homedir(), '.opena2a', 'arp', 'events.jsonl');
 
