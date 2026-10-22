@@ -38,7 +38,7 @@ The path to 99.999% is primarily a data problem, not an architecture problem. Th
 
 - NanoMind does NOT replace LLM-based analysis. It is the local first pass that catches obvious threats. Complex analysis is escalated to Claude or other LLMs.
 - NanoMind does NOT do content generation. It classifies, scores, and routes.
-- NanoMind does NOT phone home. All inference is local. Only differentially-private gradients are submitted to the Registry for federated improvement.
+- NanoMind does NOT phone home. All inference is local. Gradient submission for federated improvement is opt-in: `RuntimeTwin` submits to the Registry only when it is constructed with `fleetEnabled: true`. Differential privacy covers one field of a submission, `gradientVector`; the other fields are sent exact (§3.5).
 
 ## 3. Architecture
 
@@ -223,7 +223,7 @@ The mapping is total over §4.2 (each of the ten classes appears exactly once) a
 
 ### 3.5 Federated Learning Protocol (L2 Fleet Intelligence)
 
-NanoMind-Runtime implements federated learning for fleet-wide behavioral model improvement. Raw behavioral events NEVER leave endpoints. Only differentially-private gradients are submitted.
+NanoMind-Runtime implements federated learning for fleet-wide behavioral model improvement. Raw behavioral events NEVER leave endpoints. Differential privacy covers one field of a submission, `gradientVector`; the other fields are sent exact, as the table of submitted fields below shows.
 
 **Three-Tier ARP Model:**
 
@@ -239,11 +239,25 @@ NanoMind-Runtime implements federated learning for fleet-wide behavioral model i
 Agent events → NanoMind-Runtime (local, Welford's online algorithm)
   → 6-factor anomaly score (capability, timing, burst, L0 escalation, event type, error)
   → Gradient computation from baseline statistics
-  → Differential privacy (Gaussian noise, ε=1.0, δ=1e-5, L2 clipping ≤ 1.0)
+  → Differential privacy on gradientVector (Gaussian noise, ε=1.0, δ=1e-5, L2 clipping ≤ 1.0)
   → POST /api/v1/telemetry/behavioral-gradient
-    { agentCategory: "financial", gradientVector: [...], localLoss, eventCount, privacyEpsilon }
+    { agentCategory: "financial", gradientVector: [...], localLoss, eventCount, privacyEpsilon, modelVersion, timestamp }
   → Registry aggregates (FedAvg) → model update
 ```
+
+**Submitted fields:**
+
+| Field | Sent | Value |
+|-------|------|-------|
+| `agentCategory` | exact | The category the twin was configured with, `general` when none was set |
+| `gradientVector` | clipped and noised | The round's nine behavioral features, each averaged over the round's events, after the clipping and noise listed under the privacy guarantees below |
+| `localLoss` | exact | The mean anomaly score of the round's events |
+| `eventCount` | exact | The number of events in the round. A round is sent when it holds 300 events; `shutdown()` sends the events left over as a smaller round |
+| `privacyEpsilon` | exact | The ε of the noise on `gradientVector`, a constant 1.0 |
+| `modelVersion` | exact | A constant, `1.0.0` |
+| `timestamp` | exact | When the round was sent, as an ISO 8601 UTC time to the millisecond |
+
+What a reader of one submission learns from each field is in §4.3 of the protocol spec, [`spec/NANOMIND-SPEC.md`](../spec/NANOMIND-SPEC.md).
 
 **Privacy guarantees:**
 - Raw events never leave endpoint
