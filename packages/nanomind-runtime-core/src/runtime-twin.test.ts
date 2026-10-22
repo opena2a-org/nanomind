@@ -199,11 +199,13 @@ interface PostedBody {
 }
 
 /**
- * Run `drive` against a twin with fleetEnabled and return the parsed
- * body of each request the twin posted meanwhile.
+ * Run `drive` against a twin constructed with `fleetEnabled` (true unless
+ * given) and return the parsed body of each request the twin posted
+ * meanwhile.
  */
 async function capturePostedBodies(
   drive: (twin: RuntimeTwin) => Promise<void>,
+  fleetEnabled: unknown = true,
 ): Promise<PostedBody[]> {
   const bodies: string[] = [];
   const realFetch = globalThis.fetch;
@@ -217,7 +219,8 @@ async function capturePostedBodies(
   process.env.HOME = home;
   process.env.USERPROFILE = home;
   try {
-    await drive(new RuntimeTwin('gradient-agent', { fleetEnabled: true }));
+    // A JavaScript caller is not held to the boolean type of the option.
+    await drive(new RuntimeTwin('gradient-agent', { fleetEnabled: fleetEnabled as boolean }));
   } finally {
     globalThis.fetch = realFetch;
     restoreEnv('HOME', realHome);
@@ -347,3 +350,26 @@ test('a round is posted when it holds 300 events and the rest at shutdown(), eac
     );
   });
 });
+
+// Section 2.2 of docs/SPECIFICATION.md says RuntimeTwin submits to the
+// Registry only when it is constructed with fleetEnabled: true. A JavaScript
+// caller can pass another value, such as a string read from an environment
+// variable, and the string 'false' is truthy.
+
+const FLEET_ENABLED_CASES: Array<[unknown, number[]]> = [
+  [true, [300, 1]],
+  ['false', []],
+  ['true', []],
+  [1, []],
+  [0, []],
+];
+
+for (const [fleetEnabled, eventCounts] of FLEET_ENABLED_CASES) {
+  test(`fleetEnabled ${JSON.stringify(fleetEnabled)} (${typeof fleetEnabled}) posts ${eventCounts.length} requests for 301 events and shutdown()`, async () => {
+    const bodies = await capturePostedBodies(async twin => {
+      for (let i = 0; i < 301; i++) twin.processEvent(behavioralEvent());
+      await twin.shutdown();
+    }, fleetEnabled);
+    assert.deepEqual(bodies.map(body => body.eventCount), eventCounts);
+  });
+}
