@@ -379,6 +379,11 @@ Only the boolean `true` skips them, and only when `NODE_ENV` is not
 leave both checks on, so convert a value read from an environment variable to
 a boolean first.
 
+`noAutoDownload` turns the download of missing files off. Only the boolean
+`true` does: the strings `'true'` and `'false'` and the numbers `1` and `0`
+leave the download on, so convert a value read from an environment variable to
+a boolean first.
+
 ## Security
 
 - Binds to `127.0.0.1` only (no external access).

@@ -97,6 +97,37 @@ describe('OnnxProcessEngine', () => {
     }
   });
 
+  it('downloads a missing file in the host for noAutoDownload \'false\' (string)', async () => {
+    const requests: string[] = [];
+    const upstream = createServer((req, res) => {
+      requests.push(req.url ?? '');
+      res.writeHead(500);
+      res.end();
+    });
+    upstream.listen(0, '127.0.0.1');
+    await once(upstream, 'listening');
+    const modelDir = mkdtempSync(join(tmpdir(), 'nanomind-process-no-auto-download-'));
+    try {
+      // The settings reach the host as JSON, which keeps the string a string.
+      const engine = new OnnxProcessEngine({
+        modelDir,
+        downloadBaseUrl: `http://127.0.0.1:${(upstream.address() as AddressInfo).port}`,
+        noAutoDownload: 'false' as unknown as boolean,
+        onDownloadProgress: () => undefined,
+      });
+      const loading = engine.ensureReady();
+      const pid = engine.hostPid;
+      assert.ok(pid, 'a model host process is started');
+
+      await assert.rejects(loading, /download nanomind-tme\.onnx: HTTP 500/);
+      assert.deepStrictEqual(requests, ['/nanomind-tme.onnx']);
+      await waitForExit(pid);
+    } finally {
+      upstream.close();
+      rmSync(modelDir, { recursive: true, force: true });
+    }
+  });
+
   it('passes the host\'s download progress to onDownloadProgress', async () => {
     const upstream = createServer((_req, res) => {
       res.writeHead(500);

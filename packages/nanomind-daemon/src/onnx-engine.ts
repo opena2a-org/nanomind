@@ -114,7 +114,9 @@ export interface OnnxEngineConfig {
    * from HuggingFace; instead it throws the original "not found" error
    * so the operator can stage the artifacts manually. Useful in
    * air-gapped or otherwise network-restricted environments. Defaults
-   * to false (auto-download enabled).
+   * to false (auto-download enabled). Honored only for the boolean
+   * `true`; the strings `'true'` and `'false'` and the numbers `1` and
+   * `0` leave auto-download on.
    */
   noAutoDownload?: boolean;
   /**
@@ -180,7 +182,9 @@ export class OnnxEngine {
     // is truthy.
     this.skipIntegrityCheck =
       config.skipIntegrityCheck === true && process.env.NODE_ENV !== 'production';
-    this.noAutoDownload = config.noAutoDownload ?? false;
+    // Strict test for the same reason: only the boolean true turns
+    // auto-download off.
+    this.noAutoDownload = config.noAutoDownload === true;
     this.downloadBaseUrl = config.downloadBaseUrl ?? HUGGINGFACE_RESOLVE_BASE;
     this.onDownloadProgress = config.onDownloadProgress ?? defaultProgressReporter;
   }

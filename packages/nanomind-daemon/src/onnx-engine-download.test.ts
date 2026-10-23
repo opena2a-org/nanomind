@@ -336,4 +336,33 @@ describe('OnnxEngine auto-download', () => {
       assert.deepEqual(await readFile(join(modelDir, name)), body, `${name} is renamed into place unchecked`);
     }
   });
+
+  // noAutoDownload is declared boolean as well, and the string 'false' is
+  // truthy. Only the boolean true turns the download off: for each value
+  // below, a missing file is fetched from downloadBaseUrl.
+  for (const value of ['false', 'true', 1, 0] as unknown[]) {
+    const label = `${JSON.stringify(value)} (${typeof value})`;
+
+    it(`noAutoDownload ${label} starts the download of a missing file`, async () => {
+      for (const [name, body] of MISMATCHED_FILES) upstream.served.set(`/${name}`, body);
+      const started: string[] = [];
+      const engine = new OnnxEngine({
+        modelDir,
+        downloadBaseUrl: upstream.baseUrl,
+        noAutoDownload: value as boolean,
+        onDownloadProgress: (e) => {
+          if (e.phase === 'start') started.push(e.url);
+        },
+      });
+
+      // The served bytes do not hash to the pinned SHA-256, so the first file
+      // is fetched in full and then fails its check, whose error names the
+      // SHA-256 of the bytes the upstream served.
+      const servedSha256 = createHash('sha256').update(MISMATCHED_FILES[0][1]).digest('hex');
+      await assert.rejects(engine.ensureReady(), {
+        message: new RegExp(`^Downloaded nanomind-tme\\.onnx failed integrity check: expected [0-9a-f]{64}, got ${servedSha256}\\. `),
+      });
+      assert.deepEqual(started, [`${upstream.baseUrl}/${ONNX_FILE}`]);
+    });
+  }
 });
