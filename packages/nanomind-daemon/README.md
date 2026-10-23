@@ -372,6 +372,13 @@ interface OnnxEngineConfig {
 applies them in its child process; `onDownloadProgress` runs in the daemon
 process and receives the child's progress events.
 
+`skipIntegrityCheck` is a test-only override of the SHA-256 checks: of the
+model files on load, and of a downloaded file before it is renamed into place.
+Only the boolean `true` skips them, and only when `NODE_ENV` is not
+`production`. The strings `'true'` and `'false'` and the numbers `1` and `0`
+leave both checks on, so convert a value read from an environment variable to
+a boolean first.
+
 ## Security
 
 - Binds to `127.0.0.1` only (no external access).

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { once } from 'node:events';
 import type { EventEmitter } from 'node:events';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { homedir, tmpdir } from 'node:os';
@@ -71,6 +71,30 @@ describe('OnnxProcessEngine', () => {
     assert.strictEqual(engine.isLoaded(), false);
     await waitForExit(pid);
     assert.strictEqual(onnxRuntimeLoadedHere(), false, 'onnxruntime-node loads in the host, not here');
+  });
+
+  it('keeps the SHA-256 check of the model files in the host for skipIntegrityCheck \'false\' (string)', async () => {
+    const modelDir = mkdtempSync(join(tmpdir(), 'nanomind-process-integrity-'));
+    try {
+      // None of the three files hashes to its pinned SHA-256.
+      writeFileSync(join(modelDir, 'nanomind-tme.onnx'), 'not-the-pinned-onnx');
+      writeFileSync(join(modelDir, 'nanomind-tme.onnx.data'), 'not-the-pinned-data');
+      writeFileSync(join(modelDir, 'tokenizer.json'), JSON.stringify({ '<PAD>': 0, '<UNK>': 1 }));
+      // The settings reach the host as JSON, which keeps the string a string.
+      const engine = new OnnxProcessEngine({
+        modelDir,
+        noAutoDownload: true,
+        skipIntegrityCheck: 'false' as unknown as boolean,
+      });
+      const loading = engine.ensureReady();
+      const pid = engine.hostPid;
+      assert.ok(pid, 'a model host process is started');
+
+      await assert.rejects(loading, { message: /^NanoMind integrity check failed for nanomind-tme\.onnx: / });
+      await waitForExit(pid);
+    } finally {
+      rmSync(modelDir, { recursive: true, force: true });
+    }
   });
 
   it('passes the host\'s download progress to onDownloadProgress', async () => {

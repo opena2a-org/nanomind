@@ -35,6 +35,14 @@ The daemon now listens on `ipcPath` (default `/tmp/nanomind.sock`) as well as `1
 - `nanomind-daemon start` on a port another socket holds prints the listen error on one line, `Fatal: listen EADDRINUSE: address already in use 127.0.0.1:<port>`, in place of the stack trace, exits 1, writes no PID file and leaves no socket file at `NANOMIND_IPC_PATH`.
 - New tests: three in `src/server.test.ts` for the `start()` cases above, and one in `src/built-package.test.ts` that runs the built `nanomind-daemon start` on a held port and skips until `npm run build` has written `dist/`. Both suites skip on Windows, where `ipcPath` is a named pipe.
 
+### `skipIntegrityCheck` is honored only for the boolean `true` (#234)
+
+`OnnxEngine` read `skipIntegrityCheck` by truthiness. With `NODE_ENV` unset, the strings `'false'`, `'true'` and `'no'`, the number `1` and an object each turned off both SHA-256 checks: of the model files on load, and of a downloaded file before it is renamed into place. A download that did not match its pinned SHA-256 was renamed into place, and `ensureReady()` handed files that did not match the pinned hashes to onnxruntime. A setting read from an environment variable is a string, and the string `'false'` turned both checks off.
+
+- Only the boolean `true` skips the checks, and still only when `NODE_ENV` is not `production`. For the values above and the number `0`, both checks run: a `nanomind-tme.onnx` in the model directory that does not match its pinned SHA-256 makes `ensureReady()` reject with `NanoMind integrity check failed for nanomind-tme.onnx: ...`, and a download of it that does not match makes `ensureReady()` reject with `Downloaded nanomind-tme.onnx failed integrity check: ...` and is not renamed into place.
+- `OnnxProcessEngine`, the daemon's default engine, passes its settings to `OnnxEngine` in its child process as JSON, which keeps a string a string. For `skipIntegrityCheck: 'false'` the child process now runs the check of the model files, and `ensureReady()` rejects with the same integrity error.
+- New tests in `src/onnx-engine-download.test.ts`: one for each of `'false'`, `'true'`, `1` and `0` and each check, and one that `true` still skips both. One in `src/onnx-process-engine.test.ts` for `'false'` in the child process.
+
 ### `InferRequest.intent` is optional (#145)
 
 `InferRequest` declares `intent?: string`, and the specification's `/v1/infer` Request line reads `{ intent?, input, context?, priority? }`. The daemon already routed an intent from `input` when a request had none, but the type required one, so a TypeScript caller of `infer({ input })` needed a cast.
