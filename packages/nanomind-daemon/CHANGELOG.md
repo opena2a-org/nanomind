@@ -43,6 +43,14 @@ The daemon now listens on `ipcPath` (default `/tmp/nanomind.sock`) as well as `1
 - `OnnxProcessEngine`, the daemon's default engine, passes its settings to `OnnxEngine` in its child process as JSON, which keeps a string a string. For `skipIntegrityCheck: 'false'` the child process now runs the check of the model files, and `ensureReady()` rejects with the same integrity error.
 - New tests in `src/onnx-engine-download.test.ts`: one for each of `'false'`, `'true'`, `1` and `0` and each check, and one that `true` still skips both. One in `src/onnx-process-engine.test.ts` for `'false'` in the child process.
 
+### `noAutoDownload` is honored only for the boolean `true` (#236)
+
+`OnnxEngine` read `noAutoDownload` by truthiness, so the strings `'false'` and `'true'` and the number `1` each turned auto-download off. With an empty model directory, `ensureReady()` rejected with `NanoMind model not found at <modelDir>/nanomind-tme.onnx. Auto-download is disabled (noAutoDownload). ...` and sent no request. A setting read from an environment variable is a string, and the string `'false'` turned the download off.
+
+- Only the boolean `true` turns auto-download off. For the values above and the number `0`, `ensureReady()` fetches a missing file from `downloadBaseUrl`, and the SHA-256 check of the download still runs.
+- `OnnxProcessEngine` passes its settings to `OnnxEngine` in its child process as JSON, which keeps a string a string. For `noAutoDownload: 'false'` the child process now requests a missing file from `downloadBaseUrl` instead of rejecting with the error above.
+- New tests in `src/onnx-engine-download.test.ts`: one for each of `'false'`, `'true'`, `1` and `0`. One in `src/onnx-process-engine.test.ts` for `'false'` in the child process.
+
 ### `InferRequest.intent` is optional (#145)
 
 `InferRequest` declares `intent?: string`, and the specification's `/v1/infer` Request line reads `{ intent?, input, context?, priority? }`. The daemon already routed an intent from `input` when a request had none, but the type required one, so a TypeScript caller of `infer({ input })` needed a cast.

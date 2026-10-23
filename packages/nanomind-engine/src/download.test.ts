@@ -469,6 +469,28 @@ await new NanoMindEngine(${config}).infer('hi').then(
     assert.deepStrictEqual(readdirSync(dir), []);
   });
 
+  // noAutoDownload is declared boolean, but a JavaScript caller is not held
+  // to that type, and a value read from an environment variable arrives as a
+  // string, where 'false' is truthy. Only the boolean true downloads nothing.
+  for (const value of ['false', 'true', 1, 0] as unknown[]) {
+    it(`downloads both with noAutoDownload ${JSON.stringify(value)} (${typeof value})`, async (t) => {
+      t.mock.method(process.stderr, 'write', () => true);
+      const engine = new NanoMindEngine({
+        llamafilePath,
+        modelPath,
+        llamafileDownload: llamafileSource(),
+        modelDownload: modelSource(),
+        noAutoDownload: value as boolean,
+      });
+
+      await engine.ensureReady();
+
+      assert.deepStrictEqual(server.requests, ['/llamafile', '/model']);
+      assert.strictEqual(readFileSync(llamafilePath, 'utf8'), llamafileBody);
+      assert.strictEqual(readFileSync(modelPath, 'utf8'), modelBody);
+    });
+  }
+
   it('leaves the download out of latencyMs', { skip: process.platform === 'win32' }, async (t) => {
     t.mock.method(process.stderr, 'write', () => true);
     const slow = { ...llamafileSource(), url: `${server.base}/slow-llamafile` };

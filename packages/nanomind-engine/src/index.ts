@@ -46,7 +46,11 @@ export interface EngineConfig {
   llamafileDownload?: DownloadSource;
   /** Where a missing model is downloaded from. Defaults to MODEL_DOWNLOAD. */
   modelDownload?: DownloadSource;
-  /** Set to true to download nothing: a missing file then makes infer() reject. */
+  /**
+   * Set to true to download nothing: a missing file then makes infer() reject.
+   * Only the boolean true does this; the strings 'true' and 'false' and the
+   * numbers 1 and 0 leave the download on.
+   */
   noAutoDownload?: boolean;
 }
 
@@ -64,7 +68,9 @@ export class NanoMindEngine {
       topP: config.topP ?? 0.9,
       llamafileDownload: config.llamafileDownload ?? LLAMAFILE_DOWNLOAD,
       modelDownload: config.modelDownload ?? MODEL_DOWNLOAD,
-      noAutoDownload: config.noAutoDownload ?? false,
+      // Strict test: a JavaScript caller can pass a string read from an
+      // environment variable, and the string 'false' is truthy.
+      noAutoDownload: config.noAutoDownload === true,
     };
   }
 
