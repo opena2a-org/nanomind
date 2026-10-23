@@ -101,8 +101,11 @@ const UNK_ID = 1;
 export interface OnnxEngineConfig {
   modelDir?: string;
   /**
-   * Test-only override that skips the SHA-256 integrity check on load.
-   * Honored only when `process.env.NODE_ENV !== 'production'`. Setting
+   * Test-only override that skips the SHA-256 integrity checks: of the
+   * model files on load, and of a downloaded file before it is renamed
+   * into place. Honored only for the boolean `true`, and only when
+   * `process.env.NODE_ENV !== 'production'`; the strings `'true'` and
+   * `'false'` and the numbers `1` and `0` leave both checks on. Setting
    * this in a production build is a no-op — verification still runs.
    */
   skipIntegrityCheck?: boolean;
@@ -172,9 +175,11 @@ export class OnnxEngine {
     this.modelDir = config.modelDir ?? MODEL_DIR_DEFAULT;
     // skipIntegrityCheck is honored only outside production builds.
     // In production NODE_ENV the integrity check always runs regardless
-    // of what callers pass.
+    // of what callers pass. Strict test: a JavaScript caller can pass a
+    // string read from an environment variable, and the string 'false'
+    // is truthy.
     this.skipIntegrityCheck =
-      (config.skipIntegrityCheck ?? false) && process.env.NODE_ENV !== 'production';
+      config.skipIntegrityCheck === true && process.env.NODE_ENV !== 'production';
     this.noAutoDownload = config.noAutoDownload ?? false;
     this.downloadBaseUrl = config.downloadBaseUrl ?? HUGGINGFACE_RESOLVE_BASE;
     this.onDownloadProgress = config.onDownloadProgress ?? defaultProgressReporter;

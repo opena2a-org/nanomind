@@ -32,6 +32,15 @@ const ONNX_FILE = 'nanomind-tme.onnx';
 const ONNX_DATA_FILE = 'nanomind-tme.onnx.data';
 const TOKENIZER_FILE = 'tokenizer.json';
 
+// Bytes that do not hash to the pinned SHA-256 of any of the three files.
+// The tokenizer is still valid JSON with the two tokens the engine requires,
+// so an engine that skips both checks gets as far as onnxruntime.
+const MISMATCHED_FILES: ReadonlyArray<readonly [string, Buffer]> = [
+  [ONNX_FILE, Buffer.from('not-the-pinned-onnx')],
+  [ONNX_DATA_FILE, Buffer.from('not-the-pinned-data')],
+  [TOKENIZER_FILE, Buffer.from(JSON.stringify({ '<PAD>': 0, '<UNK>': 1 }), 'utf-8')],
+];
+
 interface MockUpstream {
   port: number;
   baseUrl: string;
@@ -266,5 +275,65 @@ describe('OnnxEngine auto-download', () => {
     assert.ok(phases.has('start'));
     assert.ok(phases.has('done'));
     assert.ok(phases.has('verifying'));
+  });
+
+  // skipIntegrityCheck is declared boolean, but a JavaScript caller is not
+  // held to that type, and a value read from an environment variable or a
+  // JSON file arrives as a string, where 'false' is truthy. Only the boolean
+  // true skips the SHA-256 checks: each value below leaves on both the check
+  // of the files in the model directory on load and the check of a
+  // downloaded file before it is renamed into place.
+  for (const value of ['false', 'true', 1, 0] as unknown[]) {
+    const label = `${JSON.stringify(value)} (${typeof value})`;
+
+    it(`skipIntegrityCheck ${label} keeps the SHA-256 check of the model files on load`, async () => {
+      for (const [name, body] of MISMATCHED_FILES) await writeFile(join(modelDir, name), body);
+      const engine = new OnnxEngine({
+        modelDir,
+        noAutoDownload: true,
+        skipIntegrityCheck: value as boolean,
+        onDownloadProgress: () => undefined,
+      });
+
+      await assert.rejects(engine.ensureReady(), {
+        message: /^NanoMind integrity check failed for nanomind-tme\.onnx: /,
+      });
+    });
+
+    it(`skipIntegrityCheck ${label} keeps the SHA-256 check of a downloaded file`, async () => {
+      for (const [name, body] of MISMATCHED_FILES) upstream.served.set(`/${name}`, body);
+      const engine = new OnnxEngine({
+        modelDir,
+        downloadBaseUrl: upstream.baseUrl,
+        skipIntegrityCheck: value as boolean,
+        onDownloadProgress: () => undefined,
+      });
+
+      await assert.rejects(engine.ensureReady(), {
+        message: /^Downloaded nanomind-tme\.onnx failed integrity check: /,
+      });
+      assert.ok(!existsSync(join(modelDir, ONNX_FILE)), 'the file that failed the check is not renamed into place');
+      assert.ok(!existsSync(join(modelDir, `${ONNX_FILE}.part`)), '.part should be cleaned up');
+    });
+  }
+
+  it('skipIntegrityCheck true skips both SHA-256 checks for the same files', async () => {
+    for (const [name, body] of MISMATCHED_FILES) upstream.served.set(`/${name}`, body);
+    const engine = new OnnxEngine({
+      modelDir,
+      downloadBaseUrl: upstream.baseUrl,
+      skipIntegrityCheck: true,
+      onDownloadProgress: () => undefined,
+    });
+
+    // Past both checks, onnxruntime refuses bytes that are not a model.
+    await assert.rejects(engine.ensureReady(), (err: Error) => {
+      assert.doesNotMatch(err.message, /integrity check/);
+      assert.match(err.message, /onnx|InferenceSession|invalid|protobuf|magic/i);
+      return true;
+    });
+    for (const [name, body] of MISMATCHED_FILES) {
+      assert.deepEqual(await readFile(join(modelDir, name)), body, `${name} is renamed into place unchecked`);
+    }
   });
 });
