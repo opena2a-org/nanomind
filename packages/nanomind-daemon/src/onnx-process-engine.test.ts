@@ -128,6 +128,39 @@ describe('OnnxProcessEngine', () => {
     }
   });
 
+  it('rejects with the host\'s error for a redirect the download does not follow, and the host removes the .part file', async () => {
+    const location = 'ftp://127.0.0.1/nanomind-tme.onnx';
+    const upstream = createServer((_req, res) => {
+      res.writeHead(302, { Location: location });
+      res.end();
+    });
+    upstream.listen(0, '127.0.0.1');
+    await once(upstream, 'listening');
+    const modelDir = mkdtempSync(join(tmpdir(), 'nanomind-process-redirect-'));
+    try {
+      const engine = new OnnxProcessEngine({
+        modelDir,
+        downloadBaseUrl: `http://127.0.0.1:${(upstream.address() as AddressInfo).port}`,
+        onDownloadProgress: () => undefined,
+      });
+      const loading = engine.ensureReady();
+      const pid = engine.hostPid;
+      assert.ok(pid, 'a model host process is started');
+
+      // A host that ends on an uncaught exception instead makes ensureReady()
+      // reject with "NanoMind model host process ended (exit code 1)", which
+      // does not say what failed.
+      await assert.rejects(loading, {
+        message: `download nanomind-tme.onnx: HTTP 302 redirect to "${location}" is not followed: its scheme is ftp, not http or https`,
+      });
+      await waitForExit(pid);
+      assert.strictEqual(existsSync(join(modelDir, 'nanomind-tme.onnx.part')), false, 'the .part file is removed');
+    } finally {
+      upstream.close();
+      rmSync(modelDir, { recursive: true, force: true });
+    }
+  });
+
   it('passes the host\'s download progress to onDownloadProgress', async () => {
     const upstream = createServer((_req, res) => {
       res.writeHead(500);
