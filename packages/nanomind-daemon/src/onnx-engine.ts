@@ -347,7 +347,7 @@ export class OnnxEngine {
           else resolve();
         };
 
-        followGet(url, DOWNLOAD_MAX_REDIRECTS, (err, res) => {
+        followGet(name, url, DOWNLOAD_MAX_REDIRECTS, (err, res) => {
           if (err) return finish(err);
           if (!res) return finish(new Error('no response'));
           if (res.statusCode === undefined || res.statusCode < 200 || res.statusCode >= 300) {
@@ -446,9 +446,16 @@ async function fileSha256(path: string): Promise<string> {
  * Follow HTTPS/HTTP redirects up to `maxRedirects` and invoke `cb`
  * with the final response. Used by the model downloader so HuggingFace's
  * 302/307 redirect to S3 is transparent to the caller.
+ *
+ * A redirect is followed only to an http or https URL. A Location that is
+ * not a URL, or whose scheme is another, reaches `cb` as an error that names
+ * `file` and the Location. `new URL()` throws on the first and `get()` on
+ * the second, and a throw inside this response callback is uncaught: it
+ * ends the process.
  */
 type ResponseLike = import('node:http').IncomingMessage;
 function followGet(
+  file: string,
   url: string,
   maxRedirects: number,
   cb: (err: Error | null, res: ResponseLike | null) => void,
@@ -456,14 +463,26 @@ function followGet(
   const get = url.startsWith('https://') ? httpsGet : httpGet;
   const req = get(url, (res) => {
     const status = res.statusCode ?? 0;
-    if (status >= 300 && status < 400 && res.headers.location) {
+    const location = res.headers.location;
+    if (status >= 300 && status < 400 && location) {
       res.resume();
       if (maxRedirects <= 0) {
         cb(new Error(`too many redirects following ${url}`), null);
         return;
       }
-      const next = new URL(res.headers.location, url).toString();
-      followGet(next, maxRedirects - 1, cb);
+      const refused = `download ${file}: HTTP ${status} redirect to ${JSON.stringify(location)} is not followed`;
+      let next: URL;
+      try {
+        next = new URL(location, url);
+      } catch {
+        cb(new Error(`${refused}: the Location is not a URL`), null);
+        return;
+      }
+      if (next.protocol !== 'http:' && next.protocol !== 'https:') {
+        cb(new Error(`${refused}: its scheme is ${next.protocol.slice(0, -1)}, not http or https`), null);
+        return;
+      }
+      followGet(file, next.toString(), maxRedirects - 1, cb);
       return;
     }
     cb(null, res);

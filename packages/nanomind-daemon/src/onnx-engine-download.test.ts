@@ -1,12 +1,14 @@
 import { describe, it, before, after, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 import { createServer, type Server } from 'node:http';
 import { createHash } from 'node:crypto';
 import { mkdtemp, rm, writeFile, readFile, mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { OnnxEngine, type DownloadProgressEvent } from './onnx-engine.ts';
+import { OnnxEngine, type DownloadProgressEvent, type OnnxEngineConfig } from './onnx-engine.ts';
 
 /**
  * These tests cover the auto-download path added in the
@@ -92,6 +94,33 @@ async function startMockUpstream(): Promise<MockUpstream> {
     redirect,
     close: () => new Promise((res) => server.close(() => res())),
   };
+}
+
+// Runs ensureReady() of an OnnxEngine with `config` in a child process, which
+// prints how it settled. An exception the engine leaves uncaught ends the
+// child with a non-zero exit code instead of ending this test run.
+async function ensureReadyInChild(
+  config: Omit<OnnxEngineConfig, 'onDownloadProgress'>,
+): Promise<{ code: number | null; stdout: string; stderr: string }> {
+  const engineUrl = new URL('./onnx-engine.ts', import.meta.url).href;
+  const script = `
+    import { OnnxEngine } from ${JSON.stringify(engineUrl)};
+    const engine = new OnnxEngine({ ...${JSON.stringify(config)}, onDownloadProgress: () => undefined });
+    await engine.ensureReady().then(
+      () => console.log('resolved'),
+      (err) => console.log('rejected: ' + err.message),
+    );
+  `;
+  const child = spawn(process.execPath, ['--experimental-strip-types', '--input-type=module', '-e', script], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+    timeout: 30_000,
+  });
+  let stdout = '';
+  let stderr = '';
+  child.stdout.setEncoding('utf8').on('data', (chunk: string) => (stdout += chunk));
+  child.stderr.setEncoding('utf8').on('data', (chunk: string) => (stderr += chunk));
+  const [code] = (await once(child, 'close')) as [number | null];
+  return { code, stdout, stderr };
 }
 
 describe('OnnxEngine auto-download', () => {
@@ -253,6 +282,28 @@ describe('OnnxEngine auto-download', () => {
     await assert.rejects(engine.ensureReady());
     assert.ok(!existsSync(join(modelDir, `${ONNX_FILE}.part`)), '.part should be cleaned up');
   });
+
+  // The download resolves a redirect's Location inside the response callback,
+  // where nothing catches a throw and the process ends. The engine runs in a
+  // child process here, so a throw like that fails the test, with the child's
+  // stderr, instead of ending this run.
+  for (const [kind, location, reason] of [
+    ['whose scheme is not http or https', 'ftp://127.0.0.1/nanomind-tme.onnx', 'its scheme is ftp, not http or https'],
+    ['that is not a URL', 'http://[', 'the Location is not a URL'],
+  ]) {
+    it(`rejects a redirect to a Location ${kind}, naming the file and the Location, and removes the .part file`, async () => {
+      upstream.redirect.set(`/${ONNX_FILE}`, location);
+
+      const run = await ensureReadyInChild({ modelDir, downloadBaseUrl: upstream.baseUrl });
+
+      assert.strictEqual(run.code, 0, run.stderr);
+      assert.strictEqual(
+        run.stdout,
+        `rejected: download ${ONNX_FILE}: HTTP 302 redirect to ${JSON.stringify(location)} is not followed: ${reason}\n`,
+      );
+      assert.ok(!existsSync(join(modelDir, `${ONNX_FILE}.part`)), '.part should be cleaned up');
+    });
+  }
 
   it('emits a default-reporter-quiet sequence for custom onDownloadProgress', async () => {
     const events: DownloadProgressEvent[] = [];

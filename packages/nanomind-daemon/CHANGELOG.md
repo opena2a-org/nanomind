@@ -51,6 +51,16 @@ The daemon now listens on `ipcPath` (default `/tmp/nanomind.sock`) as well as `1
 - `OnnxProcessEngine` passes its settings to `OnnxEngine` in its child process as JSON, which keeps a string a string. For `noAutoDownload: 'false'` the child process now requests a missing file from `downloadBaseUrl` instead of rejecting with the error above.
 - New tests in `src/onnx-engine-download.test.ts`: one for each of `'false'`, `'true'`, `1` and `0`. One in `src/onnx-process-engine.test.ts` for `'false'` in the child process.
 
+### A download redirect to a `Location` that is not an http or https URL rejects `ensureReady()` (#239)
+
+`OnnxEngine` resolved a download redirect's `Location` with `new URL()` and requested the result with `http.get` or `https.get` inside the response callback, where nothing caught a throw. A `Location` that is not a URL, such as `http://[`, made `new URL()` throw `TypeError: Invalid URL`, and one with another scheme, such as `ftp://127.0.0.1/nanomind-tme.onnx`, made `http.get` throw `TypeError [ERR_INVALID_PROTOCOL]`. For both, the process running `OnnxEngine` exited with code 1, `ensureReady()` never settled, and `nanomind-tme.onnx.part` stayed in the model directory. With `OnnxProcessEngine`, the daemon's default engine, that process is the model host, and `ensureReady()` rejected with `NanoMind model host process ended (exit code 1)`.
+
+- A redirect is followed only when its `Location` resolves to an `http` or `https` URL. For the two `Location` values above, `ensureReady()` rejects with an error that names the file, the status and the `Location`, and the `.part` file is removed:
+  - `download nanomind-tme.onnx: HTTP 302 redirect to "ftp://127.0.0.1/nanomind-tme.onnx" is not followed: its scheme is ftp, not http or https`
+  - `download nanomind-tme.onnx: HTTP 302 redirect to "http://[" is not followed: the Location is not a URL`
+- `OnnxProcessEngine.ensureReady()` rejects with the same error, and `nanomind-daemon start` prints it on the download line and the `Fatal:` line and exits 1.
+- New tests in `src/onnx-engine-download.test.ts`: one for each `Location` above, which run `OnnxEngine` in a child process, so a throw the engine does not catch fails the test instead of ending the run. One in `src/onnx-process-engine.test.ts` for the `ftp://` redirect.
+
 ### `InferRequest.intent` is optional (#145)
 
 `InferRequest` declares `intent?: string`, and the specification's `/v1/infer` Request line reads `{ intent?, input, context?, priority? }`. The daemon already routed an intent from `input` when a request had none, but the type required one, so a TypeScript caller of `infer({ input })` needed a cast.
