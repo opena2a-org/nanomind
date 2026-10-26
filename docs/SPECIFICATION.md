@@ -468,7 +468,6 @@ The Registry collects two tiers of feedback that feed directly into retraining:
 - `opena2a-registry/internal/application/nanomind_training_exporter.go`
 - `opena2a-registry/internal/interfaces/http/handlers/nanomind_handler.go`
 - `opena2a-registry/migrations/178_nanomind_telemetry.sql`
-- `opena2a-registry/migrations/193_nanomind_training_data.sql`
 
 ### 6.2 Data Quality Rules
 
@@ -678,7 +677,6 @@ As the model scales to handle more nuance, the class taxonomy will expand toward
 | `nanomind_telemetry` | 178 | Tier 1 classification stats |
 | `nanomind_feedback` | 178 | Labeled Tier 2 corrections for retraining |
 | `nanomind_model_versions` | 178 | Version tracking with SHA-256 and accuracy |
-| `nanomind_training_data` | 193 | Confirmed attack sessions (validated trap data) |
 | `community_scans` | 129 | HMA/tool scan contributions |
 | `community_findings` | 129 | Individual findings from community scans |
 | `aria_findings` | 172 | ARIA-2026-XXXX research discoveries |
