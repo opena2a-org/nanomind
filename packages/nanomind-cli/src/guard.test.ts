@@ -17,7 +17,8 @@ const MEDIUM_SEVERITY = 'scan this project for base64 decode(';
 // Runs startSession in a child process with `stdin` as its standard input.
 // The session's onCommand prints "RAN <command>" instead of running anything.
 // `entry` is the index.ts to start it from; the default is this package's.
-function runSession(stdin: 'pipe' | number, opts: { noGuard?: boolean; input?: string; entry?: string } = {}) {
+// `noGuard` is passed to the session as it is, so a string stays a string.
+function runSession(stdin: 'pipe' | number, opts: { noGuard?: unknown; input?: string; entry?: string } = {}) {
   const cli = pathToFileURL(opts.entry ?? path.join(import.meta.dirname, 'index.ts')).href;
   const script = `
     import { startSession } from ${JSON.stringify(cli)};
@@ -25,7 +26,7 @@ function runSession(stdin: 'pipe' | number, opts: { noGuard?: boolean; input?: s
       cliName: 'hma',
       cliVersion: '0.0.0',
       registryUrl: 'https://registry.test',
-      noGuard: ${opts.noGuard === true},
+      noGuard: ${JSON.stringify(opts.noGuard ?? false)},
       onCommand: async (cmd, args) => { console.log('RAN ' + [cmd, ...args].join(' ')); return ''; },
     });
   `;
@@ -80,6 +81,30 @@ describe('--no-guard', () => {
     assert.ok(!stdout.includes('BLOCKED'), stdout);
     assert.ok(stdout.includes('RAN hma secure'), stdout);
   });
+
+  // noGuard is declared boolean, but a JavaScript caller is not held to that
+  // type, and a value read from an environment variable arrives as a string,
+  // where 'false' is truthy. Only the boolean true skips screening.
+  for (const value of ['false', 'true', 1, 0] as unknown[]) {
+    const label = `${JSON.stringify(value)} (${typeof value})`;
+
+    it(`screens a line with noGuard ${label}`, () => {
+      const screened = screenLine(HIGH_SEVERITY, 'piped', value as boolean);
+      assert.strictEqual(screened?.blocked, false);
+      assert.strictEqual(
+        screened.message,
+        'WARNING: Suspicious pattern detected in piped input: role switching "act as a". The line is still routed; a session blocks only critical patterns.',
+      );
+      assert.strictEqual(screenLine(INJECTION, 'piped', value as boolean)?.blocked, true);
+    });
+
+    it(`screens the session and prints no warning with noGuard ${label}`, () => {
+      const { stdout, stderr } = runSession('pipe', { noGuard: value, input: `${INJECTION}\n` });
+      assert.ok(!stderr.includes(NO_GUARD_WARNING), stderr);
+      assert.ok(stdout.includes('BLOCKED'), stdout);
+      assert.ok(!stdout.includes('RAN '), stdout);
+    });
+  }
 });
 
 describe('session input screening', () => {

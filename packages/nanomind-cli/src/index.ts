@@ -38,7 +38,12 @@ export interface NanoMindSession {
   /** CLI that scan, fix, status and help requests run. Defaults to cliName. */
   targetCli?: string;
   projectDir?: string; // directory generated artifacts are for; defaults to the working directory
-  noGuard?: boolean; // set when the user launched with --no-guard; input is not screened and a warning is printed
+  /**
+   * Set to true when the user launched with --no-guard: input is not screened
+   * and a warning is printed. Only the boolean true does this; the strings
+   * 'true' and 'false' and the numbers 1 and 0 leave screening on.
+   */
+  noGuard?: boolean;
 }
 
 /** The launch flag that turns off input screening for one session. */
@@ -130,9 +135,15 @@ function describePatterns(patterns: DetectedPattern[]): string {
  * BLOCKED text. A line that is not blocked is routed at once, so its WARNING
  * or NOTICE names the matched pattern and says the line is still routed, in
  * place of the guard's advice to review the input before proceeding.
+ *
+ * Direct input is not screened, and neither is a line when `noGuard` is the
+ * boolean true. The strings 'true' and 'false' and the numbers 1 and 0 leave
+ * screening on.
  */
 export function screenLine(input: string, source: InputSource, noGuard = false): ScreenedLine | null {
-  if (noGuard || source === 'direct') return null;
+  // Strict test: a JavaScript caller can pass a string read from an
+  // environment variable, and the string 'false' is truthy.
+  if (noGuard === true || source === 'direct') return null;
   const result = screenInput(input, source);
   if (!result.recommendation) return null;
   if (!result.safe) return { blocked: true, message: result.recommendation };
@@ -246,10 +257,13 @@ export async function startSession(session: NanoMindSession): Promise<void> {
   const atcHandler = new ATCIntentHandler({ registryUrl: session.registryUrl });
   const inputSource = detectInputSource();
   const memory = createSessionMemory();
+  // Only the boolean true turns screening off, as in screenLine: a string
+  // such as 'false' leaves it on and prints no warning.
+  const noGuard = session.noGuard === true;
 
   console.log(WELCOME);
   console.log(`  Connected to: ${session.cliName} v${session.cliVersion}\n`);
-  if (session.noGuard) {
+  if (noGuard) {
     console.error(`  ${NO_GUARD_WARNING}\n`);
   }
 
@@ -270,7 +284,7 @@ export async function startSession(session: NanoMindSession): Promise<void> {
       if (input === 'exit' || input === 'quit') break;
 
       // Guard: screen piped and file input for injection
-      const screened = screenLine(input, inputSource, session.noGuard);
+      const screened = screenLine(input, inputSource, noGuard);
       if (screened) {
         console.log(`\n  ${screened.message}\n`);
         if (screened.blocked) continue;
