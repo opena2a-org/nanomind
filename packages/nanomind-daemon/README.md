@@ -265,7 +265,7 @@ The v0.5.0 Mamba-TME classifier ships with documented limitations on inputs outs
 
 - Set `confidence > 0.95` (not `0.8`) before treating a non-empty `attackClass` as actionable.
 - Combine the classifier signal with a corroborating signal (rule-based detectors, telemetry, capability checks) before blocking. Do not rely on the classifier alone for high-stakes decisions.
-- Log every `(input, attackClass, confidence)` triple. Out-of-distribution behavior is the input source for the v0.6.0 retrain corpus.
+- Where your deployment's data-handling rules allow storing request inputs, you can keep each `(input, attackClass, confidence)` triple to review out-of-distribution behavior; where they do not, store no inputs. Out-of-distribution samples are useful retrain input; they reach a retrain corpus only when an operator chooses to contribute them, never by collection from live `/v1/infer` traffic. Contribute only samples your data-handling rules allow you to share; contributed samples are also sanitized before training, which does not replace your own check.
 
 A retrain to v0.6.0 with broader corpus coverage is tracked separately. The 5-value canonical `attackClass` enum will not change between v0.5.0 and v0.6.0; only model accuracy improves.
 
