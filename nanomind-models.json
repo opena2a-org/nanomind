@@ -200,7 +200,7 @@
             "internalMixedTask": 0.9288,
             "structureAdherence": 0.989,
             "macroF1": 0.7146,
-            "trainSamples": 1821,
+            "trainSamples": 2668,
             "evalSamples": 500,
             "classes": 10
           },
@@ -236,7 +236,7 @@
             "internalMixedTask": 0.9288,
             "structureAdherence": 0.989,
             "macroF1": 0.7146,
-            "trainSamples": 1821,
+            "trainSamples": 2668,
             "evalSamples": 500,
             "classes": 10
           },
