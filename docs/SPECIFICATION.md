@@ -658,7 +658,9 @@ As the model scales to handle more nuance, the class taxonomy will expand toward
 | `/api/v1/atc/{agentId}` | GET | N/A | Trust level query (cached 5 min) |
 | `/api/v1/threat-matrix/classes` | GET | N/A | 36+ attack classes (maps to NanoMind output) |
 
-### 11.2 Internal Endpoints (require `INTERNAL_API_KEY`)
+### 11.2 Internal Endpoints
+
+The registry's `/internal` endpoints serve registry-operated services, and the daemon calls none of them.
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
@@ -668,7 +670,7 @@ As the model scales to handle more nuance, the class taxonomy will expand toward
 | `/internal/nanomind/training/stats` | GET | Export statistics |
 | `/internal/aria/findings` | POST | Ingest ARIA finding → auto-generate HMA/DVAA stubs |
 | `/internal/aria/research-recommendations` | GET | Gap-driven research priorities |
-| `/internal/asc/{agentId}` | PATCH | Agent state update (from NanoMind daemon) |
+| `/internal/asc/{agentId}` | PATCH | Agent state update |
 
 ### 11.3 Database Tables
 
