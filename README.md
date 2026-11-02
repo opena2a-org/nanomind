@@ -64,7 +64,7 @@ NanoMind replaces the help screen when a CLI tool is run with no arguments. It c
 | Category | Intents |
 |----------|---------|
 | Security | SCAN, FIX, EXPLAIN, COMPARE, STATUS, SECRETS_EXPOSE |
-| Generation | GENERATE (9 CI/CD artifact types) |
+| Generation | GENERATE (8 CI/CD artifact types) |
 | Trust (ATC) | TRUST_QUERY, ATC_STATUS, RISK_SCORE, REVOCATION, EXPOSURE, ATTEST |
 | Scanning | SCAN_SKILL_INTENT, SCAN_SOUL_COMPLETENESS, SCAN_MCP_SCOPE, SCAN_PROMPT_INTENT, SCAN_VERSION_DELTA, SCAN_EXPLAIN ([router README](packages/nanomind-router/README.md)) |
 | General | HELP, CONFIG, NAVIGATE |
@@ -98,11 +98,11 @@ Detects: instruction override, role switching, permission escalation, zero-width
 4. Generate CI/CD artifact
 5. Show current trust level (if registered)
 6. Explain ATC and trust levels
-7. Generate build attestation config
+7. Say that NanoMind generates no build attestation step
 
 ### CI/CD Artifact Generation
 
-9 artifact types: GitHub Actions, GitLab CI, Azure Pipelines, CircleCI, Docker Compose, Dockerfile, pre-commit, Makefile, ATC build-action.
+8 artifact types: GitHub Actions, GitLab CI, Azure Pipelines, CircleCI, Docker Compose, Dockerfile, pre-commit, Makefile. Each runs the HackMyAgent scan. No template calls an internal registry route or names a registry credential, and the GitHub Actions workflow pins each action it uses by a full commit sha.
 
 ## Runtime Mode
 

@@ -9,14 +9,14 @@
  *   4. Generate CI/CD artifact (GitHub Actions, GitLab, etc.)
  *   5. Show current ARS if agent is already registered.
  *   6. Explain ATC and what trust level 3 means.
- *   7. Offer to generate build-action YAML for ATC issuance.
+ *   7. Say that NanoMind generates no build attestation step.
  *
  * `nanomind teach` starts it, and so does typing `teach` in a session.
  */
 
 import * as path from 'node:path';
 import { ATCIntentHandler, ATCLookupError } from '@nanomind/atc';
-import { generateArtifact, detectArtifactType, type ArtifactType } from './codegen.ts';
+import { generateArtifact, detectArtifactType, NO_BUILD_ATTESTATION_STEP, type ArtifactType } from './codegen.ts';
 
 export interface TeachContext {
   cliName: string;
@@ -143,19 +143,10 @@ export async function runTeachMode(ctx: TeachContext): Promise<void> {
     - Publisher identity verified
   `);
 
-  // Step 7: Offer build-action YAML
-  print('  Step 7/7: Set up automatic trust attestation.');
-  const answer7 = await ctx.onPrompt('  Generate build attestation config for your CI? (y/n): ');
-  if (answer7.toLowerCase().startsWith('y')) {
-    const buildAction = generateArtifact('build-action', {
-      projectName,
-      projectType: 'mcp_server',
-      language: 'typescript',
-      registryUrl: ctx.registryUrl,
-    });
-    print(`\n${buildAction}\n`);
-    print('  Add this to your CI pipeline. Every successful build will issue an ATC.\n');
-  }
+  // Step 7: Build attestation. No template generates a build attestation
+  // step, so this step asks nothing.
+  print('  Step 7/7: Build attestation.');
+  print(`  ${NO_BUILD_ATTESTATION_STEP} Step 4 generates the CI config that runs the HackMyAgent scan.\n`);
 
   print('  === Teach Mode Complete ===');
   print('  Your agent is on the path to trust level 3.\n');

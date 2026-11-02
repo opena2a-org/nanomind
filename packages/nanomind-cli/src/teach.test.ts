@@ -6,6 +6,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { runTeachMode } from './teach.ts';
+import { NO_BUILD_ATTESTATION_STEP } from './codegen.ts';
 
 // Step 5 looks the project up in the registry. Nothing listens on this
 // address, so the lookup fails at once and no test reaches a real registry.
@@ -56,10 +57,12 @@ const commandsRun = (stdout: string) => stdout.split('\n').filter((line) => line
 
 describe('teach in a session', () => {
   it('runs the seven steps, answers their questions with the lines after it, then routes requests again', () => {
-    const stdout = runSession('hma', 'teach\ny\nn\nn\nscan this project\n');
+    const stdout = runSession('hma', 'teach\ny\nn\nscan this project\n');
     for (let step = 1; step <= 7; step++) {
       assert.ok(stdout.includes(`Step ${step}/7`), stdout);
     }
+    assert.ok(stdout.includes(`  ${NO_BUILD_ATTESTATION_STEP} Step 4 generates the CI config`), stdout);
+    assert.ok(!stdout.includes('OPENA2A_API_KEY'), stdout);
     assert.ok(stdout.includes('=== Teach Mode Complete ==='), stdout);
     assert.deepStrictEqual(commandsRun(stdout), [
       'RAN hma detect .',
@@ -74,7 +77,7 @@ describe('teach in a session', () => {
   });
 
   it('runs hackmyagent in a session for a CLI that is not HackMyAgent', () => {
-    const stdout = runSession('secretless-ai', 'teach\nn\nn\nn\n');
+    const stdout = runSession('secretless-ai', 'teach\nn\nn\n');
     assert.deepStrictEqual(commandsRun(stdout), ['RAN hackmyagent detect .', 'RAN hackmyagent secure . --ci']);
     assert.ok(stdout.includes('=== Teach Mode Complete ==='), stdout);
   });
