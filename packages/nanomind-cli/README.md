@@ -67,7 +67,7 @@ hma secure   # runs scan directly (NanoMind doesn't intercept commands)
 - Prompt injection detection on piped and file input: a critical match blocks the line, and a high or medium match prints a warning or notice before the line is routed (`nanomind --no-guard`, or a session started with `noGuard: true`, skips it and prints a warning; only the boolean `true` does this, so the strings `'true'` and `'false'` and the numbers `1` and `0` leave screening on)
 - Teach mode: a 7-step guided walkthrough (`nanomind teach`, or `teach` in a session)
 - Setup: `nanomind setup` downloads the files `@nanomind/engine` runs and checks their size and SHA-256
-- 9 CI/CD artifact generators
+- 8 CI/CD artifact generators
 - Session context: the findings the last command printed, read from lines of the form `[CRED-001] title (severity)`, and the agent the last trust answer named are kept, so "fix the first one" and "explain that finding" are read as naming that first finding and "my agent" as naming that agent; the session prints how it read the line
 - Skill level adaptation: once three lines have been typed, the session infers beginner, intermediate or expert from them; the message for a line that matches no request pattern and the note after a command that printed findings are longer for a beginner, and an expert gets a shorter message and no note
 
