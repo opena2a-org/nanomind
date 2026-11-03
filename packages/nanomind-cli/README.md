@@ -38,7 +38,7 @@ Trust level requests look the agent up in the OpenA2A registry. Set `OPENA2A_REG
 
 ### Teach mode
 
-Type `teach` in the session, or run `nanomind teach`, for a 7-step walkthrough: it detects and scans the project with `hackmyagent`, offers its auto-fix when the scan reports critical or high findings, looks the project up in the registry, and offers to generate a CI config that runs the scan. NanoMind generates no build attestation step. Each question takes the next line as its answer. The auto-fix, `hackmyagent secure . --fix`, runs only when you answer yes. NanoMind keeps no copy of the files it changes, so undoing the fix relies on `hackmyagent`.
+Type `teach` in the session, or run `nanomind teach`, for a 7-step walkthrough: it detects and scans the project with `hackmyagent`, offers its auto-fix when the scan reports critical or high findings, looks the project up in the registry, and offers to generate a CI config that carries a step that runs the scan. NanoMind generates no build attestation step. Each question takes the next line as its answer. The auto-fix, `hackmyagent secure . --fix`, runs only when you answer yes. NanoMind keeps no copy of the files it changes, so undoing the fix relies on `hackmyagent`.
 
 ### Setup
 

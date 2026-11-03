@@ -146,7 +146,7 @@ export async function runTeachMode(ctx: TeachContext): Promise<void> {
   // Step 7: Build attestation. No template generates a build attestation
   // step, so this step asks nothing.
   print('  Step 7/7: Build attestation.');
-  print(`  ${NO_BUILD_ATTESTATION_STEP} Step 4 generates the CI config that runs the HackMyAgent scan.\n`);
+  print(`  ${NO_BUILD_ATTESTATION_STEP} Step 4 generates the CI config that carries the HackMyAgent scan step.\n`);
 
   print('  === Teach Mode Complete ===');
   print('  Your agent is on the path to trust level 3.\n');
