@@ -591,7 +591,7 @@ Requests the session acts on:
                              ${STANDALONE_TARGET} must be on PATH:
                              ${INSTALL_COMMANDS[STANDALONE_TARGET]}
   trust level of an agent    Looks the agent up in the OpenA2A registry
-  build attestation          Prints a CI workflow step
+  build attestation          Says NanoMind generates no build attestation step
   teach                      Runs teach mode, as nanomind teach does
 
 Teach mode asks before it runs ${STANDALONE_TARGET} secure . --fix. NanoMind keeps

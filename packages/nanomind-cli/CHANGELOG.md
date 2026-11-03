@@ -9,6 +9,9 @@
   action or a build attestation is answered that NanoMind generates no build
   attestation step, with the request that prints a scan config; step 7 of
   teach mode says the same and asks no question.
+- `nanomind --help` says that a build attestation request is answered that
+  NanoMind generates no build attestation step, where it said that the
+  request prints a CI workflow step.
 - The GitHub Actions workflow pins each action it uses by a full commit sha,
   and the first line of every generated template is a comment naming the
   project.

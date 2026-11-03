@@ -9,6 +9,7 @@ import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { NO_BUILD_ATTESTATION_STEP } from './codegen.ts';
 import { LLAMAFILE_DOWNLOAD, MODEL_DOWNLOAD } from './download.ts';
 
 // These tests run the built file that npm links as the `nanomind` command, so
@@ -113,6 +114,20 @@ describe('nanomind command', () => {
       assert.ok(!run.stdout.includes('nanomind > '), 'help must not start a session');
     });
   }
+
+  // The help line for a build attestation request is checked against what the
+  // session answers to that same request.
+  it('says in the help what the session answers to a build attestation request', () => {
+    const help = nanomind(['--help']);
+    assert.strictEqual(help.status, 0, help.stderr);
+    const line = help.stdout.split('\n').find((text) => /^\s+build attestation\s/.test(text));
+    assert.ok(line, help.stdout);
+    assert.match(line, /\sSays NanoMind generates no build attestation step$/);
+
+    const session = nanomind([], { input: 'build attestation\nexit\n' });
+    assert.strictEqual(session.status, 0, session.stderr);
+    assert.ok(session.stdout.includes(NO_BUILD_ATTESTATION_STEP), session.stdout);
+  });
 
   for (const flag of ['--version', '-v']) {
     it(`prints the package version with ${flag}`, () => {
