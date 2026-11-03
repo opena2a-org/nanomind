@@ -6,7 +6,7 @@ import { createServer } from 'node:http';
 import { createServer as createNetServer } from 'node:net';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { inspect } from 'node:util';
 import { BaseFabricAdapter } from './fabric-adapter.ts';
 import { NanoMindDaemon, RATE_LIMIT_PER_SECOND, TokenBucketRateLimiter } from './server.ts';
@@ -220,23 +220,128 @@ describe('BaseFabricAdapter registry paths', () => {
   });
 });
 
-describe('BaseFabricAdapter internal API key', () => {
-  const KEY = 'FAKE-KEY-1234';
+// The lines of `file`, a file in src/, whose @ts-expect-error directive no
+// type error uses, under the compiler options of the package's tsconfig.json.
+async function unusedTsExpectErrorLines(file: string): Promise<number[]> {
+  const ts = (await import('typescript')).default;
+  const config = ts.getParsedCommandLineOfConfigFile(
+    join(dirname(file), '..', 'tsconfig.json'),
+    { noEmit: true },
+    {
+      ...ts.sys,
+      onUnRecoverableConfigFileDiagnostic: (d) => {
+        throw new Error(ts.flattenDiagnosticMessageText(d.messageText, '\n'));
+      },
+    },
+  );
+  const program = ts.createProgram([file], config.options);
+  const source = program.getSourceFile(file);
+  assert.ok(source, `the type check did not load ${file}`);
+  return ts
+    .getPreEmitDiagnostics(program, source)
+    // 2578: Unused '@ts-expect-error' directive.
+    .filter((d) => d.code === 2578 && d.file === source)
+    .map((d) => source.getLineAndCharacterOfPosition(d.start).line + 1);
+}
+
+describe('BaseFabricAdapter registry credential', () => {
+  type AdapterOptions = NonNullable<ConstructorParameters<typeof BaseFabricAdapter>[1]>;
+  interface RecordedRequest { method: string; url: string; headers: [string, string][]; body: string }
+
+  const agentId = '00000000-0000-0000-0000-000000000000';
+  // Both values are built at run time from fragments and have no credential format.
+  const planted = ['planted', 'value', 'for', 'the', 'absence', 'cells'].join('-');
+  const signal = ['planted', 'signal', 'for', 'the', 'control', 'cell'].join('-');
+  // `planted` goes to the constructor as internalApiKey through a cast. The
+  // URLs are local, and the fetch stub below answers every request.
+  const options = {
+    registryUrl: 'http://127.0.0.1:9',
+    daemonUrl: 'http://127.0.0.1:9',
+    internalApiKey: planted,
+  } as AdapterOptions;
+  const recorded: RecordedRequest[] = [];
+
+  // One run of every adapter method, with fetch replaced by a stub that
+  // records each request. new Request() reads the URL, headers and body the
+  // way fetch does, whatever form the adapter passes them in.
+  before(async () => {
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = async (input: string | URL | Request, init?: RequestInit) => {
+      const request = new Request(input, init);
+      recorded.push({
+        method: request.method,
+        url: request.url,
+        headers: [...request.headers],
+        body: await request.text(),
+      });
+      if (request.method === 'PATCH') return new Response(null, { status: 204 });
+      if (request.method === 'POST') {
+        return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+      return new Response(null, { status: 404 });
+    };
+    try {
+      const adapter = new BaseFabricAdapter('test', options);
+      await adapter.writeASC(agentId, { driftScore: 0.1, note: signal });
+      assert.strictEqual(await adapter.readRiskSummary(agentId), null);
+      await adapter.infer('INTENT_CHECK', 'list users');
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
+  it('takes no internalApiKey option: the @ts-expect-error line in this cell is a type error', async (t) => {
+    // @ts-expect-error The constructor's options have no internalApiKey property.
+    const typed: AdapterOptions = { internalApiKey: planted };
+    void typed;
+    // node --test strips the types without checking them, and tsconfig.json
+    // leaves the test files out of the build, so the cell runs the check.
+    assert.ok(t.filePath, 'node:test gave no path for this test file');
+    assert.deepStrictEqual(await unusedTsExpectErrorLines(t.filePath), []);
+  });
+
+  it('sends a value passed as internalApiKey in no URL, header name, header value or body', () => {
+    const carriers = recorded.flatMap(({ method, url, headers, body }) => [
+      ...(url.includes(planted) ? [`${method} URL`] : []),
+      ...headers
+        .filter(([name, value]) => name.includes(planted) || value.includes(planted))
+        .map(([name]) => `${method} header ${name}`),
+      ...(body.includes(planted) ? [`${method} body`] : []),
+    ]);
+    assert.deepStrictEqual(carriers, []);
+  });
+
+  it('records all three requests, and the Content-Type header and signals of writeASC, in the same run', () => {
+    assert.deepStrictEqual(
+      recorded.map(({ method, url }) => `${method} ${new URL(url).pathname}`),
+      [`PATCH /internal/asc/${agentId}`, `GET /api/v1/asc/${agentId}/risk-summary`, 'POST /v1/infer'],
+    );
+    const [write] = recorded;
+    assert.ok(write.body.includes(signal), write.body);
+    assert.ok(
+      write.headers.some(([name, value]) => name === 'content-type' && value === 'application/json'),
+      JSON.stringify(write.headers),
+    );
+  });
+
+  it('keeps a value passed as internalApiKey out of util.inspect and JSON.stringify output of the adapter', () => {
+    const adapter = new BaseFabricAdapter('test', options);
+    assert.ok(!inspect(adapter, { showHidden: true }).includes(planted), inspect(adapter));
+    assert.ok(!JSON.stringify(adapter).includes(planted), JSON.stringify(adapter));
+  });
+});
+
+describe('BaseFabricAdapter.writeASC() on a redirect', () => {
   const agentId = '00000000-0000-0000-0000-000000000000';
   let registryUrl: string;
   let otherUrl: string;
-  // While set, the registry answers every request with this redirect.
-  let redirect: { status: number; location: string } | null = null;
-  const requests: { request: string; internalKey: string | undefined }[] = [];
+  // The registry answers every request with this redirect.
+  let redirect = { status: 0, location: '' };
+  const requests: string[] = [];
   const otherRequests: string[] = [];
   const registry = createServer((req, res) => {
-    const key = req.headers['x-internal-key'];
-    requests.push({ request: `${req.method} ${req.url}`, internalKey: typeof key === 'string' ? key : undefined });
-    if (redirect !== null) {
-      res.writeHead(redirect.status, { Location: redirect.location });
-    } else {
-      res.writeHead(req.method === 'PATCH' ? 204 : 404);
-    }
+    requests.push(`${req.method} ${req.url}`);
+    res.writeHead(redirect.status, { Location: redirect.location });
     res.end();
   });
   // The address a redirect names. It answers 204, so a write that followed
@@ -260,42 +365,15 @@ describe('BaseFabricAdapter internal API key', () => {
     other.close();
   });
 
-  it('sends the internalApiKey option in the X-Internal-Key header of writeASC and not of readRiskSummary', async () => {
-    requests.length = 0;
-    const adapter = new BaseFabricAdapter('test', { registryUrl, internalApiKey: KEY });
-    await adapter.writeASC(agentId, { driftScore: 0.1 });
-    assert.strictEqual(await adapter.readRiskSummary(agentId), null);
-    assert.deepStrictEqual(requests, [
-      { request: `PATCH /internal/asc/${agentId}`, internalKey: KEY },
-      { request: `GET /api/v1/asc/${agentId}/risk-summary`, internalKey: undefined },
-    ]);
-  });
-
-  it('sends no X-Internal-Key header without the option', async () => {
-    requests.length = 0;
-    await new BaseFabricAdapter('test', { registryUrl }).writeASC(agentId, {});
-    assert.deepStrictEqual(requests, [{ request: `PATCH /internal/asc/${agentId}`, internalKey: undefined }]);
-  });
-
-  it('does not follow a redirect from writeASC, so the key is not sent to the address it names', async () => {
-    const adapter = new BaseFabricAdapter('test', { registryUrl, internalApiKey: KEY });
+  it('does not follow a redirect, so the signals are not sent to the address it names', async () => {
+    const adapter = new BaseFabricAdapter('test', { registryUrl });
     for (const status of [301, 302, 303, 307, 308]) {
       requests.length = 0;
       otherRequests.length = 0;
       redirect = { status, location: `${otherUrl}/internal/asc/${agentId}` };
-      try {
-        await assert.rejects(adapter.writeASC(agentId, {}), { message: new RegExp(`^ASC write failed: ${status} `) });
-      } finally {
-        redirect = null;
-      }
-      assert.deepStrictEqual(requests, [{ request: `PATCH /internal/asc/${agentId}`, internalKey: KEY }]);
+      await assert.rejects(adapter.writeASC(agentId, {}), { message: new RegExp(`^ASC write failed: ${status} `) });
+      assert.deepStrictEqual(requests, [`PATCH /internal/asc/${agentId}`]);
       assert.deepStrictEqual(otherRequests, [], `writeASC followed a ${status}`);
     }
-  });
-
-  it('keeps the key out of util.inspect and JSON.stringify output of the adapter', () => {
-    const adapter = new BaseFabricAdapter('test', { registryUrl, internalApiKey: KEY });
-    assert.ok(!inspect(adapter, { showHidden: true }).includes(KEY), inspect(adapter));
-    assert.ok(!JSON.stringify(adapter).includes(KEY), JSON.stringify(adapter));
   });
 });

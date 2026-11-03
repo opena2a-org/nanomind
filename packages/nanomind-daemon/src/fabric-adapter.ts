@@ -56,36 +56,25 @@ export class BaseFabricAdapter implements FabricAdapter {
   readonly productId: string;
   private daemonUrl: string;
   private registryUrl: string;
-  // A #private field, so util.inspect and JSON.stringify of the adapter leave
-  // the key out.
-  readonly #internalApiKey: string | undefined;
 
-  /**
-   * `internalApiKey` is the registry's INTERNAL_API_KEY, which the internal
-   * endpoints require (docs/SPECIFICATION.md section 11.2). writeASC() sends
-   * it in the X-Internal-Key header; without it, writeASC() sends no
-   * credential.
-   */
   constructor(
     productId: string,
-    options?: { daemonUrl?: string; registryUrl?: string; internalApiKey?: string },
+    options?: { daemonUrl?: string; registryUrl?: string },
   ) {
     this.productId = productId;
     this.daemonUrl = options?.daemonUrl ?? 'http://127.0.0.1:47200';
     this.registryUrl = options?.registryUrl ?? 'https://api.oa2a.org';
-    this.#internalApiKey = options?.internalApiKey;
   }
 
   async writeASC(agentId: string, signals: Record<string, unknown>): Promise<void> {
     const url = `${this.registryUrl}/internal/asc/${agentIdSegment(agentId)}`;
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (this.#internalApiKey) headers['X-Internal-Key'] = this.#internalApiKey;
     const resp = await fetch(url, {
       method: 'PATCH',
       headers,
       body: JSON.stringify(signals),
-      // fetch would send the key on to the address a redirect names, so a
-      // redirect is answered as a failed write instead.
+      // fetch does not follow a redirect, so the signals are sent to the
+      // configured registry address only and a redirect is a failed write.
       redirect: 'manual',
     });
     if (!resp.ok) {
