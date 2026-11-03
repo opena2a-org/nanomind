@@ -102,7 +102,7 @@ Detects: instruction override, role switching, permission escalation, zero-width
 
 ### CI/CD Artifact Generation
 
-8 artifact types: GitHub Actions, GitLab CI, Azure Pipelines, CircleCI, Docker Compose, Dockerfile, pre-commit, Makefile. Each runs the HackMyAgent scan. No template calls an internal registry route or names a registry credential, and the GitHub Actions workflow pins each action it uses by a full commit sha.
+8 artifact types: GitHub Actions, GitLab CI, Azure Pipelines, CircleCI, Docker Compose, Dockerfile, pre-commit, Makefile. Each carries a step that runs the HackMyAgent scan. In the Dockerfile that step is in the `security` stage, which `docker build --target security .` builds. No template calls an internal registry route or names a registry credential, and the GitHub Actions workflow pins each action it uses by a full commit sha.
 
 ## Runtime Mode
 
