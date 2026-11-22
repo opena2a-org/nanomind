@@ -166,13 +166,9 @@ The daemon never emits a transport-level `"fail_open"`. That is the consumer's s
 
 ### FGA contract
 
-AIM's FGA Step 5 (`fga_engine.go::checkIntentSync`) reads this response and blocks when:
+In AIM (agent-identity-management), FGA Step 5 (`fga_engine.go::checkIntentSync`) sends medium- and high-risk actions to this daemon as the text `<capability> on <resource>`, without holding the authorization decision, and reads this response. It counts each result by status in its `fga.intent_checks` metric and never blocks on it: every Step 5 result carries `Blocked: false`.
 
-```
-classification == "classified" && attackClass != "" && confidence > 0.8
-```
-
-The fields are required (always present); `attackClass` is empty when the model classifies the request as benign and non-empty otherwise, and `classification` records whether that verdict is usable. A non-2xx daemon response, an undecodable body, or `classification: "abstain"` proceeds without blocking but is recorded distinctly (`fail_open` for transport, `abstain` for an unusable verdict) rather than as a clean benign. Consumers needing 10-way granularity (e.g. dashboards, runtime correlation) read the raw label from `evidence`.
+The fields are required (always present); `attackClass` is empty when the model classifies the request as benign and non-empty otherwise, and `classification` records whether that verdict is usable. A non-2xx daemon response or an undecodable body is counted as `fail_open`, and `classification: "abstain"` as `abstain`, rather than as a clean benign. Consumers needing 10-way granularity (e.g. dashboards, runtime correlation) read the raw label from `evidence`.
 
 ### Error responses
 
