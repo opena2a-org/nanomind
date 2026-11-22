@@ -132,8 +132,7 @@ No CommonJS file in `dist/` requires an ES module of the package. Before, `dist/
 
 ### Registry key, agentId checks and inference error text (#167)
 
-- `BaseFabricAdapter` takes an `internalApiKey` option, the registry's `INTERNAL_API_KEY`, and `writeASC()` sends it in the `X-Internal-Key` header. docs/SPECIFICATION.md section 11.2 says the internal endpoints, `PATCH /internal/asc/{agentId}` among them, require that key, and `writeASC()` sent no credential. `readRiskSummary()` does not send the key.
-- `writeASC()` does not follow a redirect. A redirect that fetch follows carries the `X-Internal-Key` header on to the address it names, so a 301, 302, 303, 307 or 308 answer now rejects with `ASC write failed:` and its status.
+- The adapter sends no credential to the registry.
 - `writeASC()` and `readRiskSummary()` refuse an `agentId` that is not a string, and one that contains a lone surrogate, with a `TypeError` before any request is sent. `['..']` and an object whose `toString()` returns `..` reached the parent registry path (`GET /api/v1/risk-summary`, `PATCH /internal/`), and `'a\uD800'` rejected with `URIError: URI malformed`.
 - `POST /v1/infer` answers an engine error that is an `AggregateError` with an empty message, Node's error for a connection refused on every address of a host, with the reasons in the 500 body's `message`, for example `connect ECONNREFUSED ::1:443; connect ECONNREFUSED 127.0.0.1:443`. The `message` was empty.
 - The `nanomind-daemon status` test for a daemon that does not report `refusals` compares the whole output, so a `status` that prints "Daemon is not running" after the Uptime line fails it.
