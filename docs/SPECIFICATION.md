@@ -11,7 +11,7 @@
 
 NanoMind is the embedded machine learning layer for the OpenA2A security ecosystem. It provides on-device neural inference for threat classification, behavioral anomaly detection, and intent routing, without requiring cloud API calls.
 
-NanoMind is NOT a product. It is infrastructure. It runs inside other tools (HMA, ai-trust, OASB, AIM, aibrowserguard, ARP) as a dependency. Users also run three of its commands themselves: `nanomind` from `@nanomind/cli` (the interactive CLI), `nanomind-daemon` from `@nanomind/daemon` (the classifier server of §3.4) and `nanomind-analyst` from the `nanomind-analyst` Python package (which installs and manages the security analyst daemon).
+NanoMind is infrastructure for other tools. HMA ships a `nanomind-core` module inside its own package, and AIM and aicomply send text to separately installed NanoMind daemons when those daemons are running. Users also run three of its commands themselves: `nanomind` from `@nanomind/cli` (the interactive CLI), `nanomind-daemon` from `@nanomind/daemon` (the classifier server of §3.4) and `nanomind-analyst` from the `nanomind-analyst` Python package (which installs and manages the security analyst daemon).
 
 ## 2. Mission
 

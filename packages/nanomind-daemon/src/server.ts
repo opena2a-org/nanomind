@@ -65,11 +65,9 @@ export interface InferRequest {
  * when no malicious intent is detected. Non-empty values are produced by the
  * production NanoMind classifier; until that ships, the daemon always emits "".
  *
- * AIM FGA Step 5 (`fga_engine.go::checkIntentSync`) blocks when:
- *   attackClass != "" && confidence > 0.8
- *
- * Empty string therefore means "no block" — preserving fail-open for the
- * pre-classifier daemon while making the wire contract explicit.
+ * AIM FGA Step 5 (`fga_engine.go::checkIntentSync`) counts this value and
+ * never blocks on it (in agent-identity-management every Step 5 result
+ * carries Blocked: false).
  */
 export type AttackClass =
   | ''
