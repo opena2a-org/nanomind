@@ -9,6 +9,7 @@ import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { NO_BUILD_ATTESTATION_STEP } from './codegen.ts';
 import { LLAMAFILE_DOWNLOAD, MODEL_DOWNLOAD } from './download.ts';
 
 // These tests run the built file that npm links as the `nanomind` command, so
@@ -113,6 +114,20 @@ describe('nanomind command', () => {
       assert.ok(!run.stdout.includes('nanomind > '), 'help must not start a session');
     });
   }
+
+  // The help line for a build attestation request is checked against what the
+  // session answers to that same request.
+  it('says in the help what the session answers to a build attestation request', () => {
+    const help = nanomind(['--help']);
+    assert.strictEqual(help.status, 0, help.stderr);
+    const line = help.stdout.split('\n').find((text) => /^\s+build attestation\s/.test(text));
+    assert.ok(line, help.stdout);
+    assert.match(line, /\sSays NanoMind generates no build attestation step$/);
+
+    const session = nanomind([], { input: 'build attestation\nexit\n' });
+    assert.strictEqual(session.status, 0, session.stderr);
+    assert.ok(session.stdout.includes(NO_BUILD_ATTESTATION_STEP), session.stdout);
+  });
 
   for (const flag of ['--version', '-v']) {
     it(`prints the package version with ${flag}`, () => {
@@ -285,7 +300,7 @@ describe('nanomind command', () => {
     try {
       const [inSession, inTeach] = await Promise.all([
         runAgainst(address, [], 'what is the trust level of agent:test-agent\nexit\n'),
-        runAgainst(address, ['teach'], 'n\nn\n', { path: fakeToolPath, cwd: projectPath }),
+        runAgainst(address, ['teach'], 'n\n', { path: fakeToolPath, cwd: projectPath }),
       ]);
 
       // The session reads the line after the question, and that line ends it.
@@ -310,7 +325,7 @@ describe('nanomind command', () => {
   });
 
   it('runs teach mode with nanomind teach and reads its answers from standard input', { skip: process.platform === 'win32' }, () => {
-    const run = nanomind(['teach'], { input: 'y\nn\nn\n', path: findingToolPath, cwd: projectPath });
+    const run = nanomind(['teach'], { input: 'y\nn\n', path: findingToolPath, cwd: projectPath });
     assert.strictEqual(run.status, 0, run.stderr);
     for (let step = 1; step <= 7; step++) {
       assert.ok(run.stdout.includes(`Step ${step}/7`), run.stdout);
@@ -323,7 +338,7 @@ describe('nanomind command', () => {
   });
 
   it('starts teach mode when teach is typed in the session', { skip: process.platform === 'win32' }, () => {
-    const run = nanomind([], { input: 'teach\nn\nn\nn\n', path: findingToolPath, cwd: projectPath });
+    const run = nanomind([], { input: 'teach\nn\nn\n', path: findingToolPath, cwd: projectPath });
     assert.strictEqual(run.status, 0, run.stderr);
     assert.ok(run.stdout.includes('fake-hackmyagent detect .'), run.stdout);
     assert.ok(run.stdout.includes('[CRED-001] Hardcoded API key (critical)'), run.stdout);

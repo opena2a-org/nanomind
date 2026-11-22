@@ -5,7 +5,7 @@ import { SessionManager } from './session.ts';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { generateArtifact, listArtifactTypes, detectArtifactType, artifactTypeFromInput } from './codegen.ts';
+import { generateArtifact, listArtifactTypes, detectArtifactType, artifactTypeFromInput, namesBuildAction } from './codegen.ts';
 
 describe('SkillAdapter', () => {
   it('defaults to intermediate', () => {
@@ -100,11 +100,11 @@ describe('SessionManager', () => {
 });
 
 describe('CodeGen', () => {
-  it('lists 9 artifact types', () => {
+  it('lists 8 artifact types', () => {
     const types = listArtifactTypes();
-    assert.strictEqual(types.length, 9);
+    assert.strictEqual(types.length, 8);
     assert.ok(types.includes('github-action'));
-    assert.ok(types.includes('build-action'));
+    assert.ok(!(types as string[]).includes('build-action'));
   });
 
   it('generates github-action', () => {
@@ -112,25 +112,26 @@ describe('CodeGen', () => {
       projectName: 'test-agent',
       projectType: 'mcp_server',
       language: 'typescript',
-      publisher: 'acme',
     });
     assert.ok(artifact.includes('hackmyagent'));
     assert.ok(artifact.includes('test-agent'));
-    assert.ok(artifact.includes('mcp_server'));
-    assert.ok(artifact.includes('acme'));
+    assert.ok(artifact.includes('name: Security Scan'));
+    assert.ok(!artifact.includes('secrets.'));
   });
 
-  it('generates build-action', () => {
-    const artifact = generateArtifact('build-action', {
-      projectName: 'my-agent',
-      projectType: 'a2a_agent',
-      language: 'go',
-    });
-    assert.ok(artifact.includes('opena2a-registry/action'));
-    assert.ok(artifact.includes('my-agent'));
+  it('generates no build-action', () => {
+    assert.throws(
+      () =>
+        generateArtifact('build-action' as any, {
+          projectName: 'my-agent',
+          projectType: 'a2a_agent',
+          language: 'go',
+        }),
+      /Unknown artifact type: build-action/,
+    );
   });
 
-  it('generates all 9 types without error', () => {
+  it('generates every listed type without error', () => {
     const types = listArtifactTypes();
     for (const type of types) {
       const result = generateArtifact(type, {
@@ -153,11 +154,20 @@ describe('CodeGen', () => {
       ['generate docker config', 'dockerfile'],
       ['create a pre-commit config', 'pre-commit'],
       ['generate a makefile config', 'makefile'],
-      ['create a build action config', 'build-action'],
+      ['create a build action config', null],
       ['generate a ci config', null],
     ];
     for (const [input, expected] of cases) {
       assert.strictEqual(artifactTypeFromInput(input), expected, input);
+    }
+  });
+
+  it('reads a request for a build action, which no template generates', () => {
+    for (const input of ['create a build action config', 'generate a build-action', 'Build Action yaml']) {
+      assert.strictEqual(namesBuildAction(input), true, input);
+    }
+    for (const input of ['generate a github action', 'build the docker config', 'generate a makefile config']) {
+      assert.strictEqual(namesBuildAction(input), false, input);
     }
   });
 

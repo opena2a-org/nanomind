@@ -26,7 +26,14 @@ import { ATCIntentHandler, ATCLookupError } from '@nanomind/atc';
 import { screenInput, detectInputSource, type InputSource, type DetectedPattern } from '@nanomind/guard';
 import { SkillAdapter } from './adapt.ts';
 import { SessionManager, type Finding } from './session.ts';
-import { generateArtifact, detectArtifactType, artifactTypeFromInput, listArtifactTypes } from './codegen.ts';
+import {
+  generateArtifact,
+  detectArtifactType,
+  artifactTypeFromInput,
+  listArtifactTypes,
+  namesBuildAction,
+  NO_BUILD_ATTESTATION_STEP,
+} from './codegen.ts';
 import { runSetup } from './setup.ts';
 import { runTeachMode } from './teach.ts';
 
@@ -421,6 +428,10 @@ function followUpNote(memory: SessionMemory | undefined, first: Finding): string
 }
 
 function handleGenerate(input: string, session: NanoMindSession): void {
+  if (namesBuildAction(input)) {
+    console.log(noBuildAttestationAnswer());
+    return;
+  }
   const projectDir = path.resolve(session.projectDir ?? process.cwd());
   const named = artifactTypeFromInput(input);
   const type = named ?? detectArtifactType(projectDir);
@@ -428,7 +439,6 @@ function handleGenerate(input: string, session: NanoMindSession): void {
     projectName: path.basename(projectDir),
     projectType: 'mcp_server',
     language: 'typescript',
-    registryUrl: session.registryUrl,
   });
 
   console.log(`\n  > Generating ${type} config`);
@@ -439,6 +449,16 @@ function handleGenerate(input: string, session: NanoMindSession): void {
   const others = listArtifactTypes().filter((t) => t !== type);
   console.log('  Save this to your CI configuration.');
   console.log(`  For another type, ask "generate a ${others[0]} config". Types: ${others.join(', ')}\n`);
+}
+
+// The answer to a request for a build attestation step, which no template
+// generates, with the request that prints a scan config instead.
+function noBuildAttestationAnswer(): string {
+  const types = listArtifactTypes();
+  return [
+    `\n  ${NO_BUILD_ATTESTATION_STEP}`,
+    `  For a CI config that runs the HackMyAgent scan, ask "generate a ${types[0]} config". Types: ${types.join(', ')}\n`,
+  ].join('\n');
 }
 
 /**
@@ -477,19 +497,7 @@ async function handleATCIntent(
     }
 
     case 'ATTEST':
-      return `
-  To add trust attestation to your CI pipeline, add this to your GitHub Actions workflow:
-
-  - uses: opena2a-org/opena2a-registry/action@main
-    with:
-      api-key: \${{ secrets.OPENA2A_API_KEY }}
-      package-name: your-package-name
-      package-type: mcp_server
-      version: \${{ github.ref_name }}
-      publisher: your-org
-
-  This issues an Agent Trust Credential (ATC) on every successful build.
-`;
+      return noBuildAttestationAnswer();
 
     default:
       return `\n  ATC intent "${classification.intent}" is not yet implemented.\n`;
@@ -583,7 +591,7 @@ Requests the session acts on:
                              ${STANDALONE_TARGET} must be on PATH:
                              ${INSTALL_COMMANDS[STANDALONE_TARGET]}
   trust level of an agent    Looks the agent up in the OpenA2A registry
-  build attestation          Prints a CI workflow step
+  build attestation          Says NanoMind generates no build attestation step
   teach                      Runs teach mode, as nanomind teach does
 
 Teach mode asks before it runs ${STANDALONE_TARGET} secure . --fix. NanoMind keeps
